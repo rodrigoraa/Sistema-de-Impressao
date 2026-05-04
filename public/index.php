@@ -1,4 +1,5 @@
 <?php
+session_start();
 
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -27,7 +28,6 @@ if ($uri === '/logout') {
 $controller = new PrintController();
 $controller->handle();
 
-session_start();
 if (!isset($_SESSION['user'])) {
     header('Location: /login');
     exit;
