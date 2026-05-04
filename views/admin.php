@@ -9,7 +9,7 @@
 <body>
 
     <div class="container">
-
+        <h3>Total do mês: <?= $totalMonth ?> páginas</h3>
         <h2>Painel de Impressão</h2>
 
         <p class="user">Usuário:

@@ -11,11 +11,32 @@ class AdminController
 
         $db = new SQLite3(__DIR__ . '/../../storage/usage.db');
 
-        $result = $db->query("
-            SELECT user, SUM(pages) as total 
-            FROM usage 
+        // mês selecionado
+        $month = $_GET['month'] ?? date('Y-m');
+
+        // 🔹 resumo do mês
+        $stmt = $db->prepare("
+            SELECT user, SUM(pages) as total
+            FROM usage
+            WHERE strftime('%Y-%m', created_at) = :month
             GROUP BY user
             ORDER BY total DESC
+        ");
+
+        $stmt->bindValue(':month', $month);
+        $result = $stmt->execute();
+
+        $data = [];
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $data[] = $row;
+        }
+
+        $totalMonth = array_sum(array_column($data, 'total'));
+
+        $months = $db->query("
+            SELECT DISTINCT strftime('%Y-%m', created_at) as month
+            FROM usage
+            ORDER BY month DESC
         ");
 
         $history = $db->query("
@@ -24,12 +45,6 @@ class AdminController
             ORDER BY created_at DESC
             LIMIT 20
         ");
-
-        $data = [];
-
-        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-            $data[] = $row;
-        }
 
         require __DIR__ . '/../../views/admin.php';
     }
