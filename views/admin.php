@@ -53,7 +53,7 @@
                         <?= $row['pages'] ?>
                     </td>
                     <td>
-                        <?= basename($row['file']) ?>
+                        <?= isset($row['file']) && $row['file'] ? basename($row['file']) : '-' ?>
                     </td>
                     <td>
                         <?= $row['created_at'] ?>
