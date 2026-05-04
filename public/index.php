@@ -1,10 +1,7 @@
 <?php
 
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../src/Controller/AdminController.php';
 
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
 $dotenv->load();
@@ -24,6 +21,11 @@ if ($uri === '/logout') {
     exit;
 }
 
+if ($uri === '/admin') {
+    (new AdminController())->index();
+    exit;
+}
+
 $controller = new PrintController();
 $controller->handle();
 ?>
@@ -34,11 +36,27 @@ $controller->handle();
     <title>Impressão</title>
 </head>
 <body>
-    <h2>Enviar arquivo para impressão</h2>
-    <form method="post" enctype="multipart/form-data">
-        <input type="file" name="arquivo" required>
-        <button type="submit">Imprimir</button> <br>
-        <a href="/logout">Sair</a>
-    </form>
+
+<h2>Enviar arquivo para impressão</h2>
+
+<form method="post" enctype="multipart/form-data">
+    
+    <input type="file" name="arquivo" required><br><br>
+
+    <label>Cópias:</label>
+    <input type="number" name="copies" value="1" min="1"><br><br>
+
+    <label>Modo:</label>
+    <select name="sides">
+        <option value="one-sided">Simples</option>
+        <option value="two-sided-long-edge">Frente e verso</option>
+    </select><br><br>
+
+    <button type="submit">Imprimir</button><br><br>
+
+    <a href="/logout">Sair</a>
+
+</form>
+
 </body>
 </html>

@@ -14,6 +14,7 @@ class PrintController
             header('Location: /login');
             exit;
         }
+
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             return;
         }
@@ -44,31 +45,38 @@ class PrintController
 
         $user = $_SESSION['user'];
 
+        // opções da impressora
+        $copies = $_POST['copies'] ?? 1;
+        $sides = $_POST['sides'] ?? 'one-sided';
+
         $pages = PageCounter::count($pdf);
 
         $quota = new QuotaService();
 
-        if (!$quota->canPrint($user, $pages)) {
+        if (!$quota->canPrint($user, $pages * $copies)) {
             echo "Limite de páginas excedido";
             return;
         }
 
-        $success = $printer->print($pdf);
+        $success = $printer->print($pdf, $copies, $sides);
 
         if ($success) {
-            $quota->register($user, $pages);
+            $quota->register($user, $pages * $copies);
         }
 
-        $this->log($user, $dest, $pages, $success);
+        $this->log($user, $dest, $pages, $copies, $success);
 
-        echo $success ? "Enviado para impressão ({$pages} páginas)" : "Erro ao imprimir";
+        echo $success 
+            ? "Enviado ({$copies} cópias, {$pages} páginas cada)" 
+            : "Erro ao imprimir";
     }
 
-    private function log($user, $file, $pages, $status)
+    private function log($user, $file, $pages, $copies, $status)
     {
         $logPath = $_ENV['LOG_PATH'];
 
-        $line = date('Y-m-d H:i:s') . " | $user | $file | {$pages} páginas | " . ($status ? "OK" : "FAIL") . "\n";
+        $line = date('Y-m-d H:i:s') . " | $user | $file | {$copies}x{$pages} páginas | " 
+              . ($status ? "OK" : "FAIL") . "\n";
 
         file_put_contents($logPath, $line, FILE_APPEND);
     }

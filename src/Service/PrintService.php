@@ -14,23 +14,16 @@ class PrintService
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         $pdfPath = $filePath;
 
-        // DOC → DOCX → PDF
         if ($ext === 'doc') {
             exec("libreoffice --headless --convert-to docx " . escapeshellarg($filePath) . " --outdir /tmp");
             $docxPath = "/tmp/" . basename($filePath, '.doc') . ".docx";
 
             exec("libreoffice --headless --convert-to pdf " . escapeshellarg($docxPath) . " --outdir /tmp");
             $pdfPath = "/tmp/" . basename($filePath, '.doc') . ".pdf";
-        }
-
-        // DOCX → PDF
-        elseif ($ext === 'docx') {
+        } elseif ($ext === 'docx') {
             exec("libreoffice --headless --convert-to pdf " . escapeshellarg($filePath) . " --outdir /tmp");
             $pdfPath = "/tmp/" . basename($filePath, '.docx') . ".pdf";
-        }
-
-        // IMAGEM → PDF
-        elseif (in_array($ext, ['jpg', 'jpeg', 'png'])) {
+        } elseif (in_array($ext, ['jpg', 'jpeg', 'png'])) {
             $pdfPath = "/tmp/" . uniqid() . ".pdf";
             exec("convert " . escapeshellarg($filePath) . " " . escapeshellarg($pdfPath));
         }
@@ -38,9 +31,15 @@ class PrintService
         return file_exists($pdfPath) ? $pdfPath : false;
     }
 
-    public function print($pdfPath)
+    public function print($pdfPath, $copies = 1, $sides = 'one-sided')
     {
-        exec("lp -d {$this->printer} " . escapeshellarg($pdfPath), $out, $status);
+        $cmd = "lp -d {$this->printer} "
+            . "-n " . intval($copies) . " "
+            . "-o sides=" . escapeshellarg($sides) . " "
+            . escapeshellarg($pdfPath);
+
+        exec($cmd, $out, $status);
+
         return $status === 0;
     }
 }
