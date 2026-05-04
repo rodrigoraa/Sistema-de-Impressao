@@ -12,6 +12,7 @@ $dotenv->load();
 
 require_once __DIR__ . '/../src/Controller/PrintController.php';
 require_once __DIR__ . '/../src/Controller/AuthController.php';
+require_once __DIR__ . '/../src/Controller/AdminController.php';
 
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
@@ -22,6 +23,11 @@ if ($uri === '/login') {
 
 if ($uri === '/logout') {
     (new AuthController())->logout();
+    exit;
+}
+
+if ($uri === '/admin') {
+    (new AdminController())->index();
     exit;
 }
 

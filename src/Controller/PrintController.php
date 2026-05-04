@@ -51,10 +51,7 @@ class PrintController
 
         $quota = new QuotaService();
 
-        if (!$quota->canPrint($user, $pages * $copies)) {
-            echo "Limite excedido";
-            return;
-        }
+        $quota->register($user, $pages * $copies);
 
         $success = $printer->print($pdf, $copies, $sides, $orientation, $quality);
 
