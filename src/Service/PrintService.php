@@ -19,7 +19,7 @@ class PrintService
             $pdfPath = "/tmp/" . basename($filePath, '.docx') . ".pdf";
         }
 
-        if (in_array($ext, ['jpg','jpeg','png'])) {
+        if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
             $pdfPath = "/tmp/" . uniqid() . ".pdf";
             exec("convert " . escapeshellarg($filePath) . " " . escapeshellarg($pdfPath));
         }
@@ -29,16 +29,23 @@ class PrintService
 
     public function print($pdfPath, $copies, $sides, $orientation, $quality)
     {
-        $orientationFlag = $orientation === 'landscape' ? 4 : 3;
+        $orientationFlag = ($orientation === 'landscape') ? 4 : 3;
 
         $cmd = "lp -d {$this->printer} "
-             . "-n " . intval($copies) . " "
-             . "-o sides=" . escapeshellarg($sides) . " "
-             . "-o orientation-requested={$orientationFlag} "
-             . "-o print-quality={$quality} "
-             . escapeshellarg($pdfPath);
+            . "-n " . intval($copies) . " "
+            . "-o sides={$sides} "
+            . "-o orientation-requested={$orientationFlag} "
+            . "-o print-quality={$quality} "
+            . escapeshellarg($pdfPath);
 
-        exec($cmd, $out, $status);
+        exec($cmd . " 2>&1", $out, $status);
+
+        // DEBUG (temporário)
+        file_put_contents(
+            '/tmp/print_debug.log',
+            date('Y-m-d H:i:s') . "\nCMD: $cmd\nSTATUS: $status\nOUTPUT:\n" . implode("\n", $out) . "\n\n",
+            FILE_APPEND
+        );
 
         return $status === 0;
     }
