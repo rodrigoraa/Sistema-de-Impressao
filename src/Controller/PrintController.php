@@ -57,14 +57,14 @@ class PrintController
         $db = new SQLite3(__DIR__ . '/../../storage/usage.db');
 
         // ✔ lista de usuários do sistema
-        $result = $db->query("SELECT username, role FROM users");
+        $result = $db->query("SELECT cpf, role FROM users");
 
         $userList = [];
         $userRoles = [];
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-            $userList[] = $row['username'];
-            $userRoles[$row['username']] = $row['role'];
+            $userList[] = $row['cpf'];
+            $userRoles[$row['cpf']] = $row['role'];
         }
 
         // ✔ verifica se é admin

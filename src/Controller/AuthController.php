@@ -13,47 +13,44 @@ class AuthController
 
             $db = $this->db();
 
-            $cpf = strtoupper(trim($_POST['matricula'] ?? ''));
+            $cpf = preg_replace('/\D/', '', $_POST['matricula'] ?? '');
             $senha = $_POST['senha'] ?? '';
 
-            $stmt = $db->prepare("SELECT * FROM users WHERE username = :u");
-            $stmt->bindValue(':u', $cpf);
+            $stmt = $db->prepare("SELECT * FROM users WHERE cpf = :cpf");
+            $stmt->bindValue(':cpf', $cpf);
             $result = $stmt->execute();
 
             $user = $result->fetchArray(SQLITE3_ASSOC);
 
             if (!$user) {
-                $_SESSION['flash'] = "Usuário não encontrado";
+                $_SESSION['flash'] = "CPF não encontrado";
                 header('Location: /login');
                 exit;
             }
 
-            // 🔥 REGRA
             if ($user['role'] === 'admin') {
-
                 if (!$senha || !password_verify($senha, $user['password'])) {
                     $_SESSION['flash'] = "Senha inválida";
                     header('Location: /login');
                     exit;
                 }
-
             }
-            // professor entra sem senha
 
-            $_SESSION['user'] = $user['username'];
+            $_SESSION['user'] = $user['cpf'];
+            $_SESSION['name'] = $user['name'];
             $_SESSION['role'] = $user['role'];
 
             header('Location: /');
             exit;
         }
 
-        // 🔹 buscar admins para o JS
+        // lista admins
         $db = $this->db();
-        $res = $db->query("SELECT username FROM users WHERE role = 'admin'");
+        $res = $db->query("SELECT cpf FROM users WHERE role = 'admin'");
 
-        $admin_matriculas = [];
+        $admins = [];
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
-            $admin_matriculas[] = strtoupper($row['username']);
+            $admins[] = $row['cpf'];
         }
 
         require __DIR__ . '/../../views/login.php';

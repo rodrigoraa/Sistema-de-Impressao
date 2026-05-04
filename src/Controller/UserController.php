@@ -15,7 +15,7 @@ class UserController
 
         $db = $this->db();
 
-        $result = $db->query("SELECT id, username, role FROM users ORDER BY username");
+        $result = $db->query("SELECT id, name, cpf, role FROM users ORDER BY name");
 
         $users = [];
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
@@ -35,16 +35,21 @@ class UserController
 
             $db = $this->db();
 
-            $username = trim($_POST['username']);
-            $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+            $name = trim($_POST['name']);
+            $cpf = preg_replace('/\D/', '', $_POST['cpf']);
+            $password = !empty($_POST['password'])
+                ? password_hash($_POST['password'], PASSWORD_DEFAULT)
+                : null;
+
             $role = $_POST['role'];
 
             $stmt = $db->prepare("
-                INSERT INTO users (username, password, role)
-                VALUES (:u, :p, :r)
+                INSERT INTO users (name, cpf, password, role)
+                VALUES (:n, :c, :p, :r)
             ");
 
-            $stmt->bindValue(':u', $username);
+            $stmt->bindValue(':n', $name);
+            $stmt->bindValue(':c', $cpf);
             $stmt->bindValue(':p', $password);
             $stmt->bindValue(':r', $role);
 

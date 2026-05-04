@@ -61,7 +61,7 @@
         const senhaWrap = document.getElementById('senha-wrap');
 
         input.addEventListener('input', () => {
-            const val = input.value.trim().toUpperCase();
+            const val = input.value.trim().replace(/\D/g, '');
             senhaWrap.style.display = admins.includes(val) ? 'block' : 'none';
         });
     </script>

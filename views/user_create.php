@@ -14,11 +14,14 @@
 
         <form method="post">
 
-            <label>Usuário</label>
-            <input name="username" required>
+            <label>Nome</label>
+            <input name="name" required>
 
-            <label>Senha</label>
-            <input type="password" name="password" required>
+            <label>CPF</label>
+            <input name="cpf" required>
+
+            <label>Senha (somente admin)</label>
+            <input type="password" name="password">
 
             <label>Tipo</label>
             <select name="role">

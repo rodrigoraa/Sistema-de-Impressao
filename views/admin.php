@@ -12,7 +12,7 @@
 
         <h2>Relatório de Impressão</h2>
 
-        <p class="user">Usuário: <?= $_SESSION['user'] ?></p>
+        <p class="user">Usuário: <?= $_SESSION['name'] ?></p>
 
         <!-- 🔹 Seletor de mês -->
         <form method="get">

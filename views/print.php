@@ -12,7 +12,7 @@
 
         <h2>Impressão</h2>
 
-        <p class="user">Usuário: <?= $_SESSION['user'] ?></p>
+        <p class="user">Usuário: <?= $_SESSION['name'] ?></p>
 
         <?php if (!empty($_SESSION['flash'])): ?>
             <div class="alert <?= ($_SESSION['flash_type'] ?? '') === 'error' ? 'error' : '' ?>">
@@ -47,19 +47,12 @@
                 <option value="5">Alta</option>
             </select>
 
-            <?php
-            $isAdmin = in_array($_SESSION['user'], explode(',', $_ENV['ADMIN_USERS']));
-            ?>
-
-            <?php if ($isAdmin): ?>
+            <?php if ($_SESSION['role'] === 'admin'): ?>
                 <label>Imprimir para</label>
                 <select name="target_user">
-                    <?php
-                    $professores = require __DIR__ . '/../storage/professores.php';
-                    foreach ($professores as $p):
-                        ?>
-                        <option value="<?= $p ?>">
-                            <?= $p ?>
+                    <?php foreach ($userList as $u): ?>
+                        <option value="<?= $u ?>">
+                            <?= $u ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
