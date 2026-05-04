@@ -8,8 +8,6 @@ class PrintController
 {
     public function handle()
     {
-        session_start();
-
         if (!isset($_SESSION['user'])) {
             return;
         }
