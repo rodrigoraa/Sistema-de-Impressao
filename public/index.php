@@ -2,7 +2,6 @@
 
 session_start();
 var_dump($_SESSION);
-exit;
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
