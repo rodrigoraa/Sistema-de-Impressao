@@ -14,16 +14,12 @@ class PrintService
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         $pdfPath = $filePath;
 
-        if ($ext === 'doc') {
-            exec("libreoffice --headless --convert-to docx " . escapeshellarg($filePath) . " --outdir /tmp");
-            $docxPath = "/tmp/" . basename($filePath, '.doc') . ".docx";
-
-            exec("libreoffice --headless --convert-to pdf " . escapeshellarg($docxPath) . " --outdir /tmp");
-            $pdfPath = "/tmp/" . basename($filePath, '.doc') . ".pdf";
-        } elseif ($ext === 'docx') {
+        if ($ext === 'docx') {
             exec("libreoffice --headless --convert-to pdf " . escapeshellarg($filePath) . " --outdir /tmp");
             $pdfPath = "/tmp/" . basename($filePath, '.docx') . ".pdf";
-        } elseif (in_array($ext, ['jpg', 'jpeg', 'png'])) {
+        }
+
+        if (in_array($ext, ['jpg','jpeg','png'])) {
             $pdfPath = "/tmp/" . uniqid() . ".pdf";
             exec("convert " . escapeshellarg($filePath) . " " . escapeshellarg($pdfPath));
         }
@@ -31,12 +27,16 @@ class PrintService
         return file_exists($pdfPath) ? $pdfPath : false;
     }
 
-    public function print($pdfPath, $copies = 1, $sides = 'one-sided')
+    public function print($pdfPath, $copies, $sides, $orientation, $quality)
     {
+        $orientationFlag = $orientation === 'landscape' ? 4 : 3;
+
         $cmd = "lp -d {$this->printer} "
-            . "-n " . intval($copies) . " "
-            . "-o sides=" . escapeshellarg($sides) . " "
-            . escapeshellarg($pdfPath);
+             . "-n " . intval($copies) . " "
+             . "-o sides=" . escapeshellarg($sides) . " "
+             . "-o orientation-requested={$orientationFlag} "
+             . "-o print-quality={$quality} "
+             . escapeshellarg($pdfPath);
 
         exec($cmd, $out, $status);
 

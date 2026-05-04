@@ -1,7 +1,10 @@
 <?php
 
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 require_once __DIR__ . '/../vendor/autoload.php';
-require_once __DIR__ . '/../src/Controller/AdminController.php';
 
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
 $dotenv->load();
@@ -21,42 +24,64 @@ if ($uri === '/logout') {
     exit;
 }
 
-if ($uri === '/admin') {
-    (new AdminController())->index();
-    exit;
-}
-
 $controller = new PrintController();
 $controller->handle();
+
+session_start();
+if (!isset($_SESSION['user'])) {
+    header('Location: /login');
+    exit;
+}
 ?>
 
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Impressão</title>
+    <link rel="stylesheet" href="/css/style.css">
 </head>
+
 <body>
 
-<h2>Enviar arquivo para impressão</h2>
+    <div class="container">
 
-<form method="post" enctype="multipart/form-data">
-    
-    <input type="file" name="arquivo" required><br><br>
+        <h2>Impressão</h2>
 
-    <label>Cópias:</label>
-    <input type="number" name="copies" value="1" min="1"><br><br>
+        <form method="post" enctype="multipart/form-data">
 
-    <label>Modo:</label>
-    <select name="sides">
-        <option value="one-sided">Simples</option>
-        <option value="two-sided-long-edge">Frente e verso</option>
-    </select><br><br>
+            <label>Arquivo</label>
+            <input type="file" name="arquivo" required>
 
-    <button type="submit">Imprimir</button><br><br>
+            <label>Cópias</label>
+            <input type="number" name="copies" value="1" min="1">
 
-    <a href="/logout">Sair</a>
+            <label>Modo</label>
+            <select name="sides">
+                <option value="one-sided">Simples</option>
+                <option value="two-sided-long-edge">Frente e verso</option>
+            </select>
 
-</form>
+            <label>Orientação</label>
+            <select name="orientation">
+                <option value="portrait">Retrato</option>
+                <option value="landscape">Paisagem</option>
+            </select>
+
+            <label>Qualidade</label>
+            <select name="quality">
+                <option value="3">Normal</option>
+                <option value="5">Alta</option>
+            </select>
+
+            <button type="submit">Imprimir</button>
+
+        </form>
+
+        <a class="logout" href="/logout">Sair</a>
+
+    </div>
 
 </body>
+
 </html>
