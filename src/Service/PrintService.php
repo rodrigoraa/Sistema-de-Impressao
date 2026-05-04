@@ -4,38 +4,43 @@ class PrintService
 {
     private $printer;
 
-    public function __construct($printer)
+    public function __construct()
     {
-        $this->printer = $printer;
+        $this->printer = $_ENV['PRINTER_NAME'];
     }
 
-    public function printFile($filePath)
+    public function prepareFile($filePath)
     {
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         $pdfPath = $filePath;
 
+        // DOC → DOCX → PDF
+        if ($ext === 'doc') {
+            exec("libreoffice --headless --convert-to docx " . escapeshellarg($filePath) . " --outdir /tmp");
+            $docxPath = "/tmp/" . basename($filePath, '.doc') . ".docx";
+
+            exec("libreoffice --headless --convert-to pdf " . escapeshellarg($docxPath) . " --outdir /tmp");
+            $pdfPath = "/tmp/" . basename($filePath, '.doc') . ".pdf";
+        }
+
         // DOCX → PDF
-        if ($ext === 'docx') {
-            $outputDir = '/tmp';
-            exec("libreoffice --headless --convert-to pdf " . escapeshellarg($filePath) . " --outdir " . $outputDir);
-            $pdfPath = $outputDir . '/' . basename($filePath, '.docx') . '.pdf';
+        elseif ($ext === 'docx') {
+            exec("libreoffice --headless --convert-to pdf " . escapeshellarg($filePath) . " --outdir /tmp");
+            $pdfPath = "/tmp/" . basename($filePath, '.docx') . ".pdf";
         }
 
         // IMAGEM → PDF
-        if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
-            $pdfPath = '/tmp/' . basename($filePath) . '.pdf';
+        elseif (in_array($ext, ['jpg', 'jpeg', 'png'])) {
+            $pdfPath = "/tmp/" . uniqid() . ".pdf";
             exec("convert " . escapeshellarg($filePath) . " " . escapeshellarg($pdfPath));
         }
 
-        // Verifica se PDF existe
-        if (!file_exists($pdfPath)) {
-            return false;
-        }
+        return file_exists($pdfPath) ? $pdfPath : false;
+    }
 
-        // Imprime
-        $cmd = "lp -d {$this->printer} " . escapeshellarg($pdfPath);
-        exec($cmd, $output, $status);
-
+    public function print($pdfPath)
+    {
+        exec("lp -d {$this->printer} " . escapeshellarg($pdfPath), $out, $status);
         return $status === 0;
     }
 }

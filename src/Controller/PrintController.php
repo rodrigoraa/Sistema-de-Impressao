@@ -1,16 +1,18 @@
 <?php
 
 require_once __DIR__ . '/../Service/PrintService.php';
+require_once __DIR__ . '/../Service/PageCounter.php';
+require_once __DIR__ . '/../Service/QuotaService.php';
+
+session_start();
+
+if (!isset($_SESSION['user'])) {
+    header('Location: /login');
+    exit;
+}
 
 class PrintController
 {
-    private $config;
-
-    public function __construct($config)
-    {
-        $this->config = $config;
-    }
-
     public function handle()
     {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -23,24 +25,52 @@ class PrintController
         }
 
         $file = $_FILES['arquivo'];
-        $dest = $this->config['upload_path'] . basename($file['name']);
+        $uploadPath = $_ENV['UPLOAD_PATH'];
+
+        $filename = uniqid() . '_' . basename($file['name']);
+        $dest = rtrim($uploadPath, '/') . '/' . $filename;
 
         if (!move_uploaded_file($file['tmp_name'], $dest)) {
             echo "Erro ao salvar arquivo";
             return;
         }
 
-        $printer = new PrintService($this->config['printer_name']);
-        $success = $printer->printFile($dest);
+        $printer = new PrintService();
+        $pdf = $printer->prepareFile($dest);
 
-        $this->log($_SERVER['REMOTE_USER'] ?? 'anon', $dest, $success);
+        if (!$pdf) {
+            echo "Erro ao processar arquivo";
+            return;
+        }
 
-        echo $success ? "Enviado para impressão" : "Erro ao imprimir";
+        $user = $_SESSION['user'];
+
+        $pages = PageCounter::count($pdf);
+
+        $quota = new QuotaService();
+
+        if (!$quota->canPrint($user, $pages)) {
+            echo "Limite de páginas excedido";
+            return;
+        }
+
+        $success = $printer->print($pdf);
+
+        if ($success) {
+            $quota->register($user, $pages);
+        }
+
+        $this->log($user, $dest, $pages, $success);
+
+        echo $success ? "Enviado para impressão ({$pages} páginas)" : "Erro ao imprimir";
     }
 
-    private function log($user, $file, $status)
+    private function log($user, $file, $pages, $status)
     {
-        $line = date('Y-m-d H:i:s') . " | $user | $file | " . ($status ? "OK" : "FAIL") . "\n";
-        file_put_contents($this->config['log_path'], $line, FILE_APPEND);
+        $logPath = $_ENV['LOG_PATH'];
+
+        $line = date('Y-m-d H:i:s') . " | $user | $file | {$pages} páginas | " . ($status ? "OK" : "FAIL") . "\n";
+
+        file_put_contents($logPath, $line, FILE_APPEND);
     }
 }
