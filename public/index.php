@@ -8,7 +8,7 @@ $dotenv->load();
 require_once __DIR__ . '/../src/Controller/PrintController.php';
 require_once __DIR__ . '/../src/Controller/AuthController.php';
 
-$uri = $_SERVER['REQUEST_URI'];
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
 if ($uri === '/login') {
     (new AuthController())->login();
