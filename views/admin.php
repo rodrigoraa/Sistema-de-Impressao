@@ -9,57 +9,39 @@
 <body>
 
     <div class="container">
-        <h3>Total do mês: <?= $totalMonth ?> páginas</h3>
-        <h2>Painel de Impressão</h2>
 
-        <p class="user">Usuário:
-            <?= $_SESSION['user'] ?>
-        </p>
+        <h2>Relatório de Impressão</h2>
 
+        <p class="user">Usuário: <?= $_SESSION['user'] ?></p>
+
+        <!-- 🔹 Seletor de mês -->
+        <form method="get">
+            <label>Escolher mês</label>
+            <input type="month" name="month" value="<?= $_GET['month'] ?? date('Y-m') ?>">
+            <button type="submit">Ver</button>
+        </form>
+
+        <h3>Mês selecionado: <?= $_GET['month'] ?? date('Y-m') ?></h3>
+
+        <!-- 🔹 Resultado -->
         <table class="table">
             <tr>
-                <th>Usuário</th>
-                <th>Páginas</th>
+                <th>Professor</th>
+                <th>Total de páginas</th>
             </tr>
 
-            <?php foreach ($data as $row): ?>
+            <?php if (empty($data)): ?>
                 <tr>
-                    <td>
-                        <?= htmlspecialchars($row['user']) ?>
-                    </td>
-                    <td>
-                        <?= $row['total'] ?>
-                    </td>
+                    <td colspan="2">Nenhuma impressão neste mês</td>
                 </tr>
-            <?php endforeach; ?>
-        </table>
-
-        <h3>Últimas impressões</h3>
-
-        <table class="table">
-            <tr>
-                <th>Usuário</th>
-                <th>Páginas</th>
-                <th>Arquivo</th>
-                <th>Data</th>
-            </tr>
-
-            <?php while ($row = $history->fetchArray(SQLITE3_ASSOC)): ?>
-                <tr>
-                    <td>
-                        <?= htmlspecialchars($row['user']) ?>
-                    </td>
-                    <td>
-                        <?= $row['pages'] ?>
-                    </td>
-                    <td>
-                        <?= isset($row['file']) && $row['file'] ? basename($row['file']) : '-' ?>
-                    </td>
-                    <td>
-                        <?= $row['created_at'] ?>
-                    </td>
-                </tr>
-            <?php endwhile; ?>
+            <?php else: ?>
+                <?php foreach ($data as $row): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($row['user']) ?></td>
+                        <td><?= $row['total'] ?> páginas</td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
         </table>
 
         <div class="footer">
