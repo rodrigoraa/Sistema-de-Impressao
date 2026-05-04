@@ -66,7 +66,7 @@ class PrintController
 
         // ✔ registra apenas se imprimir
         if ($success) {
-            $quota->register($user, $pages * $copies);
+            $quota->register($user, $pages * $copies, $dest);
         }
 
         $this->log($user, $dest, $pages, $copies, $success);

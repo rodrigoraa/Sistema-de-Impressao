@@ -34,6 +34,34 @@
             <?php endforeach; ?>
         </table>
 
+        <h3>Últimas impressões</h3>
+
+        <table class="table">
+            <tr>
+                <th>Usuário</th>
+                <th>Páginas</th>
+                <th>Arquivo</th>
+                <th>Data</th>
+            </tr>
+
+            <?php while ($row = $history->fetchArray(SQLITE3_ASSOC)): ?>
+                <tr>
+                    <td>
+                        <?= htmlspecialchars($row['user']) ?>
+                    </td>
+                    <td>
+                        <?= $row['pages'] ?>
+                    </td>
+                    <td>
+                        <?= basename($row['file']) ?>
+                    </td>
+                    <td>
+                        <?= $row['created_at'] ?>
+                    </td>
+                </tr>
+            <?php endwhile; ?>
+        </table>
+
         <div class="footer">
             <a href="/">Voltar</a>
             <a href="/logout">Sair</a>

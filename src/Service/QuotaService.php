@@ -16,20 +16,19 @@ class QuotaService
     }
 
     // ✔ registra uso
-    public function register($user, $pages)
+    public function register($user, $pages, $file = '')
     {
-        $stmt = $this->db->prepare(
-            "INSERT INTO usage (user, pages) VALUES (:u, :p)"
-        );
+        $stmt = $this->db->prepare("
+        INSERT INTO usage (user, pages, file, created_at)
+        VALUES (:u, :p, :f, :d)
+    ");
 
-        $stmt->bindValue(':u', $user, SQLITE3_TEXT);
-        $stmt->bindValue(':p', $pages, SQLITE3_INTEGER);
+        $stmt->bindValue(':u', $user);
+        $stmt->bindValue(':p', $pages);
+        $stmt->bindValue(':f', $file);
+        $stmt->bindValue(':d', date('Y-m-d H:i:s'));
 
-        $result = $stmt->execute();
-
-        if (!$result) {
-            $this->log("Erro ao registrar uso para $user");
-        }
+        $stmt->execute();
     }
 
     // ✔ total de páginas por usuário

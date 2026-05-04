@@ -18,6 +18,13 @@ class AdminController
             ORDER BY total DESC
         ");
 
+        $history = $db->query("
+            SELECT user, pages, file, created_at
+            FROM usage
+            ORDER BY created_at DESC
+            LIMIT 20
+        ");
+
         $data = [];
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
