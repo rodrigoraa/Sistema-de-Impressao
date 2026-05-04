@@ -17,18 +17,28 @@ class PrintController
         }
 
         if (!isset($_FILES['arquivo'])) {
-            echo "Arquivo não enviado";
+            $this->flash("Arquivo não enviado", false);
             return;
         }
 
         $file = $_FILES['arquivo'];
+
+        // ✔ valida extensão
+        $allowed = ['pdf', 'docx', 'jpg', 'jpeg', 'png'];
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+        if (!in_array($ext, $allowed)) {
+            $this->flash("Tipo de arquivo não permitido", false);
+            return;
+        }
+
         $uploadPath = $_ENV['UPLOAD_PATH'];
 
         $filename = uniqid() . '_' . basename($file['name']);
         $dest = rtrim($uploadPath, '/') . '/' . $filename;
 
         if (!move_uploaded_file($file['tmp_name'], $dest)) {
-            echo "Erro ao salvar arquivo";
+            $this->flash("Erro ao salvar arquivo", false);
             return;
         }
 
@@ -36,39 +46,55 @@ class PrintController
         $pdf = $printer->prepareFile($dest);
 
         if (!$pdf) {
-            echo "Erro ao processar arquivo";
+            $this->flash("Erro ao processar arquivo", false);
             return;
         }
 
         $user = $_SESSION['user'];
 
-        $copies = $_POST['copies'] ?? 1;
+        $copies = intval($_POST['copies'] ?? 1);
         $sides = $_POST['sides'] ?? 'one-sided';
         $orientation = $_POST['orientation'] ?? 'portrait';
-        $quality = $_POST['quality'] ?? 3;
+        $quality = intval($_POST['quality'] ?? 3);
 
         $pages = PageCounter::count($pdf);
 
         $quota = new QuotaService();
 
-        $quota->register($user, $pages * $copies);
-
+        // ✔ imprime primeiro
         $success = $printer->print($pdf, $copies, $sides, $orientation, $quality);
 
+        // ✔ registra apenas se imprimir
         if ($success) {
             $quota->register($user, $pages * $copies);
         }
 
         $this->log($user, $dest, $pages, $copies, $success);
 
-        echo $success ? "Enviado com sucesso" : "Erro ao imprimir";
+        $this->flash(
+            $success
+            ? "Impressão enviada ({$copies} cópias, {$pages} páginas)"
+            : "Erro ao imprimir",
+            $success
+        );
+    }
+
+    private function flash($msg, $success = true)
+    {
+        $_SESSION['flash'] = $msg;
+        $_SESSION['flash_type'] = $success ? 'success' : 'error';
+
+        header("Location: /");
+        exit;
     }
 
     private function log($user, $file, $pages, $copies, $status)
     {
         $logPath = $_ENV['LOG_PATH'];
 
-        $line = date('Y-m-d H:i:s') . " | $user | {$copies}x{$pages} páginas | " . ($status ? "OK" : "FAIL") . "\n";
+        $line = date('Y-m-d H:i:s')
+            . " | USER: $user | FILE: $file | COPIES: $copies | PAGES: $pages | STATUS: "
+            . ($status ? "OK" : "FAIL") . "\n";
 
         file_put_contents($logPath, $line, FILE_APPEND);
     }

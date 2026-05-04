@@ -4,10 +4,6 @@ class AdminController
 {
     public function index()
     {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
-
         if (!isset($_SESSION['user'])) {
             header('Location: /login');
             exit;
@@ -19,19 +15,15 @@ class AdminController
             SELECT user, SUM(pages) as total 
             FROM usage 
             GROUP BY user
+            ORDER BY total DESC
         ");
 
-        echo "<h2>Uso de Impressão</h2>";
-        echo "<table border='1'>";
-        echo "<tr><th>Usuário</th><th>Páginas</th></tr>";
+        $data = [];
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-            echo "<tr>";
-            echo "<td>{$row['user']}</td>";
-            echo "<td>{$row['total']}</td>";
-            echo "</tr>";
+            $data[] = $row;
         }
 
-        echo "</table>";
+        require __DIR__ . '/../../views/admin.php';
     }
 }

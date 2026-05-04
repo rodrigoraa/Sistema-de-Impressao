@@ -4,11 +4,8 @@ class AuthController
 {
     public function login()
     {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
-
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
             $users = require __DIR__ . '/../../storage/users.php';
 
             $user = $_POST['user'] ?? '';
@@ -20,21 +17,20 @@ class AuthController
                 exit;
             }
 
-            echo "Login inválido";
+            $_SESSION['flash'] = "Login inválido";
+            $_SESSION['flash_type'] = "error";
+
+            header('Location: /login');
+            exit;
         }
 
-        echo '
-        <form method="post">
-            <input name="user" placeholder="Usuário" required>
-            <input type="password" name="pass" placeholder="Senha" required>
-            <button>Entrar</button>
-        </form>';
+        require __DIR__ . '/../../views/login.php';
     }
 
     public function logout()
     {
-        session_start();
         session_destroy();
         header('Location: /login');
+        exit;
     }
 }

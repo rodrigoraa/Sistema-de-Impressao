@@ -11,47 +11,55 @@ class PrintService
 
     public function prepareFile($filePath)
     {
+        if (!file_exists($filePath)) {
+            $this->log("Arquivo não existe: $filePath");
+            return false;
+        }
+
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
 
-        // Se já for PDF
+        // ✔ PDF direto
         if ($ext === 'pdf') {
             return $filePath;
         }
 
-        // Nome único garantido
-        $outputPdf = "/tmp/" . uniqid() . ".pdf";
+        // ✔ nome único seguro
+        $outputPdf = "/tmp/" . uniqid('print_', true) . ".pdf";
 
-        // DOCX → PDF
+        // ✔ DOCX → PDF (robusto)
         if ($ext === 'docx') {
 
-            exec("libreoffice --headless --convert-to pdf "
+            $cmd = "libreoffice --headless --convert-to pdf "
                 . escapeshellarg($filePath)
-                . " --outdir /tmp 2>&1", $out, $status);
+                . " --outdir /tmp 2>&1";
 
-            // pegar último PDF gerado
-            $files = glob("/tmp/*.pdf");
+            exec($cmd, $out, $status);
 
-            if (!$files) {
-                file_put_contents('/tmp/print_debug.log', "Erro DOCX:\n" . implode("\n", $out));
+            // tenta localizar arquivo gerado com base no nome
+            $expected = "/tmp/" . pathinfo($filePath, PATHINFO_FILENAME) . ".pdf";
+
+            if ($status !== 0 || !file_exists($expected)) {
+                $this->log("Erro DOCX\nCMD: $cmd\n" . implode("\n", $out));
                 return false;
             }
 
-            return end($files);
+            // renomeia para garantir isolamento
+            rename($expected, $outputPdf);
+
+            return $outputPdf;
         }
 
-        // IMAGEM → PDF
+        // ✔ IMAGEM → PDF
         if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
 
-            exec(
-                "convert "
+            $cmd = "convert "
                 . escapeshellarg($filePath) . " "
-                . escapeshellarg($outputPdf) . " 2>&1",
-                $out,
-                $status
-            );
+                . escapeshellarg($outputPdf) . " 2>&1";
 
-            if (!file_exists($outputPdf)) {
-                file_put_contents('/tmp/print_debug.log', "Erro IMG:\n" . implode("\n", $out));
+            exec($cmd, $out, $status);
+
+            if ($status !== 0 || !file_exists($outputPdf)) {
+                $this->log("Erro IMG\nCMD: $cmd\n" . implode("\n", $out));
                 return false;
             }
 
@@ -63,9 +71,15 @@ class PrintService
 
     public function print($pdfPath, $copies, $sides, $orientation, $quality)
     {
+        if (!file_exists($pdfPath)) {
+            $this->log("PDF não encontrado: $pdfPath");
+            return false;
+        }
+
         $orientationFlag = ($orientation === 'landscape') ? 4 : 3;
 
-        $cmd = "lp -d {$this->printer} "
+        // ✔ caminho absoluto evita erro no Apache
+        $cmd = "/usr/bin/lp -d {$this->printer} "
             . "-n " . intval($copies) . " "
             . "-o sides={$sides} "
             . "-o orientation-requested={$orientationFlag} "
@@ -74,13 +88,19 @@ class PrintService
 
         exec($cmd . " 2>&1", $out, $status);
 
-        // DEBUG (temporário)
-        file_put_contents(
-            '/tmp/print_debug.log',
-            date('Y-m-d H:i:s') . "\nCMD: $cmd\nSTATUS: $status\nOUTPUT:\n" . implode("\n", $out) . "\n\n",
-            FILE_APPEND
+        $this->log(
+            "CMD: $cmd\nSTATUS: $status\nOUTPUT:\n" . implode("\n", $out)
         );
 
         return $status === 0;
+    }
+
+    private function log($msg)
+    {
+        file_put_contents(
+            '/tmp/print_debug.log',
+            date('Y-m-d H:i:s') . "\n" . $msg . "\n\n",
+            FILE_APPEND
+        );
     }
 }

@@ -1,46 +1,113 @@
 body {
-    font-family: Arial;
-    background: #f5f5f5;
+    font-family: system-ui, -apple-system, Arial, sans-serif;
+    background: #eef2f7;
     padding: 20px;
+    margin: 0;
 }
 
+/* Container principal */
 .container {
-    background: white;
-    padding: 20px;
-    border-radius: 8px;
-    max-width: 500px;
-    margin: auto;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    background: #ffffff;
+    padding: 25px;
+    border-radius: 10px;
+    max-width: 520px;
+    margin: 40px auto;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
 }
 
+/* Título */
 h2 {
-    margin-top: 0;
+    margin: 0 0 20px 0;
+    text-align: center;
+    color: #1f2937;
 }
 
+/* Labels */
 label {
     display: block;
-    margin-top: 10px;
+    margin-top: 12px;
+    font-weight: 500;
+    color: #374151;
 }
 
-input, select, button {
+/* Inputs */
+input,
+select {
     width: 100%;
-    padding: 8px;
+    padding: 10px;
     margin-top: 5px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    transition: border 0.2s;
 }
 
+/* Focus */
+input:focus,
+select:focus {
+    outline: none;
+    border-color: #2563eb;
+}
+
+/* Botão */
 button {
-    background: #007bff;
+    width: 100%;
+    padding: 12px;
+    margin-top: 20px;
+    background: #2563eb;
     color: white;
     border: none;
+    border-radius: 6px;
+    font-weight: bold;
     cursor: pointer;
+    transition: background 0.2s;
 }
 
 button:hover {
-    background: #0056b3;
+    background: #1d4ed8;
 }
 
+/* Link logout */
 .logout {
     display: block;
     margin-top: 15px;
     text-align: right;
+    font-size: 14px;
+}
+
+/* Alertas */
+.alert {
+    background: #d1fae5;
+    color: #065f46;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 14px;
+}
+
+/* Erro */
+.error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.table {
+    width: 100%;
+    margin-top: 20px;
+    border-collapse: collapse;
+}
+
+.table th {
+    background: #2563eb;
+    color: white;
+    padding: 10px;
+    text-align: left;
+}
+
+.table td {
+    padding: 10px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.table tr:hover {
+    background: #f3f4f6;
 }
