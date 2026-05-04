@@ -8,10 +8,12 @@ class PrintController
 {
     public function handle()
     {
+        // ✔ precisa estar logado
         if (!isset($_SESSION['user'])) {
             return;
         }
 
+        // ✔ só processa POST
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             return;
         }
@@ -42,6 +44,7 @@ class PrintController
             return;
         }
 
+        // ✔ prepara arquivo
         $printer = new PrintService();
         $pdf = $printer->prepareFile($dest);
 
@@ -50,27 +53,56 @@ class PrintController
             return;
         }
 
-        $user = $_SESSION['user'];
+        // ✔ conexão com banco
+        $db = new SQLite3(__DIR__ . '/../../storage/usage.db');
 
+        // ✔ lista de usuários do sistema
+        $result = $db->query("SELECT username, role FROM users");
+
+        $userList = [];
+        $userRoles = [];
+
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $userList[] = $row['username'];
+            $userRoles[$row['username']] = $row['role'];
+        }
+
+        // ✔ verifica se é admin
+        $isAdmin = $_SESSION['role'] === 'admin';
+
+        // ✔ define para quem vai a impressão
+        if (
+            $isAdmin &&
+            !empty($_POST['target_user']) &&
+            in_array($_POST['target_user'], $userList)
+        ) {
+            $user = $_POST['target_user'];
+        } else {
+            $user = $_SESSION['user'];
+        }
+
+        // ✔ opções
         $copies = intval($_POST['copies'] ?? 1);
         $sides = $_POST['sides'] ?? 'one-sided';
         $orientation = $_POST['orientation'] ?? 'portrait';
         $quality = intval($_POST['quality'] ?? 3);
 
+        // ✔ conta páginas
         $pages = PageCounter::count($pdf);
 
-        $quota = new QuotaService();
-
-        // ✔ imprime primeiro
+        // ✔ imprime
         $success = $printer->print($pdf, $copies, $sides, $orientation, $quality);
 
-        // ✔ registra apenas se imprimir
+        // ✔ registra uso
         if ($success) {
+            $quota = new QuotaService();
             $quota->register($user, $pages * $copies, $dest);
         }
 
+        // ✔ log
         $this->log($user, $dest, $pages, $copies, $success);
 
+        // ✔ feedback
         $this->flash(
             $success
             ? "Impressão enviada ({$copies} cópias, {$pages} páginas)"

@@ -47,6 +47,7 @@
         <div class="footer">
             <a href="/">Voltar</a>
             <a href="/logout">Sair</a>
+            <a href="/admin/users">Gerenciar usuários</a>
         </div>
 
     </div>

@@ -47,6 +47,24 @@
                 <option value="5">Alta</option>
             </select>
 
+            <?php
+            $isAdmin = in_array($_SESSION['user'], explode(',', $_ENV['ADMIN_USERS']));
+            ?>
+
+            <?php if ($isAdmin): ?>
+                <label>Imprimir para</label>
+                <select name="target_user">
+                    <?php
+                    $professores = require __DIR__ . '/../storage/professores.php';
+                    foreach ($professores as $p):
+                        ?>
+                        <option value="<?= $p ?>">
+                            <?= $p ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            <?php endif; ?>
+
             <button type="submit">Imprimir</button>
 
         </form>

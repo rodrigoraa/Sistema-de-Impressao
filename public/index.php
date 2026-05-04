@@ -32,6 +32,16 @@ if ($uri === '/admin') {
     exit;
 }
 
+if ($uri === '/admin/users') {
+    (new UserController())->index();
+    exit;
+}
+
+if ($uri === '/admin/users/create') {
+    (new UserController())->create();
+    exit;
+}
+
 // PROTEÇÃO
 if (!isset($_SESSION['user'])) {
     header('Location: /login');

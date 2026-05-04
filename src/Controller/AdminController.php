@@ -1,5 +1,11 @@
 <?php
 
+require_once __DIR__ . '/../Service/AuthService.php';
+
+if (!AuthService::isAdmin()) {
+    http_response_code(403);
+    exit('Acesso negado');
+}
 class AdminController
 {
     public function index()

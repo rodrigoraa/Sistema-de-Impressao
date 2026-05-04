@@ -6,20 +6,23 @@ class AuthController
     {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-            $users = require __DIR__ . '/../../storage/users.php';
+            $db = new SQLite3(__DIR__ . '/../../storage/usage.db');
 
-            $user = $_POST['user'] ?? '';
-            $pass = $_POST['pass'] ?? '';
+            $stmt = $db->prepare("SELECT * FROM users WHERE username = :u");
+            $stmt->bindValue(':u', $_POST['user']);
+            $result = $stmt->execute();
 
-            if (isset($users[$user]) && password_verify($pass, $users[$user])) {
-                $_SESSION['user'] = $user;
+            $user = $result->fetchArray(SQLITE3_ASSOC);
+
+            if ($user && password_verify($_POST['pass'], $user['password'])) {
+                $_SESSION['user'] = $user['username'];
+                $_SESSION['role'] = $user['role'];
+
                 header('Location: /');
                 exit;
             }
 
             $_SESSION['flash'] = "Login inválido";
-            $_SESSION['flash_type'] = "error";
-
             header('Location: /login');
             exit;
         }
