@@ -53,6 +53,9 @@ class AuthController
             $admins[] = $row['cpf'];
         }
 
+        var_dump($admins);
+        exit;
+
         require __DIR__ . '/../../views/login.php';
     }
 
