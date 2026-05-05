@@ -3,74 +3,67 @@
 require_once __DIR__ . '/../Service/PrintService.php';
 require_once __DIR__ . '/../Service/PageCounter.php';
 require_once __DIR__ . '/../Service/QuotaService.php';
+require_once __DIR__ . '/../Service/Database.php';
 
 class PrintController
 {
     public function handle()
     {
-        // ✔ precisa estar logado
+        $userList = [];
+
         if (!isset($_SESSION['user'])) {
-            return;
+            return ['userList' => $userList];
         }
 
-        // ✔ só processa POST
+        $isAdmin = ($_SESSION['role'] ?? '') === 'admin';
+        if ($isAdmin) {
+            $db = Database::connect();
+            $result = $db->query("SELECT cpf FROM users ORDER BY cpf");
+
+            while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+                $userList[] = $row['cpf'];
+            }
+        }
+
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            return;
+            return ['userList' => $userList];
         }
 
         if (!isset($_FILES['arquivo'])) {
             $this->flash("Arquivo não enviado", false);
-            return;
         }
 
         $file = $_FILES['arquivo'];
 
-        // ✔ valida extensão
         $allowed = ['pdf', 'docx', 'jpg', 'jpeg', 'png'];
         $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
 
         if (!in_array($ext, $allowed)) {
             $this->flash("Tipo de arquivo não permitido", false);
-            return;
         }
 
-        $uploadPath = $_ENV['UPLOAD_PATH'];
+        $uploadPath = $_ENV['UPLOAD_PATH'] ?? '';
+
+        if (!$uploadPath) {
+            $this->flash("UPLOAD_PATH não configurado", false);
+        }
 
         $filename = uniqid() . '_' . basename($file['name']);
         $dest = rtrim($uploadPath, '/') . '/' . $filename;
 
         if (!move_uploaded_file($file['tmp_name'], $dest)) {
             $this->flash("Erro ao salvar arquivo", false);
-            return;
         }
 
-        // ✔ prepara arquivo
         $printer = new PrintService();
         $pdf = $printer->prepareFile($dest);
 
         if (!$pdf) {
             $this->flash("Erro ao processar arquivo", false);
-            return;
         }
 
-        // ✔ conexão com banco
-        $db = new SQLite3(__DIR__ . '/../../storage/usage.db');
+        $db = Database::connect();
 
-        // ✔ lista de usuários do sistema
-        $result = $db->query("SELECT cpf, role FROM users");
-
-        $userList = [];
-        $userRoles = [];
-
-        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-            $userList[] = $row['cpf'];
-            $userRoles[$row['cpf']] = $row['role'];
-        }
-
-        // ✔ verifica se é admin
-        $isAdmin = $_SESSION['role'] === 'admin';
-
-        // ✔ define para quem vai a impressão
         if (
             $isAdmin &&
             !empty($_POST['target_user']) &&
@@ -81,28 +74,22 @@ class PrintController
             $user = $_SESSION['user'];
         }
 
-        // ✔ opções
         $copies = intval($_POST['copies'] ?? 1);
         $sides = $_POST['sides'] ?? 'one-sided';
         $orientation = $_POST['orientation'] ?? 'portrait';
         $quality = intval($_POST['quality'] ?? 3);
 
-        // ✔ conta páginas
         $pages = PageCounter::count($pdf);
 
-        // ✔ imprime
         $success = $printer->print($pdf, $copies, $sides, $orientation, $quality);
 
-        // ✔ registra uso
         if ($success) {
             $quota = new QuotaService();
             $quota->register($user, $pages * $copies, $dest);
         }
 
-        // ✔ log
         $this->log($user, $dest, $pages, $copies, $success);
 
-        // ✔ feedback
         $this->flash(
             $success
             ? "Impressão enviada ({$copies} cópias, {$pages} páginas)"
@@ -122,12 +109,17 @@ class PrintController
 
     private function log($user, $file, $pages, $copies, $status)
     {
-        $logPath = $_ENV['LOG_PATH'];
+        $logPath = $_ENV['LOG_PATH'] ?? '';
+
+        if (!$logPath) {
+            return;
+        }
 
         $line = date('Y-m-d H:i:s')
             . " | USER: $user | FILE: $file | COPIES: $copies | PAGES: $pages | STATUS: "
             . ($status ? "OK" : "FAIL") . "\n";
 
-        file_put_contents($logPath, $line, FILE_APPEND);
+        @file_put_contents($logPath, $line, FILE_APPEND);
     }
 }
+

@@ -1,10 +1,12 @@
 <?php
 
+require_once __DIR__ . '/../Service/Database.php';
+
 class AuthController
 {
     private function db()
     {
-        return new SQLite3(__DIR__ . '/../../storage/usage.db');
+        return Database::connect();
     }
 
     public function login()
@@ -44,17 +46,14 @@ class AuthController
             exit;
         }
 
-        // lista admins
+        // lista admins (para exibir campo de senha no front)
         $db = $this->db();
         $res = $db->query("SELECT cpf FROM users WHERE role = 'admin'");
 
-        $admins = [];
+        $admin_matriculas = [];
         while ($row = $res->fetchArray(SQLITE3_ASSOC)) {
-            $admins[] = $row['cpf'];
+            $admin_matriculas[] = $row['cpf'];
         }
-
-        var_dump($admins);
-        exit;
 
         require __DIR__ . '/../../views/login.php';
     }
@@ -66,3 +65,4 @@ class AuthController
         exit;
     }
 }
+

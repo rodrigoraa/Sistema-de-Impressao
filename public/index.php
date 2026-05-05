@@ -4,19 +4,119 @@ session_start();
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-require_once __DIR__ . '/../vendor/autoload.php';
+function loadEnvFile($path)
+{
+    if (!is_file($path)) {
+        return;
+    }
 
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
-$dotenv->load();
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if ($lines === false) {
+        return;
+    }
 
-require_once __DIR__ . '/../src/Controller/PrintController.php';
-require_once __DIR__ . '/../src/Controller/AuthController.php';
-require_once __DIR__ . '/../src/Controller/AdminController.php';
-require_once __DIR__ . '/../src/Controller/UserController.php';
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#')) {
+            continue;
+        }
 
-$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+        $parts = explode('=', $line, 2);
+        if (count($parts) !== 2) {
+            continue;
+        }
+
+        $key = trim($parts[0]);
+        $value = trim($parts[1]);
+
+        if ($key === '' || array_key_exists($key, $_ENV)) {
+            continue;
+        }
+
+        $len = strlen($value);
+        if ($len >= 2) {
+            $first = $value[0];
+            $last = $value[$len - 1];
+            if (($first === '"' && $last === '"') || ($first === "'" && $last === "'")) {
+                $value = substr($value, 1, -1);
+            }
+        }
+
+        $_ENV[$key] = $value;
+    }
+}
+
+$projectRoot = dirname(__DIR__);
+
+// composer/vendor é opcional (muitos hosts não sobem o vendor no deploy)
+$autoload = $projectRoot . '/vendor/autoload.php';
+if (is_file($autoload)) {
+    require_once $autoload;
+}
+
+loadEnvFile($projectRoot . '/.env');
+
+// defaults via config/config.php
+$config = is_file($projectRoot . '/config/config.php')
+    ? require $projectRoot . '/config/config.php'
+    : [];
+
+$_ENV['PRINTER_NAME'] = $_ENV['PRINTER_NAME'] ?? ($config['printer_name'] ?? '');
+$_ENV['UPLOAD_PATH'] = $_ENV['UPLOAD_PATH'] ?? ($config['upload_path'] ?? ($projectRoot . '/storage/uploads/'));
+$_ENV['LOG_PATH'] = $_ENV['LOG_PATH'] ?? ($config['log_path'] ?? ($projectRoot . '/storage/logs/app.log'));
+
+// garante diretórios
+$uploadDir = rtrim((string) ($_ENV['UPLOAD_PATH'] ?? ''), '/');
+if ($uploadDir && !is_dir($uploadDir)) {
+    @mkdir($uploadDir, 0775, true);
+}
+
+$logPath = (string) ($_ENV['LOG_PATH'] ?? '');
+$logDir = $logPath ? dirname($logPath) : '';
+if ($logDir && !is_dir($logDir)) {
+    @mkdir($logDir, 0775, true);
+}
+
+require_once $projectRoot . '/src/Service/Database.php';
+require_once $projectRoot . '/src/Controller/PrintController.php';
+require_once $projectRoot . '/src/Controller/AuthController.php';
+require_once $projectRoot . '/src/Controller/AdminController.php';
+require_once $projectRoot . '/src/Controller/UserController.php';
+require_once $projectRoot . '/src/Controller/SetupController.php';
+
+$uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+
+// normaliza quando a app roda em subpasta (ex: /public)
+$scriptName = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
+$basePath = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
+if ($basePath === '/') {
+    $basePath = '';
+}
+
+if ($basePath !== '') {
+    if ($uri === $basePath) {
+        $uri = '/';
+    } elseif (str_starts_with($uri, $basePath . '/')) {
+        $uri = substr($uri, strlen($basePath));
+        if ($uri === '') {
+            $uri = '/';
+        }
+    }
+}
+
+// primeira execução: cria admin inicial
+$db = Database::connect();
+if (!Database::hasAnyAdmin($db) && $uri !== '/setup') {
+    header('Location: /setup');
+    exit;
+}
 
 // ROTAS
+if ($uri === '/setup') {
+    (new SetupController())->index();
+    exit;
+}
+
 if ($uri === '/login') {
     (new AuthController())->login();
     exit;
@@ -50,7 +150,9 @@ if (!isset($_SESSION['user'])) {
 
 // PROCESSA
 $controller = new PrintController();
-$controller->handle();
+$viewData = $controller->handle();
+$userList = is_array($viewData) ? ($viewData['userList'] ?? []) : [];
 
 // VIEW
-require __DIR__ . '/../views/print.php';
+require $projectRoot . '/views/print.php';
+

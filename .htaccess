@@ -1,0 +1,9 @@
+RewriteEngine On
+
+# Se o servidor estiver apontando para a raiz do projeto (e não para /public),
+# redireciona tudo para /public mantendo o path.
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ public/$1 [L]
+

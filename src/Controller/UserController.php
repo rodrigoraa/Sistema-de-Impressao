@@ -1,15 +1,19 @@
 <?php
 
+require_once __DIR__ . '/../Service/AuthService.php';
+require_once __DIR__ . '/../Service/Database.php';
+
 class UserController
 {
     private function db()
     {
-        return new SQLite3(__DIR__ . '/../../storage/usage.db');
+        return Database::connect();
     }
 
     public function index()
     {
-        if ($_SESSION['role'] !== 'admin') {
+        if (!AuthService::isAdmin()) {
+            http_response_code(403);
             exit('Acesso negado');
         }
 
@@ -27,7 +31,8 @@ class UserController
 
     public function create()
     {
-        if ($_SESSION['role'] !== 'admin') {
+        if (!AuthService::isAdmin()) {
+            http_response_code(403);
             exit('Acesso negado');
         }
 
@@ -35,13 +40,26 @@ class UserController
 
             $db = $this->db();
 
-            $name = trim($_POST['name']);
-            $cpf = preg_replace('/\D/', '', $_POST['cpf']);
-            $password = !empty($_POST['password'])
-                ? password_hash($_POST['password'], PASSWORD_DEFAULT)
-                : null;
+            $name = trim($_POST['name'] ?? '');
+            $cpf = preg_replace('/\\D/', '', $_POST['cpf'] ?? '');
+            $role = $_POST['role'] ?? 'user';
 
-            $role = $_POST['role'];
+            if (!$name || !$cpf) {
+                exit('Nome/CPF inválidos');
+            }
+
+            if (!in_array($role, ['user', 'admin'])) {
+                exit('Role inválida');
+            }
+
+            $password = null;
+            if ($role === 'admin') {
+                $plainPassword = (string) ($_POST['password'] ?? '');
+                if ($plainPassword === '') {
+                    exit('Senha é obrigatória para admin');
+                }
+                $password = password_hash($plainPassword, PASSWORD_DEFAULT);
+            }
 
             $stmt = $db->prepare("
                 INSERT INTO users (name, cpf, password, role)
@@ -53,7 +71,10 @@ class UserController
             $stmt->bindValue(':p', $password);
             $stmt->bindValue(':r', $role);
 
-            $stmt->execute();
+            $res = $stmt->execute();
+            if (!$res) {
+                exit('Erro ao salvar usuário: ' . htmlspecialchars($db->lastErrorMsg()));
+            }
 
             header('Location: /admin/users');
             exit;
@@ -62,3 +83,4 @@ class UserController
         require __DIR__ . '/../../views/user_create.php';
     }
 }
+

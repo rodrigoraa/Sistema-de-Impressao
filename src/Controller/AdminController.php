@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../Service/AuthService.php';
+require_once __DIR__ . '/../Service/Database.php';
 
 class AdminController
 {
@@ -12,13 +13,13 @@ class AdminController
             exit;
         }
 
-        // ✔ valida admin (AGORA NO LUGAR CERTO)
+        // ✔ valida admin
         if (!AuthService::isAdmin()) {
             http_response_code(403);
             exit('Acesso negado');
         }
 
-        $db = new SQLite3(__DIR__ . '/../../storage/usage.db');
+        $db = Database::connect();
 
         $month = $_GET['month'] ?? date('Y-m');
 
@@ -41,3 +42,4 @@ class AdminController
         require __DIR__ . '/../../views/admin.php';
     }
 }
+

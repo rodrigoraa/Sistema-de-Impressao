@@ -1,27 +1,23 @@
 <?php
 
+require_once __DIR__ . '/Database.php';
+
 class QuotaService
 {
     private $db;
 
     public function __construct()
     {
-        $dbPath = __DIR__ . '/../../storage/usage.db';
-
-        if (!file_exists($dbPath)) {
-            throw new Exception("Banco não encontrado: $dbPath");
-        }
-
-        $this->db = new SQLite3($dbPath);
+        $this->db = Database::connect();
     }
 
     // ✔ registra uso
     public function register($user, $pages, $file = '')
     {
         $stmt = $this->db->prepare("
-        INSERT INTO usage (user, pages, file, created_at)
-        VALUES (:u, :p, :f, :d)
-    ");
+            INSERT INTO usage (user, pages, file, created_at)
+            VALUES (:u, :p, :f, :d)
+        ");
 
         $stmt->bindValue(':u', $user);
         $stmt->bindValue(':p', $pages);
@@ -52,7 +48,7 @@ class QuotaService
         return (int) ($row['total'] ?? 0);
     }
 
-    // ✔ total geral (novo)
+    // ✔ total geral
     public function getTotal()
     {
         $res = $this->db->query("SELECT SUM(pages) as total FROM usage");
@@ -66,7 +62,7 @@ class QuotaService
         return (int) ($row['total'] ?? 0);
     }
 
-    // ✔ ranking (novo)
+    // ✔ ranking
     public function getRanking()
     {
         $res = $this->db->query("
@@ -87,10 +83,11 @@ class QuotaService
 
     private function log($msg)
     {
-        file_put_contents(
+        @file_put_contents(
             '/tmp/quota.log',
             date('Y-m-d H:i:s') . " | $msg\n",
             FILE_APPEND
         );
     }
 }
+
