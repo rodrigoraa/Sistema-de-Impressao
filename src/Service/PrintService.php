@@ -72,16 +72,19 @@ class PrintService
         $cmd = escapeshellarg($lp);
         $cmd .= ' -d ' . escapeshellarg($this->printerName);
         $cmd .= ' -n ' . max(1, intval($copies));
-        $cmd .= ' -o orientation-requested=' . ($orientation === 'landscape' ? 4 : 3);
-        $cmd .= ' -o print-quality=' . intval($quality);
-        $cmd .= ' -o sides=' . $this->cupsSides($sides);
 
-        if ($numberUp > 1) {
-            $cmd .= ' -o number-up=' . intval($numberUp);
-            $cmd .= ' -o number-up-layout=lrtb';
-        }
+        if (in_array($sourceExt, ['jpg', 'jpeg', 'png'], true)) {
+            $this->log('CUPS imagem: usando envio simples equivalente ao lp manual');
+        } else {
+            $cmd .= ' -o orientation-requested=' . ($orientation === 'landscape' ? 4 : 3);
+            $cmd .= ' -o print-quality=' . intval($quality);
+            $cmd .= ' -o sides=' . $this->cupsSides($sides);
 
-        if (!in_array($sourceExt, ['jpg', 'jpeg', 'png'], true)) {
+            if ($numberUp > 1) {
+                $cmd .= ' -o number-up=' . intval($numberUp);
+                $cmd .= ' -o number-up-layout=lrtb';
+            }
+
             foreach ($this->cupsExtraOptions($extraOptions) as $key => $val) {
                 $cmd .= ' -o ' . escapeshellarg($key . '=' . $val);
             }
