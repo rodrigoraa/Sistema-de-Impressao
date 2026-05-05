@@ -82,5 +82,83 @@ class UserController
 
         require __DIR__ . '/../../views/user_create.php';
     }
+
+    public function edit()
+    {
+        if (!AuthService::isAdmin()) {
+            http_response_code(403);
+            exit('Acesso negado');
+        }
+
+        $id = $_GET['id'] ?? null;
+
+        $db = $this->db();
+
+        $stmt = $db->prepare("SELECT * FROM users WHERE id = :id");
+        $stmt->bindValue(':id', $id);
+
+        $user = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+
+        if (!$user) {
+            exit('Usuário não encontrado');
+        }
+
+        require __DIR__ . '/../../views/user_edit.php';
+    }
+
+    public function update()
+    {
+        if (!AuthService::isAdmin()) {
+            http_response_code(403);
+            exit('Acesso negado');
+        }
+
+        $db = $this->db();
+
+        $id = $_POST['id'];
+        $name = trim($_POST['name']);
+        $cpf = preg_replace('/\D/', '', $_POST['cpf']);
+        $role = $_POST['role'];
+
+        if (!$name || !$cpf) {
+            exit('Dados inválidos');
+        }
+
+        if (!in_array($role, ['user', 'admin'])) {
+            exit('Role inválida');
+        }
+
+        // senha opcional
+        if (!empty($_POST['password'])) {
+
+            $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+
+            $stmt = $db->prepare("
+            UPDATE users 
+            SET name = :n, cpf = :c, password = :p, role = :r
+            WHERE id = :id
+        ");
+
+            $stmt->bindValue(':p', $password);
+
+        } else {
+
+            $stmt = $db->prepare("
+            UPDATE users 
+            SET name = :n, cpf = :c, role = :r
+            WHERE id = :id
+        ");
+        }
+
+        $stmt->bindValue(':id', $id);
+        $stmt->bindValue(':n', $name);
+        $stmt->bindValue(':c', $cpf);
+        $stmt->bindValue(':r', $role);
+
+        $stmt->execute();
+
+        header('Location: /admin/users');
+        exit;
+    }
 }
 

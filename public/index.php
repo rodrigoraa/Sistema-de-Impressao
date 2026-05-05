@@ -142,6 +142,16 @@ if ($uri === '/admin/users/create') {
     exit;
 }
 
+if ($uri === '/admin/users/edit') {
+    (new UserController())->edit();
+    exit;
+}
+
+if ($uri === '/admin/users/update') {
+    (new UserController())->update();
+    exit;
+}
+
 // PROTEÇÃO
 if (!isset($_SESSION['user'])) {
     header('Location: /login');

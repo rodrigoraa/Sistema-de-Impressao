@@ -19,6 +19,7 @@
                 <th>Nome</th>
                 <th>CPF</th>
                 <th>Role</th>
+                <th>Ações</th>
             </tr>
 
             <?php foreach ($users as $u): ?>
@@ -26,6 +27,9 @@
                     <td><?= htmlspecialchars($u['name']) ?></td>
                     <td><?= htmlspecialchars($u['cpf']) ?></td>
                     <td><?= $u['role'] ?></td>
+                    <td>
+                        <a href="/admin/users/edit?id=<?= $u['id'] ?>">Editar</a>
+                    </td>
                 </tr>
             <?php endforeach; ?>
         </table>
