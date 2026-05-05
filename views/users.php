@@ -1,44 +1,139 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 
 <head>
+    <meta charset="UTF-8">
     <title>Usuários</title>
-    <link rel="stylesheet" href="/css/style.css">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/users.css">
 </head>
 
 <body>
 
-    <div class="container">
+    <div class="app-shell">
 
-        <h2>Usuários</h2>
+        <!-- HEADER -->
+        <header class="app-header">
+            <div class="container d-flex justify-content-between align-items-center">
 
-        <a href="/admin/users/create">Novo usuário</a>
+                <div class="d-flex align-items-center gap-2">
+                    <img src="/image/logo_escola.png" class="logo">
+                    <strong>Gestão de Usuários</strong>
+                </div>
 
-        <table class="table">
-            <tr>
-                <th>Nome</th>
-                <th>CPF</th>
-                <th>Role</th>
-                <th>Ações</th>
-            </tr>
+                <div class="d-flex align-items-center gap-3">
+                    <span class="user">
+                        <i class="bi bi-person-circle"></i>
+                        <?= $_SESSION['name'] ?>
+                    </span>
 
-            <?php foreach ($users as $u): ?>
-                <tr>
-                    <td><?= htmlspecialchars($u['name']) ?></td>
-                    <td><?= htmlspecialchars($u['cpf']) ?></td>
-                    <td><?= $u['role'] ?></td>
-                    <td>
-                        <a href="/admin/users/edit?id=<?= $u['id'] ?>">Editar</a>
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-        </table>
+                    <a href="/logout" class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-box-arrow-right"></i> Sair
+                    </a>
+                </div>
 
-        <div class="footer">
-            <a href="/admin">Voltar</a>
-        </div>
+            </div>
+        </header>
+
+        <!-- MAIN -->
+        <main class="container py-4">
+
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4><i class="bi bi-people"></i> Usuários</h4>
+
+                <a href="/admin/users/create" class="btn btn-primary btn-sm">
+                    <i class="bi bi-person-plus"></i> Novo usuário
+                </a>
+            </div>
+
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+
+                    <div class="table-responsive">
+
+                        <table class="table table-hover align-middle">
+
+                            <thead>
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>CPF</th>
+                                    <th>Tipo</th>
+                                    <th class="text-end">Ações</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+
+                                <?php if (empty($users)): ?>
+                                    <tr>
+                                        <td colspan="4" class="text-center text-muted">
+                                            Nenhum usuário cadastrado
+                                        </td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php foreach ($users as $u): ?>
+                                        <tr>
+                                            <td><?= htmlspecialchars($u['name']) ?></td>
+
+                                            <td><?= htmlspecialchars($u['cpf']) ?></td>
+
+                                            <td>
+                                                <?php if ($u['role'] === 'admin'): ?>
+                                                    <span class="badge bg-danger">Admin</span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-secondary">Professor</span>
+                                                <?php endif; ?>
+                                            </td>
+
+                                            <td class="text-end">
+
+                                                <a href="/admin/users/edit?id=<?= $u['id'] ?>"
+                                                    class="btn btn-sm btn-outline-primary">
+                                                    <i class="bi bi-pencil"></i>
+                                                </a>
+
+                                                <button class="btn btn-sm btn-outline-danger"
+                                                    onclick="confirmDelete(<?= $u['id'] ?>)">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="mt-4 text-center">
+                <a href="/admin" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Voltar ao painel
+                </a>
+            </div>
+
+        </main>
 
     </div>
+
+    <script>
+        function confirmDelete(id) {
+            if (confirm("Tem certeza que deseja excluir este usuário?")) {
+                window.location.href = "/admin/users/delete?id=" + id;
+            }
+        }
+    </script>
 
 </body>
 

@@ -1,45 +1,115 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 
 <head>
+    <meta charset="UTF-8">
     <title>Editar usuário</title>
-    <link rel="stylesheet" href="/css/style.css">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/users.css">
 </head>
 
 <body>
 
-    <div class="container">
+    <div class="app-shell">
 
-        <h2>Editar usuário</h2>
+        <!-- HEADER -->
+        <header class="app-header">
+            <div class="container d-flex justify-content-between align-items-center">
 
-        <form method="post" action="/admin/users/update">
+                <div class="d-flex align-items-center gap-2">
+                    <img src="/image/logo_escola.png" class="logo">
+                    <strong>Gestão de Usuários</strong>
+                </div>
 
-            <input type="hidden" name="id" value="<?= $user['id'] ?>">
+                <div class="d-flex align-items-center gap-3">
+                    <span class="user">
+                        <i class="bi bi-person-circle"></i>
+                        <?= $_SESSION['name'] ?>
+                    </span>
 
-            <label>Nome</label>
-            <input name="name" value="<?= htmlspecialchars($user['name']) ?>" required>
+                    <a href="/logout" class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-box-arrow-right"></i> Sair
+                    </a>
+                </div>
 
-            <label>CPF</label>
-            <input name="cpf" value="<?= $user['cpf'] ?>" required>
+            </div>
+        </header>
 
-            <label>Nova senha (opcional)</label>
-            <input type="password" name="password">
+        <!-- MAIN -->
+        <main class="container py-4">
 
-            <label>Tipo</label>
-            <select name="role">
-                <option value="user" <?= $user['role'] == 'user' ? 'selected' : '' ?>>Professor</option>
-                <option value="admin" <?= $user['role'] == 'admin' ? 'selected' : '' ?>>Administrador</option>
-            </select>
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4><i class="bi bi-pencil-square"></i> Editar usuário</h4>
 
-            <button>Salvar</button>
+                <a href="/admin/users" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-left"></i> Voltar
+                </a>
+            </div>
 
-        </form>
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
 
-        <div class="footer">
-            <a href="/admin/users">Voltar</a>
-        </div>
+                    <form method="post" action="/admin/users/update" class="row g-3">
+
+                        <input type="hidden" name="id" value="<?= $user['id'] ?>">
+
+                        <div class="col-md-6">
+                            <label class="form-label">Nome</label>
+                            <input name="name" class="form-control" value="<?= htmlspecialchars($user['name']) ?>"
+                                required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">CPF</label>
+                            <input name="cpf" class="form-control" value="<?= $user['cpf'] ?>" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Tipo</label>
+                            <select name="role" class="form-select" id="role">
+                                <option value="user" <?= $user['role'] == 'user' ? 'selected' : '' ?>>Professor</option>
+                                <option value="admin" <?= $user['role'] == 'admin' ? 'selected' : '' ?>>Administrador</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6" id="password-wrap">
+                            <label class="form-label">Nova senha</label>
+                            <input type="password" name="password" class="form-control">
+                            <small class="text-muted">Preencha apenas para alterar</small>
+                        </div>
+
+                        <div class="col-12">
+                            <button class="btn btn-primary">
+                                <i class="bi bi-save"></i> Salvar alterações
+                            </button>
+                        </div>
+
+                    </form>
+
+                </div>
+            </div>
+
+        </main>
 
     </div>
+
+    <script>
+        const role = document.getElementById('role');
+        const passwordWrap = document.getElementById('password-wrap');
+
+        function togglePassword() {
+            passwordWrap.style.display = role.value === 'admin' ? 'block' : 'none';
+        }
+
+        role.addEventListener('change', togglePassword);
+        togglePassword(); // executa ao carregar
+    </script>
 
 </body>
 

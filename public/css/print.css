@@ -1,0 +1,25 @@
+.app-header {
+    background: #0f4c81;
+    color: white;
+    padding: 12px 0;
+}
+
+.logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+}
+
+.user {
+    font-weight: 500;
+}
+
+.info-list li {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.card {
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+}

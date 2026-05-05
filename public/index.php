@@ -152,6 +152,11 @@ if ($uri === '/admin/users/update') {
     exit;
 }
 
+if ($uri === '/admin/users/delete') {
+    (new UserController())->delete();
+    exit;
+}
+
 // PROTEÇÃO
 if (!isset($_SESSION['user'])) {
     header('Location: /login');

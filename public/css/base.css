@@ -1,0 +1,17 @@
+body {
+    margin: 0;
+    font-family: "Manrope", sans-serif;
+    background: #f4f7fb;
+}
+
+.container {
+    max-width: 1100px;
+}
+
+.card {
+    border-radius: 16px;
+}
+
+.btn {
+    border-radius: 12px;
+}

@@ -160,5 +160,33 @@ class UserController
         header('Location: /admin/users');
         exit;
     }
+
+    public function delete()
+    {
+        if (!AuthService::isAdmin()) {
+            http_response_code(403);
+            exit('Acesso negado');
+        }
+
+        $id = $_GET['id'] ?? null;
+
+        $db = $this->db();
+
+        // evita apagar a si mesmo
+        $stmt = $db->prepare("SELECT cpf FROM users WHERE id = :id");
+        $stmt->bindValue(':id', $id);
+        $user = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
+
+        if ($user && $user['cpf'] === $_SESSION['user']) {
+            exit('Você não pode excluir seu próprio usuário');
+        }
+
+        $stmt = $db->prepare("DELETE FROM users WHERE id = :id");
+        $stmt->bindValue(':id', $id);
+        $stmt->execute();
+
+        header('Location: /admin/users');
+        exit;
+    }
 }
 
