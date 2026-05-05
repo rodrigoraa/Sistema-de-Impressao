@@ -34,7 +34,7 @@ class PrintController
         }
 
         if (!isset($_FILES['arquivo'])) {
-            $this->flash("Arquivo não enviado", false);
+            $this->respond("Arquivo não enviado", false);
         }
 
         $file = $_FILES['arquivo'];
@@ -43,13 +43,13 @@ class PrintController
         $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
 
         if (!in_array($ext, $allowed)) {
-            $this->flash("Tipo de arquivo não permitido", false);
+            $this->respond("Tipo de arquivo não permitido", false);
         }
 
         $uploadPath = $_ENV['UPLOAD_PATH'] ?? '';
 
         if (!$uploadPath) {
-            $this->flash("UPLOAD_PATH não configurado", false);
+            $this->respond("UPLOAD_PATH não configurado", false);
         }
 
         if (!is_dir($uploadPath)) {
@@ -60,7 +60,7 @@ class PrintController
         $dest = rtrim($uploadPath, '/') . '/' . $filename;
 
         if (!move_uploaded_file($file['tmp_name'], $dest)) {
-            $this->flash("Erro ao salvar arquivo", false);
+            $this->respond("Erro ao salvar arquivo", false);
         }
 
         $printer = new PrintService();
@@ -69,7 +69,7 @@ class PrintController
         if (!$pdf) {
             if (file_exists($dest))
                 unlink($dest);
-            $this->flash("Erro ao processar arquivo", false);
+            $this->respond("Erro ao processar arquivo", false);
         }
 
         $cpfList = array_column($userList, 'cpf');
@@ -138,7 +138,7 @@ class PrintController
 
         $this->log($user, $dest, $pages, $copies, $success);
 
-        $this->flash(
+        $this->respond(
             $success
             ? "Impressão enviada ({$copies} cópias, {$pages} páginas)"
             : "Erro ao imprimir",
@@ -168,5 +168,17 @@ class PrintController
             . ($status ? "OK" : "FAIL") . "\n";
 
         @file_put_contents($logPath, $line, FILE_APPEND);
+    }
+
+    private function respond($msg, $success = true)
+    {
+        header('Content-Type: application/json');
+
+        echo json_encode([
+            'success' => $success,
+            'message' => $msg
+        ]);
+
+        exit;
     }
 }

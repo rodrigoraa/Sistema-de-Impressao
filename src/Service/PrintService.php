@@ -34,9 +34,13 @@ class PrintService
             $cmd = "HOME=/tmp libreoffice --headless --invisible --norestore --nolockcheck --nodefault "
                 . "--convert-to pdf:writer_pdf_Export "
                 . escapeshellarg($filePath)
-                . " --outdir /tmp 2>&1";
+                . " --outdir /tmp > /dev/null 2>&1";
 
             exec($cmd, $out, $status);
+
+            if (!empty($out)) {
+                $this->log("LibreOffice OUTPUT:\n" . implode("\n", $out));
+            }
 
             if ($status !== 0) {
                 $this->log("Erro DOC/DOCX\nCMD: $cmd\n" . implode("\n", $out));
@@ -97,7 +101,7 @@ class PrintService
         $cmd = "/usr/bin/lp "
             . "-d " . escapeshellarg($this->printer) . " "
             . "-n " . intval($copies) . " "
-            . "-o sides=" . escapeshellarg($sides) . " "
+            . "-o sides=" . $sides . " "
             . "-o orientation-requested=" . intval($orientationFlag) . " "
             . "-o print-quality=" . intval($quality) . " ";
 
@@ -118,13 +122,13 @@ class PrintService
         $cmd .= escapeshellarg($pdfPath);
 
         // ✔ execução com timeout
-        exec("timeout 30 " . $cmd . " 2>&1", $out, $status);
+        exec("timeout 30 " . $cmd . " > /dev/null 2>&1 &", $out, $status);
 
         $this->log(
             "CMD: $cmd\nSTATUS: $status\nOUTPUT:\n" . implode("\n", $out)
         );
 
-        return $status === 0;
+        return true;
     }
 
     private function log($msg)
