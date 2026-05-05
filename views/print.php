@@ -91,7 +91,7 @@
                                     </div>
 
                                     <small class="text-muted">
-                                        PDF, DOC, DOCX ou imagem
+                                        PDF, DOC, DOCX ou imagem (máx 20MB)
                                     </small>
 
                                 </div>
@@ -296,7 +296,7 @@
                 return;
             }
 
-            const maxUploadMb = 2;
+            const maxUploadMb = 20;
 
             // valida tamanho
             if (file.size > maxUploadMb * 1024 * 1024) {
