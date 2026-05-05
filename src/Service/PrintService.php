@@ -182,8 +182,14 @@ class PrintService
             throw new RuntimeException('Imagem invalida ou corrompida');
         }
 
+        $converted = $this->convertImageWithTool($filePath, $orientation, $paper);
+        if ($converted !== null) {
+            return $converted;
+        }
+
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         if ($ext === 'png') {
+            $this->assertCanConvertPngInMemory($info[0], $info[1], filesize($filePath));
             $pdfFile = tempnam(sys_get_temp_dir(), 'imgpdf_') . '.pdf';
             $this->writePngPdf($filePath, $pdfFile, $orientation, $paper);
             return $pdfFile;
@@ -204,6 +210,51 @@ class PrintService
             $paper
         );
         return $pdfFile;
+    }
+
+    private function convertImageWithTool($filePath, $orientation, $paper)
+    {
+        $tool = $this->findImageMagick();
+        if ($tool === null) {
+            return null;
+        }
+
+        $pdfFile = tempnam(sys_get_temp_dir(), 'imgpdf_') . '.pdf';
+        [$pageWidth, $pageHeight] = $this->paperSize($paper);
+        if ($orientation === 'landscape') {
+            [$pageWidth, $pageHeight] = [$pageHeight, $pageWidth];
+        }
+
+        // 300 DPI target in pixels, bounded to the selected paper size.
+        $maxPixels = max(1, (int) round($pageWidth / 72 * 300)) . 'x' . max(1, (int) round($pageHeight / 72 * 300)) . '>';
+
+        $args = [
+            escapeshellarg($tool),
+            escapeshellarg($filePath),
+            '-auto-orient',
+            '-background white',
+            '-alpha remove',
+            '-alpha off',
+            '-resize ' . escapeshellarg($maxPixels),
+            escapeshellarg($pdfFile),
+            '2>&1',
+        ];
+
+        $cmd = implode(' ', $args);
+        $timeout = $this->findExecutable(['/usr/bin/timeout', 'timeout']);
+        if (!$this->isWindows && $timeout !== null) {
+            $cmd = escapeshellarg($timeout) . ' 60 ' . $cmd;
+        }
+
+        exec($cmd, $output, $status);
+        if ($status === 0 && is_file($pdfFile) && filesize($pdfFile) > 0) {
+            $this->log('ImageMagick: ' . $cmd . ' | OK');
+            return $pdfFile;
+        }
+
+        @unlink($pdfFile);
+        $this->log('ImageMagick falhou: ' . $cmd . ' | status=' . $status . ' | ' . implode(' | ', $output));
+        return null;
     }
 
     private function writePngPdf($imagePath, $pdfPath, $orientation, $paper)
@@ -372,6 +423,43 @@ class PrintService
         return ['width' => $width, 'height' => $height, 'rgb' => $rgb];
     }
 
+    private function assertCanConvertPngInMemory($width, $height, $fileSize)
+    {
+        if ((int) $width * (int) $height > 8000000 || (int) $fileSize > 3000000) {
+            throw new RuntimeException('PNG grande demais para converter sem ImageMagick no servidor. Envie em JPG ou instale ImageMagick.');
+        }
+
+        $estimatedBytes = (int) $width * (int) $height * 12;
+        $limit = $this->memoryLimitBytes();
+
+        if ($limit > 0 && $estimatedBytes > ($limit * 0.5)) {
+            throw new RuntimeException('Imagem PNG muito grande para converter sem ImageMagick no servidor');
+        }
+    }
+
+    private function memoryLimitBytes()
+    {
+        $value = trim((string) ini_get('memory_limit'));
+        if ($value === '' || $value === '-1') {
+            return -1;
+        }
+
+        $unit = strtolower(substr($value, -1));
+        $number = (float) $value;
+
+        if ($unit === 'g') {
+            return (int) ($number * 1024 * 1024 * 1024);
+        }
+        if ($unit === 'm') {
+            return (int) ($number * 1024 * 1024);
+        }
+        if ($unit === 'k') {
+            return (int) ($number * 1024);
+        }
+
+        return (int) $number;
+    }
+
     private function unfilterPngScanline($scanline, $previous, $filter, $bytesPerPixel)
     {
         $result = '';
@@ -479,6 +567,20 @@ class PrintService
             'C:\\Program Files\\SumatraPDF\\SumatraPDF.exe',
             'C:\\Program Files (x86)\\SumatraPDF\\SumatraPDF.exe',
             getenv('LOCALAPPDATA') ? getenv('LOCALAPPDATA') . '\\SumatraPDF\\SumatraPDF.exe' : null,
+        ]);
+
+        return $this->findExecutable($candidates);
+    }
+
+    private function findImageMagick()
+    {
+        $candidates = array_filter([
+            $_ENV['IMAGEMAGICK_PATH'] ?? null,
+            'magick',
+            'convert',
+            'C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe',
+            '/usr/bin/magick',
+            '/usr/bin/convert',
         ]);
 
         return $this->findExecutable($candidates);

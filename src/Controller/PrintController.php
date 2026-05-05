@@ -41,7 +41,7 @@ class PrintController
         }
         $file = $_FILES['arquivo'];
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            $this->flash("Erro no upload do arquivo", false);
+            $this->flash($this->uploadErrorMessage($file['error'] ?? UPLOAD_ERR_NO_FILE), false);
         }
 
         $origName = $file['name'];
@@ -111,11 +111,13 @@ class PrintController
         // Prepara e dispara a impressão (PrintService faz conversão internamente)
         $printer = new PrintService();
         $printedFile = $dest;
+        $errorMessage = '';
         try {
             $printedFile = $printer->print($dest, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
             $success = true;
         } catch (Throwable $e) {
             $printer->log("Erro interno ao imprimir: " . $e->getMessage());
+            $errorMessage = $e->getMessage();
             $success = false;
         }
 
@@ -135,7 +137,7 @@ class PrintController
         // Mensagem de retorno
         $msg = $success
             ? "Impressão enviada ({$copies} cópias, {$pages} páginas)"
-            : "Erro ao enviar impressão";
+            : "Erro ao enviar impressão" . ($errorMessage ? ": {$errorMessage}" : "");
 
         // Resposta AJAX vs Flash
         if ($this->isAjax()) {
@@ -167,6 +169,21 @@ class PrintController
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['success' => $success, 'message' => $msg]);
         exit;
+    }
+
+    private function uploadErrorMessage($code)
+    {
+        $messages = [
+            UPLOAD_ERR_INI_SIZE => "Arquivo maior que o limite permitido pelo servidor",
+            UPLOAD_ERR_FORM_SIZE => "Arquivo maior que o limite permitido pelo formulário",
+            UPLOAD_ERR_PARTIAL => "Upload incompleto",
+            UPLOAD_ERR_NO_FILE => "Arquivo não enviado",
+            UPLOAD_ERR_NO_TMP_DIR => "Pasta temporária do servidor não configurada",
+            UPLOAD_ERR_CANT_WRITE => "Servidor não conseguiu salvar o arquivo enviado",
+            UPLOAD_ERR_EXTENSION => "Upload bloqueado por extensão do PHP",
+        ];
+
+        return $messages[$code] ?? "Erro no upload do arquivo";
     }
 
     // Log customizado de impressão (opcional)
