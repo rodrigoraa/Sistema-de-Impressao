@@ -16,9 +16,10 @@ class PrintController
         }
 
         $isAdmin = ($_SESSION['role'] ?? '') === 'admin';
+
         if ($isAdmin) {
             $db = Database::connect();
-            $result = $db->query("SELECT name, cpf FROM users ORDER BY cpf");
+            $result = $db->query("SELECT name, cpf FROM users ORDER BY name");
 
             while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                 $userList[] = [
@@ -51,6 +52,10 @@ class PrintController
             $this->flash("UPLOAD_PATH não configurado", false);
         }
 
+        if (!is_dir($uploadPath)) {
+            mkdir($uploadPath, 0775, true);
+        }
+
         $filename = uniqid() . '_' . basename($file['name']);
         $dest = rtrim($uploadPath, '/') . '/' . $filename;
 
@@ -62,10 +67,10 @@ class PrintController
         $pdf = $printer->prepareFile($dest);
 
         if (!$pdf) {
+            if (file_exists($dest))
+                unlink($dest);
             $this->flash("Erro ao processar arquivo", false);
         }
-
-        $db = Database::connect();
 
         $cpfList = array_column($userList, 'cpf');
 
@@ -79,7 +84,7 @@ class PrintController
             $user = $_SESSION['user'];
         }
 
-        $copies = intval($_POST['copies'] ?? 1);
+        $copies = max(1, intval($_POST['copies'] ?? 1));
         $sides = $_POST['sides'] ?? 'one-sided';
         $orientation = $_POST['orientation'] ?? 'portrait';
         $quality = intval($_POST['quality'] ?? 3);
@@ -89,8 +94,27 @@ class PrintController
         $success = $printer->print($pdf, $copies, $sides, $orientation, $quality);
 
         if ($success) {
+
             $quota = new QuotaService();
             $quota->register($user, $pages * $copies, $dest);
+
+            if ($pdf !== $dest && file_exists($pdf)) {
+                unlink($pdf);
+            }
+
+            if (file_exists($dest)) {
+                unlink($dest);
+            }
+
+        } else {
+
+            if ($pdf !== $dest && file_exists($pdf)) {
+                unlink($pdf);
+            }
+
+            if (file_exists($dest)) {
+                unlink($dest);
+            }
         }
 
         $this->log($user, $dest, $pages, $copies, $success);
@@ -127,4 +151,3 @@ class PrintController
         @file_put_contents($logPath, $line, FILE_APPEND);
     }
 }
-

@@ -78,6 +78,16 @@
                                         <input type="file" name="arquivo" id="fileInput" hidden required>
                                     </div>
 
+                                    <div id="file-info" class="mt-2 small text-muted"></div>
+
+                                    <!-- PREVIEW -->
+                                    <div id="preview" class="mt-3"></div>
+
+                                    <!-- PROGRESS -->
+                                    <div class="progress mt-3 d-none" id="progressBar">
+                                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                    </div>
+
                                     <small class="text-muted">
                                         PDF, DOCX ou imagem (máx 10MB)
                                     </small>
@@ -189,30 +199,77 @@
         const dropArea = document.getElementById('drop-area');
         const input = document.getElementById('fileInput');
         const label = document.getElementById('file-label');
+        const info = document.getElementById('file-info');
+        const preview = document.getElementById('preview');
+        const progress = document.getElementById('progressBar');
+        const bar = progress.querySelector('.progress-bar');
 
         // clique
         dropArea.onclick = () => input.click();
 
-        // mostrar nome do arquivo
+        // tipos permitidos
+        const allowed = ['pdf', 'docx', 'jpg', 'jpeg', 'png'];
+
+        // tamanho
+        function formatSize(bytes) {
+            return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+        }
+
+        // validação + preview
         input.addEventListener('change', () => {
             const file = input.files[0];
+            if (!file) return;
 
-            if (file) {
-                label.textContent = file.name;
-                dropArea.classList.add('active');
-            } else {
-                label.textContent = 'Clique ou arraste o arquivo';
-                dropArea.classList.remove('active');
+            const ext = file.name.split('.').pop().toLowerCase();
+
+            preview.innerHTML = '';
+            dropArea.classList.remove('error', 'success');
+
+            // valida tipo
+            if (!allowed.includes(ext)) {
+                label.textContent = "Tipo não permitido";
+                dropArea.classList.add('error');
+                input.value = '';
+                return;
             }
+
+            // valida tamanho
+            if (file.size > 10 * 1024 * 1024) {
+                label.textContent = "Arquivo muito grande (máx 10MB)";
+                dropArea.classList.add('error');
+                input.value = '';
+                return;
+            }
+
+            // sucesso
+            label.textContent = file.name;
+            info.textContent = formatSize(file.size);
+            dropArea.classList.add('success');
+
+            const url = URL.createObjectURL(file);
+
+            // preview
+            if (['jpg', 'jpeg', 'png'].includes(ext)) {
+                preview.innerHTML = `<img src="${url}">`;
+            }
+
+            if (ext === 'pdf') {
+                preview.innerHTML = `<iframe src="${url}"></iframe>`;
+            }
+
         });
 
-        // loading botão
+        // progresso fake (UX)
         document.querySelector('form').addEventListener('submit', () => {
-            const btn = document.getElementById('btnPrint');
+            progress.classList.remove('d-none');
 
-            btn.disabled = true;
-            btn.querySelector('.text').textContent = 'Enviando...';
-            btn.querySelector('.spinner-border').classList.remove('d-none');
+            let percent = 0;
+            const interval = setInterval(() => {
+                percent += 10;
+                bar.style.width = percent + '%';
+
+                if (percent >= 100) clearInterval(interval);
+            }, 100);
         });
     </script>
 </body>

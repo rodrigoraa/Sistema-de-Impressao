@@ -6,7 +6,7 @@ class PrintService
 
     public function __construct()
     {
-        $this->printer = $_ENV['PRINTER_NAME'];
+        $this->printer = $_ENV['PRINTER_NAME'] ?? '';
     }
 
     public function prepareFile($filePath)
@@ -18,16 +18,18 @@ class PrintService
 
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
 
-        // ✔ PDF direto
         if ($ext === 'pdf') {
             return $filePath;
         }
 
-        // ✔ nome único seguro
         $outputPdf = "/tmp/" . uniqid('print_', true) . ".pdf";
 
-        // ✔ DOCX → PDF (robusto)
         if ($ext === 'docx') {
+
+            if (!shell_exec("which libreoffice")) {
+                $this->log("LibreOffice não encontrado");
+                return false;
+            }
 
             $cmd = "libreoffice --headless --convert-to pdf "
                 . escapeshellarg($filePath)
@@ -35,25 +37,28 @@ class PrintService
 
             exec($cmd, $out, $status);
 
-            // tenta localizar arquivo gerado com base no nome
-            $expected = "/tmp/" . pathinfo($filePath, PATHINFO_FILENAME) . ".pdf";
+            $generated = glob("/tmp/" . pathinfo($filePath, PATHINFO_FILENAME) . "*.pdf");
 
-            if ($status !== 0 || !file_exists($expected)) {
+            if ($status !== 0 || empty($generated)) {
                 $this->log("Erro DOCX\nCMD: $cmd\n" . implode("\n", $out));
                 return false;
             }
 
-            // renomeia para garantir isolamento
-            rename($expected, $outputPdf);
+            rename($generated[0], $outputPdf);
 
             return $outputPdf;
         }
 
-        // ✔ IMAGEM → PDF
         if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
 
+            if (!shell_exec("which convert")) {
+                $this->log("ImageMagick não encontrado");
+                return false;
+            }
+
             $cmd = "convert "
-                . escapeshellarg($filePath) . " "
+                . escapeshellarg($filePath)
+                . " -density 150 -quality 90 "
                 . escapeshellarg($outputPdf) . " 2>&1";
 
             exec($cmd, $out, $status);
@@ -76,17 +81,22 @@ class PrintService
             return false;
         }
 
+        if (!$this->printer) {
+            $this->log("PRINTER_NAME não definido");
+            return false;
+        }
+
         $orientationFlag = ($orientation === 'landscape') ? 4 : 3;
 
-        // ✔ caminho absoluto evita erro no Apache
-        $cmd = "/usr/bin/lp -d {$this->printer} "
+        $cmd = "/usr/bin/lp "
+            . "-d " . escapeshellarg($this->printer) . " "
             . "-n " . intval($copies) . " "
-            . "-o sides={$sides} "
-            . "-o orientation-requested={$orientationFlag} "
-            . "-o print-quality={$quality} "
+            . "-o sides=" . escapeshellarg($sides) . " "
+            . "-o orientation-requested=" . intval($orientationFlag) . " "
+            . "-o print-quality=" . intval($quality) . " "
             . escapeshellarg($pdfPath);
 
-        exec($cmd . " 2>&1", $out, $status);
+        exec("timeout 30 " . $cmd . " 2>&1", $out, $status);
 
         $this->log(
             "CMD: $cmd\nSTATUS: $status\nOUTPUT:\n" . implode("\n", $out)
@@ -97,8 +107,10 @@ class PrintService
 
     private function log($msg)
     {
+        $logPath = $_ENV['LOG_PATH'] ?? '/tmp/print_debug.log';
+
         file_put_contents(
-            '/tmp/print_debug.log',
+            $logPath,
             date('Y-m-d H:i:s') . "\n" . $msg . "\n\n",
             FILE_APPEND
         );
