@@ -66,8 +66,11 @@
 
                             <form method="post" enctype="multipart/form-data">
 
-                                <div class="mb-3">
-                                    <label class="form-label">Arquivo</label>
+                                <div class="mb-3 upload-wrapper">
+
+                                    <label class="form-label">
+                                        <i class="bi bi-file-earmark-arrow-up"></i> Arquivo
+                                    </label>
 
                                     <div class="upload-box" id="drop-area">
                                         <i class="bi bi-cloud-upload fs-1"></i>
@@ -78,6 +81,7 @@
                                     <small class="text-muted">
                                         PDF, DOCX ou imagem (máx 10MB)
                                     </small>
+
                                 </div>
 
                                 <div class="mb-3">
@@ -110,8 +114,12 @@
                                 </div>
 
                                 <?php if ($_SESSION['role'] === 'admin'): ?>
-                                    <div class="mb-3">
-                                        <label class="form-label">Imprimir para</label>
+                                    <div class="mb-3 admin-box">
+
+                                        <label class="form-label">
+                                            <i class="bi bi-person-gear"></i> Imprimir para
+                                        </label>
+
                                         <input list="users" name="target_user" class="form-control">
 
                                         <datalist id="users">
@@ -121,6 +129,11 @@
                                                 </option>
                                             <?php endforeach; ?>
                                         </datalist>
+
+                                        <small class="text-muted">
+                                            Você está imprimindo em nome de outro usuário
+                                        </small>
+
                                     </div>
                                 <?php endif; ?>
 
@@ -182,7 +195,15 @@
 
         // mostrar nome do arquivo
         input.addEventListener('change', () => {
-            label.textContent = input.files[0]?.name || 'Clique ou arraste o arquivo';
+            const file = input.files[0];
+
+            if (file) {
+                label.textContent = file.name;
+                dropArea.classList.add('active');
+            } else {
+                label.textContent = 'Clique ou arraste o arquivo';
+                dropArea.classList.remove('active');
+            }
         });
 
         // loading botão

@@ -24,16 +24,53 @@
     box-shadow: 0 10px 30px rgba(0,0,0,0.05);
 }
 
+.upload-wrapper {
+    background: #eef6ff;
+    border: 1px solid #cfe2ff;
+    padding: 15px;
+    border-radius: 12px;
+}
+
+.upload-wrapper label {
+    font-weight: 600;
+    color: #0f4c81;
+}
+
+/* caixa de upload */
 .upload-box {
     border: 2px dashed #0f4c81;
     padding: 30px;
     text-align: center;
     border-radius: 12px;
     cursor: pointer;
-    background: #f8fbff;
-    transition: 0.2s;
+    background: white;
+    transition: all 0.2s ease;
 }
 
+/* hover */
 .upload-box:hover {
-    background: #eef6ff;
+    background: #f0f7ff;
+    border-color: #084298;
+}
+
+/* quando tem arquivo */
+.upload-box.active {
+    border-color: #198754;
+    background: #e9f7ef;
+}
+
+.admin-box {
+    background: #fff3cd;
+    border: 1px solid #ffeeba;
+    padding: 15px;
+    border-radius: 12px;
+}
+
+.admin-box label {
+    font-weight: 600;
+    color: #856404;
+}
+
+.admin-box input {
+    border-color: #ffc107;
 }
