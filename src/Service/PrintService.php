@@ -31,7 +31,7 @@ class PrintService
                 return false;
             }
 
-            $cmd = "libreoffice --headless --invisible --norestore --nolockcheck --nodefault --convert-to pdf "
+            $cmd = "libreoffice --headless --invisible --norestore --nolockcheck --nodefault --convert-to pdf:writer_pdf_Export "
                 . escapeshellarg($filePath)
                 . " --outdir /tmp 2>&1";
 
