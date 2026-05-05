@@ -23,3 +23,17 @@
 .card {
     box-shadow: 0 10px 30px rgba(0,0,0,0.05);
 }
+
+.upload-box {
+    border: 2px dashed #0f4c81;
+    padding: 30px;
+    text-align: center;
+    border-radius: 12px;
+    cursor: pointer;
+    background: #f8fbff;
+    transition: 0.2s;
+}
+
+.upload-box:hover {
+    background: #eef6ff;
+}

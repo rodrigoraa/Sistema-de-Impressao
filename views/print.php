@@ -68,7 +68,16 @@
 
                                 <div class="mb-3">
                                     <label class="form-label">Arquivo</label>
-                                    <input type="file" class="form-control" name="arquivo" required>
+
+                                    <div class="upload-box" id="drop-area">
+                                        <i class="bi bi-cloud-upload fs-1"></i>
+                                        <p id="file-label">Clique ou arraste o arquivo</p>
+                                        <input type="file" name="arquivo" id="fileInput" hidden required>
+                                    </div>
+
+                                    <small class="text-muted">
+                                        PDF, DOCX ou imagem (máx 10MB)
+                                    </small>
                                 </div>
 
                                 <div class="mb-3">
@@ -103,18 +112,21 @@
                                 <?php if ($_SESSION['role'] === 'admin'): ?>
                                     <div class="mb-3">
                                         <label class="form-label">Imprimir para</label>
-                                        <select class="form-select" name="target_user">
+                                        <input list="users" name="target_user" class="form-control">
+
+                                        <datalist id="users">
                                             <?php foreach ($userList as $u): ?>
                                                 <option value="<?= $u['cpf'] ?>">
-                                                    <?= htmlspecialchars($u['name']) ?> (<?= $u['cpf'] ?>)
+                                                    <?= $u['name'] ?>
                                                 </option>
                                             <?php endforeach; ?>
-                                        </select>
+                                        </datalist>
                                     </div>
                                 <?php endif; ?>
 
-                                <button class="btn btn-primary w-100">
-                                    <i class="bi bi-printer"></i> Imprimir
+                                <button id="btnPrint" class="btn btn-primary w-100">
+                                    <span class="text">Imprimir</span>
+                                    <span class="spinner-border spinner-border-sm d-none"></span>
                                 </button>
 
                             </form>
@@ -160,7 +172,28 @@
         </main>
 
     </div>
+    <script>
+        const dropArea = document.getElementById('drop-area');
+        const input = document.getElementById('fileInput');
+        const label = document.getElementById('file-label');
 
+        // clique
+        dropArea.onclick = () => input.click();
+
+        // mostrar nome do arquivo
+        input.addEventListener('change', () => {
+            label.textContent = input.files[0]?.name || 'Clique ou arraste o arquivo';
+        });
+
+        // loading botão
+        document.querySelector('form').addEventListener('submit', () => {
+            const btn = document.getElementById('btnPrint');
+
+            btn.disabled = true;
+            btn.querySelector('.text').textContent = 'Enviando...';
+            btn.querySelector('.spinner-border').classList.remove('d-none');
+        });
+    </script>
 </body>
 
 </html>
