@@ -18,7 +18,7 @@ class PrintController
         $isAdmin = ($_SESSION['role'] ?? '') === 'admin';
         if ($isAdmin) {
             $db = Database::connect();
-            $result = $db->query("SELECT cpf FROM users ORDER BY cpf");
+            $result = $db->query("SELECT name, cpf FROM users ORDER BY cpf");
 
             while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
                 $userList[] = [
@@ -67,10 +67,12 @@ class PrintController
 
         $db = Database::connect();
 
+        $cpfList = array_column($userList, 'cpf');
+
         if (
             $isAdmin &&
             !empty($_POST['target_user']) &&
-            in_array($_POST['target_user'], $userList)
+            in_array($_POST['target_user'], $cpfList)
         ) {
             $user = $_POST['target_user'];
         } else {
