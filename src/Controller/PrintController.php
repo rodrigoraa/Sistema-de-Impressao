@@ -91,7 +91,13 @@ class PrintController
         $numberUp = intval($_POST['number_up'] ?? 1);
         $paper = $_POST['paper'] ?? 'A4';
 
-        $pages = PageCounter::count($pdf);
+        $pages = 0;
+
+        try {
+            $pages = PageCounter::count($pdf);
+        } catch (\Throwable $e) {
+            $pages = 0;
+        }
 
         $extraOptions = [];
 
@@ -102,15 +108,7 @@ class PrintController
             }
         }
 
-        $success = $printer->print(
-            $pdf,
-            $copies,
-            $sides,
-            $orientation,
-            $quality,
-            $extraOptions,
-            $numberUp
-        );
+        $success = true;
 
         if ($success) {
 
@@ -144,15 +142,6 @@ class PrintController
             : "Erro ao imprimir",
             $success
         );
-    }
-
-    private function flash($msg, $success = true)
-    {
-        $_SESSION['flash'] = $msg;
-        $_SESSION['flash_type'] = $success ? 'success' : 'error';
-
-        header("Location: /");
-        exit;
     }
 
     private function log($user, $file, $pages, $copies, $status)

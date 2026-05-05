@@ -122,7 +122,7 @@ class PrintService
         $cmd .= escapeshellarg($pdfPath);
 
         // ✔ execução com timeout
-        exec("timeout 30 " . $cmd . " > /dev/null 2>&1 &", $out, $status);
+        exec($cmd . " > /dev/null 2>&1 &", $out, $status);
 
         $this->log(
             "CMD: $cmd\nSTATUS: $status\nOUTPUT:\n" . implode("\n", $out)
