@@ -91,7 +91,7 @@
                                     </div>
 
                                     <small class="text-muted">
-                                        PDF, DOC, DOCX ou imagem (máx 10MB)
+                                        PDF, DOC, DOCX ou imagem
                                     </small>
 
                                 </div>
@@ -296,9 +296,11 @@
                 return;
             }
 
+            const maxUploadMb = 2;
+
             // valida tamanho
-            if (file.size > 10 * 1024 * 1024) {
-                label.textContent = "Arquivo muito grande (máx 10MB)";
+            if (file.size > maxUploadMb * 1024 * 1024) {
+                label.textContent = `Arquivo muito grande (máx ${maxUploadMb}MB)`;
                 dropArea.classList.add('error');
                 input.value = '';
                 return;

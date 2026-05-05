@@ -37,16 +37,20 @@ class PrintController
 
         // Validação inicial
         if (!isset($_FILES['arquivo'])) {
+            $this->logUploadFailure('Arquivo ausente em $_FILES');
             $this->fail("Arquivo não enviado");
         }
         $file = $_FILES['arquivo'];
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $this->logUploadFailure('Erro de upload codigo=' . ($file['error'] ?? UPLOAD_ERR_NO_FILE));
             $this->fail($this->uploadErrorMessage($file['error'] ?? UPLOAD_ERR_NO_FILE));
         }
 
         $origName = $file['name'];
         $tmpPath = $file['tmp_name'];
         $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+        $size = intval($file['size'] ?? 0);
+        $this->logUploadFailure("Upload recebido: nome={$origName} ext={$ext} size={$size}");
 
         // Extensões permitidas
         $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
@@ -191,6 +195,24 @@ class PrintController
         ];
 
         return $messages[$code] ?? "Erro no upload do arquivo";
+    }
+
+    private function logUploadFailure($msg)
+    {
+        $logPath = $_ENV['LOG_PATH'] ?? '';
+        if (!$logPath) {
+            return;
+        }
+
+        if (is_dir($logPath)) {
+            $logPath = rtrim($logPath, "\\/") . DIRECTORY_SEPARATOR . 'app.log';
+        }
+
+        @file_put_contents(
+            $logPath,
+            date('Y-m-d H:i:s') . " | UPLOAD: {$msg} | upload_max_filesize=" . ini_get('upload_max_filesize') . " | post_max_size=" . ini_get('post_max_size') . "\n",
+            FILE_APPEND
+        );
     }
 
     // Log customizado de impressão (opcional)

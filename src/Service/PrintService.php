@@ -71,7 +71,9 @@ class PrintService
 
         $cmd = escapeshellarg($lp);
         $cmd .= ' -d ' . escapeshellarg($this->printerName);
-        $cmd .= ' -n ' . max(1, intval($copies));
+        if (intval($copies) > 1) {
+            $cmd .= ' -n ' . intval($copies);
+        }
 
         if (in_array($sourceExt, ['jpg', 'jpeg', 'png'], true)) {
             $this->log('CUPS imagem: usando envio simples equivalente ao lp manual');
@@ -194,10 +196,7 @@ class PrintService
 
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         if ($ext === 'png') {
-            $this->assertCanConvertPngInMemory($info[0], $info[1], filesize($filePath));
-            $pdfFile = tempnam(sys_get_temp_dir(), 'imgpdf_') . '.pdf';
-            $this->writePngPdf($filePath, $pdfFile, $orientation, $paper);
-            return $pdfFile;
+            throw new RuntimeException('PNG precisa ser convertido com ImageMagick para imprimir nesta impressora. Verifique se o comando convert esta instalado e liberado.');
         }
 
         if (!in_array($ext, ['jpg', 'jpeg'], true)) {
@@ -243,7 +242,7 @@ class PrintService
             '-alpha off',
             '-resize ' . escapeshellarg($maxPixels),
             '-quality 92',
-            escapeshellarg($jpegFile),
+            escapeshellarg('jpg:' . $jpegFile),
             '2>&1',
         ];
 
