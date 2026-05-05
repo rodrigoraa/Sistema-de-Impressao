@@ -30,6 +30,12 @@ class PrintService
         $sourceExt = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         $preparedExt = strtolower(pathinfo($preparedFile, PATHINFO_EXTENSION));
         $this->log('Arquivo preparado para impressao: origem=' . $filePath . ' ext=' . $sourceExt . ' mime=' . ($this->detectMime($filePath) ?: '-') . ' preparado=' . $preparedFile . ' ext_preparado=' . $preparedExt . ' tamanho=' . (@filesize($preparedFile) ?: 0));
+        if ($sourceExt === 'png') {
+            $debugCopy = $this->copyDebugFile($preparedFile, 'png-preparado');
+            if ($debugCopy !== null) {
+                $this->log('PNG diagnostico: copia do arquivo preparado=' . $debugCopy);
+            }
+        }
 
         if ($this->isWindows) {
             $this->printWindows($preparedFile, $copies, $sides, $orientation, $numberUp, $extraOptions);
@@ -265,6 +271,12 @@ class PrintService
                     $orientation,
                     $paper
                 );
+                if (strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'png') {
+                    $jpegDebug = $this->copyDebugFile($jpegFile, 'png-intermediario');
+                    if ($jpegDebug !== null) {
+                        $this->log('PNG diagnostico: JPG intermediario=' . $jpegDebug . ' tamanho=' . (@filesize($jpegDebug) ?: 0));
+                    }
+                }
                 @unlink($jpegFile);
                 $this->log('ImageMagick JPG: ' . $cmd . ' | PDF=' . $pdfFile);
                 return $pdfFile;
@@ -575,6 +587,23 @@ class PrintService
         }
 
         return null;
+    }
+
+    private function copyDebugFile($filePath, $prefix)
+    {
+        if (!is_file($filePath)) {
+            return null;
+        }
+
+        $baseDir = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'print-debug';
+        if (!is_dir($baseDir) && !@mkdir($baseDir, 0775, true)) {
+            return null;
+        }
+
+        $ext = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'bin';
+        $target = $baseDir . DIRECTORY_SEPARATOR . $prefix . '-' . date('Ymd-His') . '-' . substr(sha1($filePath . microtime(true)), 0, 8) . '.' . $ext;
+
+        return @copy($filePath, $target) ? $target : null;
     }
 
     private function windowsSides($sides)
