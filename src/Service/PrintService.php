@@ -24,30 +24,33 @@ class PrintService
 
         $outputPdf = "/tmp/" . uniqid('print_', true) . ".pdf";
 
-        if ($ext === 'docx' || $ext === 'doc') {
+        if ($ext === 'doc' || $ext === 'docx') {
 
             if (!shell_exec("which libreoffice")) {
                 $this->log("LibreOffice não encontrado");
                 return false;
             }
 
-            $cmd = "libreoffice --headless --invisible --norestore --nolockcheck --nodefault --convert-to pdf:writer_pdf_Export "
+            $cmd = "HOME=/tmp libreoffice --headless --invisible --norestore --nolockcheck --nodefault "
+                . "--convert-to pdf:writer_pdf_Export "
                 . escapeshellarg($filePath)
                 . " --outdir /tmp 2>&1";
 
             exec($cmd, $out, $status);
 
-            $generated = glob("/tmp/*.pdf");
-
-            usort($generated, function ($a, $b) {
-                return filemtime($b) - filemtime($a);
-            });
-
-            if (empty($generated)) {
+            if ($status !== 0) {
+                $this->log("Erro DOC/DOCX\nCMD: $cmd\n" . implode("\n", $out));
                 return false;
             }
 
-            rename($generated[0], $outputPdf);
+            $generated = "/tmp/" . pathinfo($filePath, PATHINFO_FILENAME) . ".pdf";
+
+            if (!file_exists($generated)) {
+                $this->log("PDF não gerado: $generated");
+                return false;
+            }
+
+            rename($generated, $outputPdf);
 
             return $outputPdf;
         }
