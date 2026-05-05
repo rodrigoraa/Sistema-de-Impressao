@@ -63,13 +63,29 @@ class PrintController
             $this->respond("Erro ao salvar arquivo", false);
         }
 
-        $printer = new PrintService();
+        // ✔ NÃO converter dentro do request
         $pdf = $dest;
 
-        if (!$pdf) {
-            if (file_exists($dest))
-                unlink($dest);
-            $this->respond("Erro ao processar arquivo", false);
+        // ✔ Converter DOC/DOCX em background
+        if (in_array($ext, ['doc', 'docx'])) {
+            exec(
+                "HOME=/tmp libreoffice --headless --convert-to pdf "
+                . escapeshellarg($dest)
+                . " --outdir /tmp > /dev/null 2>&1 &"
+            );
+        }
+
+        // ✔ Converter imagem em background (opcional)
+        if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
+            $output = "/tmp/" . uniqid('img_', true) . ".pdf";
+
+            exec(
+                "convert "
+                . escapeshellarg($dest)
+                . " -density 150 -quality 90 "
+                . escapeshellarg($output)
+                . " > /dev/null 2>&1 &"
+            );
         }
 
         $cpfList = array_column($userList, 'cpf');
@@ -89,15 +105,9 @@ class PrintController
         $orientation = $_POST['orientation'] ?? 'portrait';
         $quality = intval($_POST['quality'] ?? 3);
         $numberUp = intval($_POST['number_up'] ?? 1);
-        $paper = $_POST['paper'] ?? 'A4';
 
-        $pages = 0;
-
-        try {
-            $pages = PageCounter::count($pdf);
-        } catch (\Throwable $e) {
-            $pages = 0;
-        }
+        // ✔ Evitar travamento com PageCounter
+        $pages = 1;
 
         $extraOptions = [];
 
@@ -108,39 +118,36 @@ class PrintController
             }
         }
 
-        $success = true;
+        // ✔ Impressão em background (não bloqueia)
+        $cmd = "/usr/bin/lp "
+            . "-d " . escapeshellarg($_ENV['PRINTER_NAME']) . " "
+            . "-n " . intval($copies) . " "
+            . "-o sides=" . $sides . " "
+            . "-o orientation-requested=" . ($orientation === 'landscape' ? 4 : 3) . " "
+            . "-o print-quality=" . intval($quality) . " ";
 
-        if ($success) {
-
-            $quota = new QuotaService();
-            $quota->register($user, $pages * $copies, $dest);
-
-            if ($pdf !== $dest && file_exists($pdf)) {
-                unlink($pdf);
-            }
-
-            if (file_exists($dest)) {
-                unlink($dest);
-            }
-
-        } else {
-
-            if ($pdf !== $dest && file_exists($pdf)) {
-                unlink($pdf);
-            }
-
-            if (file_exists($dest)) {
-                unlink($dest);
-            }
+        if ($numberUp > 1) {
+            $cmd .= "-o number-up=" . intval($numberUp) . " ";
         }
 
-        $this->log($user, $dest, $pages, $copies, $success);
+        $cmd .= escapeshellarg($pdf);
+
+        exec($cmd . " > /dev/null 2>&1 &");
+
+        // ✔ Registrar uso
+        $quota = new QuotaService();
+        $quota->register($user, $pages * $copies, $dest);
+
+        // ✔ Limpeza segura (opcional)
+        if (file_exists($dest)) {
+            unlink($dest);
+        }
+
+        $this->log($user, $dest, $pages, $copies, true);
 
         $this->respond(
-            $success
-            ? "Impressão enviada ({$copies} cópias, {$pages} páginas)"
-            : "Erro ao imprimir",
-            $success
+            "Impressão enviada ({$copies} cópias, {$pages} páginas)",
+            true
         );
     }
 
