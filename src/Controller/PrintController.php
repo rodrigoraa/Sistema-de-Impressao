@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../Service/PrintService.php';
 require_once __DIR__ . '/../Service/PageCounter.php';
 require_once __DIR__ . '/../Service/QuotaService.php';
 require_once __DIR__ . '/../Service/Database.php';
@@ -7,16 +8,17 @@ class PrintController
 {
     public function handle()
     {
+        session_start();
         $userList = [];
 
-        // Sessão válida?
+        // Se não logado, apenas retorna usuário (lista vazia)
         if (!isset($_SESSION['user'])) {
             return ['userList' => $userList];
         }
 
-        // Se admin, buscar lista de usuários
-        $isAdmin = ($_SESSION['role'] ?? '') === 'admin';
+        $isAdmin = (($_SESSION['role'] ?? '') === 'admin');
         if ($isAdmin) {
+            // Carrega lista de usuários (nome, cpf) para dropdown se for admin
             $db = Database::connect();
             $result = $db->query("SELECT name, cpf FROM users ORDER BY name");
             while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
@@ -24,23 +26,31 @@ class PrintController
             }
         }
 
-        // Apenas GET exibe formulário
+        // Se GET, retorna dados para a view (lista de usuários)
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             return ['userList' => $userList];
         }
 
-        // Valida envio de arquivo
+        // ============================
+        // === Processamento POST ====
+        // ============================
+
+        // Validação inicial
         if (!isset($_FILES['arquivo'])) {
             $this->flash("Arquivo não enviado", false);
         }
         $file = $_FILES['arquivo'];
+        $origName = $file['name'];
+        $tmpPath = $file['tmp_name'];
+        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+
+        // Extensões permitidas
         $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
         if (!in_array($ext, $allowed)) {
             $this->flash("Tipo de arquivo não permitido", false);
         }
 
-        // Caminho de upload configurado
+        // Configura caminhos via env (ou config carregada)
         $uploadPath = $_ENV['UPLOAD_PATH'] ?? '';
         if (!$uploadPath) {
             $this->flash("UPLOAD_PATH não configurado", false);
@@ -48,15 +58,13 @@ class PrintController
         if (!is_dir($uploadPath)) {
             mkdir($uploadPath, 0775, true);
         }
-
-        // Salva o arquivo
-        $filename = uniqid() . '_' . basename($file['name']);
-        $dest = rtrim($uploadPath, '/') . '/' . $filename;
-        if (!move_uploaded_file($file['tmp_name'], $dest)) {
+        $newFilename = uniqid() . '_' . basename($origName);
+        $dest = rtrim($uploadPath, '/') . '/' . $newFilename;
+        if (!move_uploaded_file($tmpPath, $dest)) {
             $this->flash("Erro ao salvar arquivo", false);
         }
 
-        // Determina usuário-alvo
+        // Determina usuário final da impressão
         $cpfList = array_column($userList, 'cpf');
         if ($isAdmin && !empty($_POST['target_user']) && in_array($_POST['target_user'], $cpfList)) {
             $user = $_POST['target_user'];
@@ -64,92 +72,93 @@ class PrintController
             $user = $_SESSION['user'];
         }
 
-        // Configurações de impressão
+        // Parâmetros de impressão vindos do formulário
         $copies = max(1, intval($_POST['copies'] ?? 1));
-        $sides = $_POST['sides'] ?? 'one-sided';
-        $orientation = $_POST['orientation'] ?? 'portrait';
+        $sides = ($_POST['sides'] ?? 'one-sided'); // "one-sided" ou "two-sided-short-edge"/"long-edge"
+        $orientation = ($_POST['orientation'] ?? 'portrait'); // "portrait" ou "landscape"
         $quality = intval($_POST['quality'] ?? 3);
         $numberUp = intval($_POST['number_up'] ?? 1);
-
-        // Contagem de páginas: ignoramos e deixamos 1 para evitar bloqueio
-        $pages = 1;
-
-        // Converte e imprime em background
-        $printerName = $_ENV['PRINTER_NAME'] ?? '';
-        if (!$printerName) {
-            $this->flash("PRINTER_NAME não configurado", false);
+        // Coleta opções extras (opt_*)
+        $extraOptions = [];
+        foreach ($_POST as $key => $val) {
+            if (strpos($key, 'opt_') === 0) {
+                $optKey = substr($key, 4);
+                $extraOptions[$optKey] = $val;
+            }
         }
 
-        // Se for DOC/DOCX: converte e imprime o PDF gerado
-        if (in_array($ext, ['doc', 'docx'])) {
-            $pdfFile = "/tmp/" . pathinfo($dest, PATHINFO_FILENAME) . ".pdf";
-            // Converte para PDF em background e, após conversão, imprime
-            $cmd = "HOME=/tmp soffice --headless --convert-to pdf:writer_pdf_Export "
-                . escapeshellarg($dest) . " --outdir /tmp && "
-                . "/usr/bin/lp -d " . escapeshellarg($printerName)
-                . " -n " . intval($copies)
-                . " -o sides=" . escapeshellarg($sides)
-                . " -o orientation-requested=" . intval(($orientation === 'landscape') ? 4 : 3)
-                . " -o print-quality=" . intval($quality)
-                . ($numberUp > 1 ? " -o number-up=" . intval($numberUp) : "")
-                . " " . escapeshellarg($pdfFile)
-                . " > /dev/null 2>&1 &";
-            exec($cmd);
-        }
-        // Imagem: converte e imprime
-        elseif (in_array($ext, ['jpg', 'jpeg', 'png'])) {
-            $pdfFile = "/tmp/" . uniqid('img_', true) . ".pdf";
-            $cmd = "convert " . escapeshellarg($dest)
-                . " -density 150 -quality 90 " . escapeshellarg($pdfFile)
-                . " && /usr/bin/lp -d " . escapeshellarg($printerName)
-                . " -n " . intval($copies)
-                . " " . escapeshellarg($pdfFile)
-                . " > /dev/null 2>&1 &";
-            exec($cmd);
-        }
-        // PDF: imprime direto
-        else {
-            $cmd = "/usr/bin/lp -d " . escapeshellarg($printerName)
-                . " -n " . intval($copies)
-                . " -o sides=" . escapeshellarg($sides)
-                . " -o orientation-requested=" . intval(($orientation === 'landscape') ? 4 : 3)
-                . " -o print-quality=" . intval($quality)
-                . ($numberUp > 1 ? " -o number-up=" . intval($numberUp) : "")
-                . " " . escapeshellarg($dest)
-                . " > /dev/null 2>&1 &";
-            exec($cmd);
+        // Prepara e dispara a impressão (PrintService faz conversão internamente)
+        $printer = new PrintService();
+        try {
+            $printer->print($dest, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
+            $success = true;
+        } catch (Throwable $e) {
+            $printer->log("Erro interno ao imprimir: " . $e->getMessage());
+            $success = false;
         }
 
-        // Registra cota de páginas (aproximado)
+        // Contabiliza páginas (só conta se for PDF existente)
+        $pages = PageCounter::count($dest);
+
+        // Registra no banco de dados (QuotaService)
         $quota = new QuotaService();
         $quota->register($user, $pages * $copies, $dest);
 
-        // Limpeza de segurança: mantém somente arquivos necessários
-        if (file_exists($dest)) {
-            unlink($dest);
-        }
+        // Grava log customizado
+        $this->log($user, $dest, $pages, $copies, $success);
 
-        $this->log($user, $dest, $pages, $copies, true);
-        $this->flash("Impressão enviada ({$copies} cópias, {$pages} páginas)", true);
+        // Mensagem de retorno
+        $msg = $success
+            ? "Impressão enviada ({$copies} cópias, {$pages} páginas)"
+            : "Erro ao enviar impressão";
+
+        // Resposta AJAX vs Flash
+        if ($this->isAjax()) {
+            $this->respond($msg, $success);
+        } else {
+            $this->flash($msg, $success);
+        }
     }
 
+    // Detecta requisição AJAX (XMLHttpRequest)
+    private function isAjax()
+    {
+        return !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+            && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+    }
+
+    // Redireciona com flash message na sessão
+    private function flash($msg, $success = true)
+    {
+        $_SESSION['flash'] = $msg;
+        $_SESSION['flash_type'] = $success ? 'success' : 'error';
+        header("Location: /");
+        exit;
+    }
+
+    // Responde em JSON (usado para AJAX)
+    private function respond($msg, $success = true)
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['success' => $success, 'message' => $msg]);
+        exit;
+    }
+
+    // Log customizado de impressão (opcional)
     private function log($user, $file, $pages, $copies, $status)
     {
         $logPath = $_ENV['LOG_PATH'] ?? '';
         if (!$logPath)
             return;
-        $line = date('Y-m-d H:i:s')
-            . " | USER: $user | FILE: $file | COPIES: $copies | PAGES: $pages | STATUS: "
-            . ($status ? "OK" : "FAIL") . "\n";
+        $line = sprintf(
+            "%s | USER: %s | FILE: %s | COPIES: %d | PAGES: %d | STATUS: %s\n",
+            date('Y-m-d H:i:s'),
+            $user,
+            $file,
+            $copies,
+            $pages,
+            $status ? "OK" : "FAIL"
+        );
         @file_put_contents($logPath, $line, FILE_APPEND);
-    }
-
-    private function flash($msg, $success = true)
-    {
-        // Armazena mensagem na sessão e redireciona
-        $_SESSION['flash'] = $msg;
-        $_SESSION['flash_type'] = $success ? 'success' : 'error';
-        header("Location: /");
-        exit;
     }
 }
