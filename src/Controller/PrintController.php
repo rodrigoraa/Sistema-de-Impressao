@@ -64,7 +64,7 @@ class PrintController
         }
 
         $printer = new PrintService();
-        $pdf = $printer->prepareFile($dest);
+        $pdf = $dest;
 
         if (!$pdf) {
             if (file_exists($dest))
