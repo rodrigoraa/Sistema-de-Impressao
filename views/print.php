@@ -12,6 +12,8 @@
 
     <link rel="stylesheet" href="/css/base.css">
     <link rel="stylesheet" href="/css/print.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </head>
 
 <body>
@@ -195,6 +197,24 @@
         </main>
 
     </div>
+
+    <div class="modal fade" id="previewModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <h5 class="modal-title">Visualização do arquivo</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body text-center">
+                    <div id="modalContent"></div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
     <script>
         const dropArea = document.getElementById('drop-area');
         const input = document.getElementById('fileInput');
@@ -213,6 +233,22 @@
         // tamanho
         function formatSize(bytes) {
             return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+        }
+
+        // 🔥 abre modal
+        function openModal(url, ext) {
+            const modalContent = document.getElementById('modalContent');
+
+            if (['jpg', 'jpeg', 'png'].includes(ext)) {
+                modalContent.innerHTML = `<img src="${url}" style="max-width:100%;">`;
+            }
+
+            if (ext === 'pdf') {
+                modalContent.innerHTML = `<iframe src="${url}" style="width:100%; height:80vh;"></iframe>`;
+            }
+
+            const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+            modal.show();
         }
 
         // validação + preview
@@ -248,15 +284,20 @@
 
             const url = URL.createObjectURL(file);
 
-            // preview
+            // preview pequeno + clique
             if (['jpg', 'jpeg', 'png'].includes(ext)) {
-                preview.innerHTML = `<img src="${url}">`;
+                preview.innerHTML = `<img src="${url}" style="cursor:pointer;">`;
+                preview.onclick = () => openModal(url, ext);
             }
 
             if (ext === 'pdf') {
-                preview.innerHTML = `<iframe src="${url}"></iframe>`;
+                preview.innerHTML = `<iframe src="${url}" style="cursor:pointer;"></iframe>`;
+                preview.onclick = () => openModal(url, ext);
             }
 
+            if (ext === 'docx') {
+                preview.innerHTML = `<p class="text-muted">Pré-visualização disponível após envio</p>`;
+            }
         });
 
         // progresso fake (UX)
