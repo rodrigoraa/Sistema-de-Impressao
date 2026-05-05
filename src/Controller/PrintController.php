@@ -1,5 +1,4 @@
 <?php
-
 require_once __DIR__ . '/../Service/PrintService.php';
 require_once __DIR__ . '/../Service/PageCounter.php';
 require_once __DIR__ . '/../Service/QuotaService.php';
@@ -9,172 +8,164 @@ class PrintController
 {
     public function handle()
     {
+        session_start();
         $userList = [];
 
+        // Se não estiver logado, retorna só a lista (vazia) de usuários
         if (!isset($_SESSION['user'])) {
             return ['userList' => $userList];
         }
 
-        $isAdmin = ($_SESSION['role'] ?? '') === 'admin';
+        $isAdmin = (($_SESSION['role'] ?? '') === 'admin');
 
+        // Se admin, carrega lista de usuários (nome e cpf) do BD para seleção
         if ($isAdmin) {
             $db = Database::connect();
             $result = $db->query("SELECT name, cpf FROM users ORDER BY name");
-
             while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-                $userList[] = [
-                    'name' => $row['name'],
-                    'cpf' => $row['cpf']
-                ];
+                $userList[] = ['name' => $row['name'], 'cpf' => $row['cpf']];
             }
         }
 
+        // No GET, apenas retorna a lista de usuários para a view
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             return ['userList' => $userList];
         }
 
+        // =======================
+        // === Processa POST ====
+        // =======================
+        // Verifica se arquivo foi enviado
         if (!isset($_FILES['arquivo'])) {
-            $this->respond("Arquivo não enviado", false);
+            $this->flash("Arquivo não enviado", false);
+            // Não deve haver resposta JSON aqui, pois ainda nem imprimimos nada
         }
 
         $file = $_FILES['arquivo'];
+        $filename = $file['name'];
+        $tmpPath = $file['tmp_name'];
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 
+        // Tipos permitidos
         $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
-        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-
         if (!in_array($ext, $allowed)) {
-            $this->respond("Tipo de arquivo não permitido", false);
+            $this->flash("Tipo de arquivo não permitido", false);
         }
 
+        // Caminho de upload (definido via env UPLOAD_PATH)
         $uploadPath = $_ENV['UPLOAD_PATH'] ?? '';
-
         if (!$uploadPath) {
-            $this->respond("UPLOAD_PATH não configurado", false);
+            $this->flash("UPLOAD_PATH não configurado", false);
+        }
+        if (!is_dir($uploadPath) && !mkdir($uploadPath, 0775, true)) {
+            $this->flash("Não foi possível criar diretório de upload", false);
         }
 
-        if (!is_dir($uploadPath)) {
-            mkdir($uploadPath, 0775, true);
+        // Move arquivo enviado para pasta de uploads
+        $newFilename = uniqid() . '_' . basename($filename);
+        $dest = rtrim($uploadPath, '/') . '/' . $newFilename;
+        if (!move_uploaded_file($tmpPath, $dest)) {
+            $this->flash("Erro ao salvar arquivo", false);
         }
 
-        $filename = uniqid() . '_' . basename($file['name']);
-        $dest = rtrim($uploadPath, '/') . '/' . $filename;
-
-        if (!move_uploaded_file($file['tmp_name'], $dest)) {
-            $this->respond("Erro ao salvar arquivo", false);
-        }
-
-        // ✔ NÃO converter dentro do request
-        $pdf = $dest;
-
-        // ✔ Converter DOC/DOCX em background
-        if (in_array($ext, ['doc', 'docx'])) {
-            exec(
-                "HOME=/tmp libreoffice --headless --convert-to pdf "
-                . escapeshellarg($dest)
-                . " --outdir /tmp > /dev/null 2>&1 &"
-            );
-        }
-
-        // ✔ Converter imagem em background (opcional)
-        if (in_array($ext, ['jpg', 'jpeg', 'png'])) {
-            $output = "/tmp/" . uniqid('img_', true) . ".pdf";
-
-            exec(
-                "convert "
-                . escapeshellarg($dest)
-                . " -density 150 -quality 90 "
-                . escapeshellarg($output)
-                . " > /dev/null 2>&1 &"
-            );
-        }
-
+        // Define usuário alvo: se admin e selecionou outro usuário válido, usa esse; senão, usuário da sessão.
         $cpfList = array_column($userList, 'cpf');
-
-        if (
-            $isAdmin &&
-            !empty($_POST['target_user']) &&
-            in_array($_POST['target_user'], $cpfList)
-        ) {
+        if ($isAdmin && !empty($_POST['target_user']) && in_array($_POST['target_user'], $cpfList)) {
             $user = $_POST['target_user'];
         } else {
             $user = $_SESSION['user'];
         }
 
+        // Parâmetros de impressão do formulário
         $copies = max(1, intval($_POST['copies'] ?? 1));
-        $sides = $_POST['sides'] ?? 'one-sided';
-        $orientation = $_POST['orientation'] ?? 'portrait';
-        $quality = intval($_POST['quality'] ?? 3);
-        $numberUp = intval($_POST['number_up'] ?? 1);
-
-        // ✔ Evitar travamento com PageCounter
-        $pages = 1;
-
+        $sides = ($_POST['sides'] ?? 'one-sided');        // "one-sided" ou "two-sided-long-edge"/"two-sided-short-edge"
+        $orientation = $_POST['orientation'] ?? 'portrait'; // "portrait" ou "landscape"
+        $quality = intval($_POST['quality'] ?? 3);       // qualidade de impressão (ex: 3=norm)
+        $numberUp = intval($_POST['number_up'] ?? 1);    // páginas por folha (1, 2, ...)
+        // Outros parâmetros extras (prefixados com opt_)
         $extraOptions = [];
-
         foreach ($_POST as $key => $value) {
-            if (str_starts_with($key, 'opt_')) {
+            if (strpos($key, 'opt_') === 0) {
                 $realKey = substr($key, 4);
                 $extraOptions[$realKey] = $value;
             }
         }
 
-        // ✔ Impressão em background (não bloqueia)
-        $cmd = "/usr/bin/lp "
-            . "-d " . escapeshellarg($_ENV['PRINTER_NAME']) . " "
-            . "-n " . intval($copies) . " "
-            . "-o sides=" . $sides . " "
-            . "-o orientation-requested=" . ($orientation === 'landscape' ? 4 : 3) . " "
-            . "-o print-quality=" . intval($quality) . " ";
+        // Instancia serviço de impressão
+        $printer = new PrintService();
+        $success = false;
 
-        if ($numberUp > 1) {
-            $cmd .= "-o number-up=" . intval($numberUp) . " ";
+        // Lança o comando de impressão em background (PrintService::print cuida de conversão se necessário)
+        try {
+            $printer->print($dest, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
+            $success = true;
+        } catch (Throwable $e) {
+            // Em caso de erro, registra falha
+            $printer->log("Erro interno: " . $e->getMessage());
+            $success = false;
         }
 
-        $cmd .= escapeshellarg($pdf);
+        // Conta páginas do PDF (se foi PDF) para cota; PageCounter só conta se existir
+        $pages = PageCounter::count($dest);
 
-        exec($cmd . " > /dev/null 2>&1 &");
-
-        // ✔ Registrar uso
+        // Registra no banco de dados via QuotaService
         $quota = new QuotaService();
         $quota->register($user, $pages * $copies, $dest);
 
-        // ✔ Limpeza segura (opcional)
-        if (file_exists($dest)) {
-            unlink($dest);
+        // Registra log customizado (opcional)
+        $this->log($user, $dest, $pages, $copies, $success);
+
+        $msg = $success
+            ? "Impressão enviada ({$copies} cópias, {$pages} páginas)"
+            : "Erro ao enviar impressão";
+
+        // Responde de acordo com AJAX ou formulário padrão
+        if ($this->isAjax()) {
+            $this->respond($msg, $success);
+        } else {
+            $this->flash($msg, $success);
         }
-
-        $this->log($user, $dest, $pages, $copies, true);
-
-        $this->respond(
-            "Impressão enviada ({$copies} cópias, {$pages} páginas)",
-            true
-        );
     }
 
+    // Detecta requisição AJAX
+    private function isAjax()
+    {
+        return !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+            && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+    }
+
+    // Flash: armazena mensagem na sessão e redireciona
+    private function flash($msg, $success = true)
+    {
+        $_SESSION['flash'] = $msg;
+        $_SESSION['flash_type'] = $success ? 'success' : 'error';
+        header("Location: /");
+        exit;
+    }
+
+    // Resposta JSON (para AJAX)
+    private function respond($msg, $success = true)
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['success' => $success, 'message' => $msg]);
+        exit;
+    }
+
+    // Registra log simples (opcional)
     private function log($user, $file, $pages, $copies, $status)
     {
         $logPath = $_ENV['LOG_PATH'] ?? '';
-
-        if (!$logPath) {
+        if (!$logPath)
             return;
-        }
-
-        $line = date('Y-m-d H:i:s')
-            . " | USER: $user | FILE: $file | COPIES: $copies | PAGES: $pages | STATUS: "
-            . ($status ? "OK" : "FAIL") . "\n";
-
+        $line = sprintf(
+            "%s | USER: %s | FILE: %s | COPIES: %d | PAGES: %d | STATUS: %s\n",
+            date('Y-m-d H:i:s'),
+            $user,
+            $file,
+            $copies,
+            $pages,
+            ($status ? "OK" : "FAIL")
+        );
         @file_put_contents($logPath, $line, FILE_APPEND);
-    }
-
-    private function respond($msg, $success = true)
-    {
-        header('Content-Type: application/json');
-
-        echo json_encode([
-            'success' => $success,
-            'message' => $msg
-        ]);
-
-        exit;
     }
 }
