@@ -255,7 +255,7 @@
         dropArea.onclick = () => input.click();
 
         // tipos permitidos
-        const allowed = ['pdf', 'docx', 'jpg', 'jpeg', 'png'];
+        const allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
 
         // tamanho
         function formatSize(bytes) {

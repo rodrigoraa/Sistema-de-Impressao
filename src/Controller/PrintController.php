@@ -39,7 +39,7 @@ class PrintController
 
         $file = $_FILES['arquivo'];
 
-        $allowed = ['pdf', 'docx', 'jpg', 'jpeg', 'png'];
+        $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
         $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
 
         if (!in_array($ext, $allowed)) {
@@ -108,7 +108,8 @@ class PrintController
             $sides,
             $orientation,
             $quality,
-            $extraOptions
+            $extraOptions,
+            $numberUp
         );
 
         if ($success) {

@@ -24,23 +24,26 @@ class PrintService
 
         $outputPdf = "/tmp/" . uniqid('print_', true) . ".pdf";
 
-        if ($ext === 'docx') {
+        if ($ext === 'docx' || $ext === 'doc') {
 
             if (!shell_exec("which libreoffice")) {
                 $this->log("LibreOffice não encontrado");
                 return false;
             }
 
-            $cmd = "libreoffice --headless --convert-to pdf "
+            $cmd = "libreoffice --headless --invisible --norestore --nolockcheck --nodefault --convert-to pdf "
                 . escapeshellarg($filePath)
                 . " --outdir /tmp 2>&1";
 
             exec($cmd, $out, $status);
 
-            $generated = glob("/tmp/" . pathinfo($filePath, PATHINFO_FILENAME) . "*.pdf");
+            $generated = glob("/tmp/*.pdf");
 
-            if ($status !== 0 || empty($generated)) {
-                $this->log("Erro DOCX\nCMD: $cmd\n" . implode("\n", $out));
+            usort($generated, function ($a, $b) {
+                return filemtime($b) - filemtime($a);
+            });
+
+            if (empty($generated)) {
                 return false;
             }
 
@@ -74,7 +77,7 @@ class PrintService
         return false;
     }
 
-    public function print($pdfPath, $copies, $sides, $orientation, $quality, $extraOptions = [])
+    public function print($pdfPath, $copies, $sides, $orientation, $quality, $extraOptions = [], $numberUp = 1)
     {
         if (!file_exists($pdfPath)) {
             $this->log("PDF não encontrado: $pdfPath");
@@ -95,16 +98,23 @@ class PrintService
             . "-o orientation-requested=" . intval($orientationFlag) . " "
             . "-o print-quality=" . intval($quality) . " ";
 
+        // ✔ opções extras
         foreach ($extraOptions as $key => $value) {
-
             if (!$value)
                 continue;
 
             $cmd .= "-o " . escapeshellarg($key . "=" . $value) . " ";
         }
 
+        // ✔ number-up (2 por folha, etc)
+        if ($numberUp > 1) {
+            $cmd .= "-o number-up=" . intval($numberUp) . " ";
+        }
+
+        // ✔ ARQUIVO SEMPRE POR ÚLTIMO
         $cmd .= escapeshellarg($pdfPath);
 
+        // ✔ execução com timeout
         exec("timeout 30 " . $cmd . " 2>&1", $out, $status);
 
         $this->log(
