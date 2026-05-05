@@ -27,12 +27,14 @@ class PrintService
             $orientation,
             $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4'
         );
-        $this->log('Arquivo preparado para impressao: origem=' . $filePath . ' preparado=' . $preparedFile . ' tamanho=' . (@filesize($preparedFile) ?: 0));
+        $sourceExt = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        $preparedExt = strtolower(pathinfo($preparedFile, PATHINFO_EXTENSION));
+        $this->log('Arquivo preparado para impressao: origem=' . $filePath . ' ext=' . $sourceExt . ' mime=' . ($this->detectMime($filePath) ?: '-') . ' preparado=' . $preparedFile . ' ext_preparado=' . $preparedExt . ' tamanho=' . (@filesize($preparedFile) ?: 0));
 
         if ($this->isWindows) {
             $this->printWindows($preparedFile, $copies, $sides, $orientation, $numberUp, $extraOptions);
         } else {
-            $this->printCups($preparedFile, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
+            $this->printCups($preparedFile, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions, $sourceExt);
         }
 
         return $preparedFile;
@@ -60,7 +62,7 @@ class PrintService
         throw new RuntimeException('Tipo de arquivo nao suportado para impressao');
     }
 
-    private function printCups($filePath, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions)
+    private function printCups($filePath, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions, $sourceExt = '')
     {
         $lp = $this->findExecutable(['/usr/bin/lp', '/bin/lp', 'lp']);
         if ($lp === null) {
@@ -79,16 +81,10 @@ class PrintService
             $cmd .= ' -o number-up-layout=lrtb';
         }
 
-        foreach ($extraOptions as $key => $val) {
-            if ($val === '' || $val === null) {
-                continue;
+        if (!in_array($sourceExt, ['jpg', 'jpeg', 'png'], true)) {
+            foreach ($this->cupsExtraOptions($extraOptions) as $key => $val) {
+                $cmd .= ' -o ' . escapeshellarg($key . '=' . $val);
             }
-
-            if (in_array($key, ['paper', 'scale'], true)) {
-                continue;
-            }
-
-            $cmd .= ' -o ' . escapeshellarg($key . '=' . $val);
         }
 
         $cmd .= ' ' . escapeshellarg($filePath) . ' 2>&1';
@@ -552,6 +548,31 @@ class PrintService
             return 'two-sided-long-edge';
         }
         return 'one-sided';
+    }
+
+    private function cupsExtraOptions($extraOptions)
+    {
+        $allowed = ['media', 'scaling', 'fit-to-page'];
+        $result = [];
+
+        foreach ($extraOptions as $key => $val) {
+            if ($val === '' || $val === null || !in_array($key, $allowed, true)) {
+                continue;
+            }
+
+            $result[$key] = $val;
+        }
+
+        return $result;
+    }
+
+    private function detectMime($filePath)
+    {
+        if (function_exists('mime_content_type')) {
+            return @mime_content_type($filePath) ?: null;
+        }
+
+        return null;
     }
 
     private function windowsSides($sides)
