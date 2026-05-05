@@ -152,13 +152,6 @@
                                     </select>
                                 </div>
 
-                                <div class="card mt-4">
-                                    <div class="card-body">
-                                        <h5><i class="bi bi-gear"></i> Configurações avançadas</h5>
-                                        <div id="advanced-options" class="row g-3 mt-2"></div>
-                                    </div>
-                                </div>
-
                                 <?php if ($_SESSION['role'] === 'admin'): ?>
                                     <div class="mb-3 admin-box">
 
