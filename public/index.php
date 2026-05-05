@@ -83,6 +83,7 @@ require_once $projectRoot . '/src/Controller/AuthController.php';
 require_once $projectRoot . '/src/Controller/AdminController.php';
 require_once $projectRoot . '/src/Controller/UserController.php';
 require_once $projectRoot . '/src/Controller/SetupController.php';
+require_once $projectRoot . '/src/Controller/PrinterController.php';
 
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 

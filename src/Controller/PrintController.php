@@ -37,11 +37,11 @@ class PrintController
 
         // Validação inicial
         if (!isset($_FILES['arquivo'])) {
-            $this->flash("Arquivo não enviado", false);
+            $this->fail("Arquivo não enviado");
         }
         $file = $_FILES['arquivo'];
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            $this->flash($this->uploadErrorMessage($file['error'] ?? UPLOAD_ERR_NO_FILE), false);
+            $this->fail($this->uploadErrorMessage($file['error'] ?? UPLOAD_ERR_NO_FILE));
         }
 
         $origName = $file['name'];
@@ -51,13 +51,13 @@ class PrintController
         // Extensões permitidas
         $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
         if (!in_array($ext, $allowed)) {
-            $this->flash("Tipo de arquivo não permitido", false);
+            $this->fail("Tipo de arquivo não permitido");
         }
 
         // Configura caminhos via env (ou config carregada)
         $uploadPath = $_ENV['UPLOAD_PATH'] ?? '';
         if (!$uploadPath) {
-            $this->flash("UPLOAD_PATH não configurado", false);
+            $this->fail("UPLOAD_PATH não configurado");
         }
         if (!is_dir($uploadPath)) {
             mkdir($uploadPath, 0775, true);
@@ -65,7 +65,7 @@ class PrintController
         $newFilename = uniqid() . '_' . basename($origName);
         $dest = rtrim($uploadPath, '/') . '/' . $newFilename;
         if (!move_uploaded_file($tmpPath, $dest)) {
-            $this->flash("Erro ao salvar arquivo", false);
+            $this->fail("Erro ao salvar arquivo");
         }
 
         // Determina usuário final da impressão
@@ -97,10 +97,8 @@ class PrintController
         }
         if (!empty($_POST['paper'])) {
             $extraOptions['media'] = $_POST['paper'];
-            $extraOptions['paper'] = $_POST['paper'];
         }
         if (!empty($_POST['scale'])) {
-            $extraOptions['scale'] = $_POST['scale'];
             if ($_POST['scale'] === 'fit') {
                 $extraOptions['fit-to-page'] = 'true';
             } elseif (is_numeric($_POST['scale'])) {
@@ -161,6 +159,15 @@ class PrintController
         $_SESSION['flash_type'] = $success ? 'success' : 'error';
         header("Location: /");
         exit;
+    }
+
+    private function fail($msg)
+    {
+        if ($this->isAjax()) {
+            $this->respond($msg, false);
+        }
+
+        $this->flash($msg, false);
     }
 
     // Responde em JSON (usado para AJAX)

@@ -83,6 +83,11 @@ class PrintService
             if ($val === '' || $val === null) {
                 continue;
             }
+
+            if (in_array($key, ['paper', 'scale'], true)) {
+                continue;
+            }
+
             $cmd .= ' -o ' . escapeshellarg($key . '=' . $val);
         }
 
