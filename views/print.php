@@ -125,6 +125,33 @@
                                     </select>
                                 </div>
 
+                                <div class="mb-3">
+                                    <label class="form-label">Páginas por folha</label>
+                                    <select class="form-select" name="number_up">
+                                        <option value="1">1 por folha</option>
+                                        <option value="2">2 por folha</option>
+                                        <option value="4">4 por folha</option>
+                                        <option value="8">8 por folha</option>
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Tamanho do papel</label>
+                                    <select class="form-select" name="paper">
+                                        <option value="A4">A4</option>
+                                        <option value="Letter">Carta</option>
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Escala</label>
+                                    <select class="form-select" name="scale">
+                                        <option value="100">100%</option>
+                                        <option value="90">90%</option>
+                                        <option value="fit">Ajustar à página</option>
+                                    </select>
+                                </div>
+
                                 <?php if ($_SESSION['role'] === 'admin'): ?>
                                     <div class="mb-3 admin-box">
 

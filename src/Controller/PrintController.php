@@ -88,10 +88,12 @@ class PrintController
         $sides = $_POST['sides'] ?? 'one-sided';
         $orientation = $_POST['orientation'] ?? 'portrait';
         $quality = intval($_POST['quality'] ?? 3);
+        $numberUp = intval($_POST['number_up'] ?? 1);
+        $paper = $_POST['paper'] ?? 'A4';
 
         $pages = PageCounter::count($pdf);
 
-        $success = $printer->print($pdf, $copies, $sides, $orientation, $quality);
+        $success = $printer->print($pdf, $copies, $sides, $orientation, $quality, $numberUp, $paper);
 
         if ($success) {
 
