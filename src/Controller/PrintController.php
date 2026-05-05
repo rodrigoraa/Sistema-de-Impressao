@@ -21,7 +21,10 @@ class PrintController
             $result = $db->query("SELECT cpf FROM users ORDER BY cpf");
 
             while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-                $userList[] = $row['cpf'];
+                $userList[] = [
+                    'name' => $row['name'],
+                    'cpf' => $row['cpf']
+                ];
             }
         }
 

@@ -105,7 +105,9 @@
                                         <label class="form-label">Imprimir para</label>
                                         <select class="form-select" name="target_user">
                                             <?php foreach ($userList as $u): ?>
-                                                <option value="<?= $u ?>"><?= $u ?></option>
+                                                <option value="<?= $u['cpf'] ?>">
+                                                    <?= htmlspecialchars($u['name']) ?> (<?= $u['cpf'] ?>)
+                                                </option>
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
@@ -148,9 +150,11 @@
 
             <!-- FOOTER -->
             <div class="mt-4 text-center">
-                <a href="/admin" class="btn btn-outline-secondary">
-                    <i class="bi bi-bar-chart"></i> Painel
-                </a>
+                <?php if ($_SESSION['role'] === 'admin'): ?>
+                    <a href="/admin" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-speedometer2"></i> Painel
+                    </a>
+                <?php endif; ?>
             </div>
 
         </main>

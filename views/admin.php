@@ -105,7 +105,10 @@
                                 <?php else: ?>
                                     <?php foreach ($data as $row): ?>
                                         <tr>
-                                            <td><?= htmlspecialchars($row['user']) ?></td>
+                                            <td>
+                                                <?= htmlspecialchars($row['name']) ?><br>
+                                                <small class="text-muted"><?= $row['cpf'] ?></small>
+                                            </td>
                                             <td>
                                                 <span class="badge bg-primary">
                                                     <?= $row['total'] ?> páginas

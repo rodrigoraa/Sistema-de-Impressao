@@ -24,11 +24,15 @@ class AdminController
         $month = $_GET['month'] ?? date('Y-m');
 
         $stmt = $db->prepare("
-            SELECT user, SUM(pages) as total
-            FROM usage
-            WHERE strftime('%Y-%m', created_at) = :month
-            GROUP BY user
-            ORDER BY total DESC
+                SELECT 
+                    u.name,
+                    u.cpf,
+                    SUM(us.pages) as total
+                FROM usage us
+                JOIN users u ON u.cpf = us.user
+                WHERE strftime('%Y-%m', us.created_at) = :month
+                GROUP BY us.user
+                ORDER BY total DESC
         ");
 
         $stmt->bindValue(':month', $month);
