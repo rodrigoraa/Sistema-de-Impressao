@@ -27,6 +27,7 @@ class PrintService
             $orientation,
             $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4'
         );
+        $this->log('Arquivo preparado para impressao: origem=' . $filePath . ' preparado=' . $preparedFile . ' tamanho=' . (@filesize($preparedFile) ?: 0));
 
         if ($this->isWindows) {
             $this->printWindows($preparedFile, $copies, $sides, $orientation, $numberUp, $extraOptions);
@@ -219,6 +220,7 @@ class PrintService
             return null;
         }
 
+        $jpegFile = tempnam(sys_get_temp_dir(), 'img_') . '.jpg';
         $pdfFile = tempnam(sys_get_temp_dir(), 'imgpdf_') . '.pdf';
         [$pageWidth, $pageHeight] = $this->paperSize($paper);
         if ($orientation === 'landscape') {
@@ -236,7 +238,8 @@ class PrintService
             '-alpha remove',
             '-alpha off',
             '-resize ' . escapeshellarg($maxPixels),
-            escapeshellarg($pdfFile),
+            '-quality 92',
+            escapeshellarg($jpegFile),
             '2>&1',
         ];
 
@@ -247,11 +250,25 @@ class PrintService
         }
 
         exec($cmd, $output, $status);
-        if ($status === 0 && is_file($pdfFile) && filesize($pdfFile) > 0) {
-            $this->log('ImageMagick: ' . $cmd . ' | OK');
-            return $pdfFile;
+        if ($status === 0 && is_file($jpegFile) && filesize($jpegFile) > 0) {
+            $jpegInfo = @getimagesize($jpegFile);
+            if ($jpegInfo !== false) {
+                $this->writeImagePdf(
+                    file_get_contents($jpegFile),
+                    $pdfFile,
+                    $jpegInfo[0],
+                    $jpegInfo[1],
+                    '/DCTDecode',
+                    $orientation,
+                    $paper
+                );
+                @unlink($jpegFile);
+                $this->log('ImageMagick JPG: ' . $cmd . ' | PDF=' . $pdfFile);
+                return $pdfFile;
+            }
         }
 
+        @unlink($jpegFile);
         @unlink($pdfFile);
         $this->log('ImageMagick falhou: ' . $cmd . ' | status=' . $status . ' | ' . implode(' | ', $output));
         return null;
