@@ -2,7 +2,8 @@
 
 ## Requisitos
 - PHP 8+ com extensão `sqlite3` habilitada
-- (para imprimir) `lp` (CUPS), `libreoffice` (DOCX→PDF) e `convert` (ImageMagick)
+- Linux: `lp`/CUPS e `libreoffice` (DOC/DOCX→PDF)
+- Windows: SumatraPDF para enviar PDFs à impressora e LibreOffice para DOC/DOCX
 - Permissão de escrita em `storage/`
 
 ## Deploy (Apache)
@@ -20,5 +21,7 @@ Você pode configurar via `config/config.php` ou criando um arquivo `.env` na ra
 PRINTER_NAME=kyocera-escola
 UPLOAD_PATH=/var/www/impressao/storage/uploads
 LOG_PATH=/var/www/impressao/storage/logs/app.log
+LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
+SUMATRA_PATH=C:\Program Files\SumatraPDF\SumatraPDF.exe
 ```
 

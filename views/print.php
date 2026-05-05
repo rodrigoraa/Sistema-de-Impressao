@@ -91,7 +91,7 @@
                                     </div>
 
                                     <small class="text-muted">
-                                        PDF, DOCX ou imagem (máx 10MB)
+                                        PDF, DOC, DOCX ou imagem (máx 10MB)
                                     </small>
 
                                 </div>
@@ -199,7 +199,7 @@
                             </h5>
 
                             <ul class="list-unstyled info-list">
-                                <li><i class="bi bi-check-circle"></i> Envie arquivos PDF, DOCX ou imagem</li>
+                                <li><i class="bi bi-check-circle"></i> Envie arquivos PDF, DOC, DOCX ou imagem</li>
                                 <li><i class="bi bi-check-circle"></i> Escolha frente e verso se necessário</li>
                                 <li><i class="bi bi-check-circle"></i> Administradores podem imprimir para outros
                                     usuários</li>
@@ -322,7 +322,7 @@
                 preview.onclick = () => openModal(url, ext);
             }
 
-            if (ext === 'docx') {
+            if (['doc', 'docx'].includes(ext)) {
                 preview.innerHTML = `<p class="text-muted">Pré-visualização disponível após envio</p>`;
             }
         });
@@ -345,6 +345,7 @@
             .then(data => {
 
                 const container = document.getElementById('advanced-options');
+                if (!container) return;
 
                 for (const key in data) {
                     const item = data[key];

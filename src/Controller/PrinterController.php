@@ -12,7 +12,19 @@ class PrinterController
             return;
         }
 
-        exec("lpoptions -p " . escapeshellarg($printer) . " -l", $out);
+        $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+        if ($isWindows) {
+            echo json_encode([]);
+            return;
+        }
+
+        exec("command -v lpoptions 2>/dev/null", $check, $checkStatus);
+        if ($checkStatus !== 0) {
+            echo json_encode([]);
+            return;
+        }
+
+        exec("lpoptions -p " . escapeshellarg($printer) . " -l 2>/dev/null", $out);
 
         $result = [];
 

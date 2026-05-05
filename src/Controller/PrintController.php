@@ -40,6 +40,10 @@ class PrintController
             $this->flash("Arquivo não enviado", false);
         }
         $file = $_FILES['arquivo'];
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $this->flash("Erro no upload do arquivo", false);
+        }
+
         $origName = $file['name'];
         $tmpPath = $file['tmp_name'];
         $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
@@ -77,7 +81,12 @@ class PrintController
         $sides = ($_POST['sides'] ?? 'one-sided'); // "one-sided" ou "two-sided-short-edge"/"long-edge"
         $orientation = ($_POST['orientation'] ?? 'portrait'); // "portrait" ou "landscape"
         $quality = intval($_POST['quality'] ?? 3);
+        $allowedNumberUp = [1, 2, 4, 8];
         $numberUp = intval($_POST['number_up'] ?? 1);
+        if (!in_array($numberUp, $allowedNumberUp, true)) {
+            $numberUp = 1;
+        }
+
         // Coleta opções extras (opt_*)
         $extraOptions = [];
         foreach ($_POST as $key => $val) {
@@ -86,19 +95,35 @@ class PrintController
                 $extraOptions[$optKey] = $val;
             }
         }
+        if (!empty($_POST['paper'])) {
+            $extraOptions['media'] = $_POST['paper'];
+            $extraOptions['paper'] = $_POST['paper'];
+        }
+        if (!empty($_POST['scale'])) {
+            $extraOptions['scale'] = $_POST['scale'];
+            if ($_POST['scale'] === 'fit') {
+                $extraOptions['fit-to-page'] = 'true';
+            } elseif (is_numeric($_POST['scale'])) {
+                $extraOptions['scaling'] = $_POST['scale'];
+            }
+        }
 
         // Prepara e dispara a impressão (PrintService faz conversão internamente)
         $printer = new PrintService();
+        $printedFile = $dest;
         try {
-            $printer->print($dest, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
+            $printedFile = $printer->print($dest, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
             $success = true;
         } catch (Throwable $e) {
             $printer->log("Erro interno ao imprimir: " . $e->getMessage());
             $success = false;
         }
 
-        // Contabiliza páginas (só conta se for PDF existente)
-        $pages = PageCounter::count($dest);
+        // Contabiliza o arquivo preparado para impressao, inclusive DOC/DOCX/imagem convertidos.
+        $pages = PageCounter::count($printedFile);
+        if ($success && $pages < 1) {
+            $pages = 1;
+        }
 
         // Registra no banco de dados (QuotaService)
         $quota = new QuotaService();
