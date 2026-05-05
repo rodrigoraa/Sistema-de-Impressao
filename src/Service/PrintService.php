@@ -74,7 +74,7 @@ class PrintService
         return false;
     }
 
-    public function print($pdfPath, $copies, $sides, $orientation, $quality, $numberUp, $paper)
+    public function print($pdfPath, $copies, $sides, $orientation, $quality, $extraOptions = [])
     {
         if (!file_exists($pdfPath)) {
             $this->log("PDF não encontrado: $pdfPath");
@@ -93,10 +93,17 @@ class PrintService
             . "-n " . intval($copies) . " "
             . "-o sides=" . escapeshellarg($sides) . " "
             . "-o orientation-requested=" . intval($orientationFlag) . " "
-            . "-o print-quality=" . intval($quality) . " "
-            . "-o number-up=" . intval($numberUp) . " "
-            . "-o media=" . escapeshellarg($paper) . " "
-            . escapeshellarg($pdfPath);
+            . "-o print-quality=" . intval($quality) . " ";
+
+        foreach ($extraOptions as $key => $value) {
+
+            if (!$value)
+                continue;
+
+            $cmd .= "-o " . escapeshellarg($key . "=" . $value) . " ";
+        }
+
+        $cmd .= escapeshellarg($pdfPath);
 
         exec("timeout 30 " . $cmd . " 2>&1", $out, $status);
 

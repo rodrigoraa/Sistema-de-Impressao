@@ -157,6 +157,11 @@ if ($uri === '/admin/users/delete') {
     exit;
 }
 
+if ($uri === '/printer/options') {
+    (new PrinterController())->options();
+    exit;
+}
+
 // PROTEÇÃO
 if (!isset($_SESSION['user'])) {
     header('Location: /login');

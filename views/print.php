@@ -152,6 +152,13 @@
                                     </select>
                                 </div>
 
+                                <div class="card mt-4">
+                                    <div class="card-body">
+                                        <h5><i class="bi bi-gear"></i> Configurações avançadas</h5>
+                                        <div id="advanced-options" class="row g-3 mt-2"></div>
+                                    </div>
+                                </div>
+
                                 <?php if ($_SESSION['role'] === 'admin'): ?>
                                     <div class="mb-3 admin-box">
 
@@ -339,6 +346,44 @@
                 if (percent >= 100) clearInterval(interval);
             }, 100);
         });
+
+        fetch('/printer/options')
+            .then(r => r.json())
+            .then(data => {
+
+                const container = document.getElementById('advanced-options');
+
+                for (const key in data) {
+                    const item = data[key];
+
+                    const col = document.createElement('div');
+                    col.className = 'col-md-6';
+
+                    const label = document.createElement('label');
+                    label.className = 'form-label';
+                    label.textContent = item.label;
+
+                    const select = document.createElement('select');
+                    select.className = 'form-select';
+                    select.name = 'opt_' + key;
+
+                    item.options.forEach(opt => {
+                        const option = document.createElement('option');
+                        option.value = opt;
+                        option.textContent = opt;
+
+                        if (opt === item.default) {
+                            option.selected = true;
+                        }
+
+                        select.appendChild(option);
+                    });
+
+                    col.appendChild(label);
+                    col.appendChild(select);
+                    container.appendChild(col);
+                }
+            });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>

@@ -93,7 +93,23 @@ class PrintController
 
         $pages = PageCounter::count($pdf);
 
-        $success = $printer->print($pdf, $copies, $sides, $orientation, $quality, $numberUp, $paper);
+        $extraOptions = [];
+
+        foreach ($_POST as $key => $value) {
+            if (str_starts_with($key, 'opt_')) {
+                $realKey = substr($key, 4);
+                $extraOptions[$realKey] = $value;
+            }
+        }
+
+        $success = $printer->print(
+            $pdf,
+            $copies,
+            $sides,
+            $orientation,
+            $quality,
+            $extraOptions
+        );
 
         if ($success) {
 
