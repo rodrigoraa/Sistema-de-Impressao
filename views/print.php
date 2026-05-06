@@ -250,6 +250,7 @@
         const preview = document.getElementById('preview');
         const progress = document.getElementById('progressBar');
         const bar = progress.querySelector('.progress-bar');
+        let pageCountToken = 0;
 
         // clique
         dropArea.onclick = () => input.click();
@@ -308,8 +309,9 @@
 
             // sucesso
             label.textContent = file.name;
-            info.textContent = formatSize(file.size);
+            info.textContent = `${formatSize(file.size)} · calculando páginas...`;
             dropArea.classList.add('success');
+            loadPageCount(file, ++pageCountToken);
 
             const url = URL.createObjectURL(file);
 
@@ -327,6 +329,46 @@
             if (['doc', 'docx'].includes(ext)) {
                 preview.innerHTML = `<p class="text-muted">Pré-visualização disponível após envio</p>`;
             }
+        });
+
+        function loadPageCount(file, token) {
+            const formData = new FormData();
+            formData.append('arquivo', file);
+            formData.append('paper', document.querySelector('[name="paper"]').value);
+            formData.append('orientation', document.querySelector('[name="orientation"]').value);
+
+            fetch('/print/page-count', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (token !== pageCountToken) return;
+
+                    if (data.success) {
+                        const pagesLabel = data.pages === 1 ? '1 página' : `${data.pages} páginas`;
+                        info.textContent = `${formatSize(file.size)} · ${pagesLabel}`;
+                    } else {
+                        info.textContent = `${formatSize(file.size)} · ${data.message}`;
+                    }
+                })
+                .catch(() => {
+                    if (token !== pageCountToken) return;
+                    info.textContent = `${formatSize(file.size)} · não foi possível contar as páginas`;
+                });
+        }
+
+        ['paper', 'orientation'].forEach(name => {
+            document.querySelector(`[name="${name}"]`).addEventListener('change', () => {
+                const file = input.files[0];
+                if (file) {
+                    info.textContent = `${formatSize(file.size)} · recalculando páginas...`;
+                    loadPageCount(file, ++pageCountToken);
+                }
+            });
         });
 
         // progresso fake (UX)

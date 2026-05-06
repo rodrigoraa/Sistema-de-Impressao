@@ -6,6 +6,8 @@ require_once __DIR__ . '/../Service/Database.php';
 
 class PrintController
 {
+    private $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+
     public function handle()
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -56,8 +58,7 @@ class PrintController
         $this->logUploadFailure("Upload recebido: nome={$origName} ext={$ext} size={$size}");
 
         // Extensões permitidas
-        $allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
-        if (!in_array($ext, $allowed)) {
+        if (!in_array($ext, $this->allowedExtensions, true)) {
             $this->fail("Tipo de arquivo não permitido");
         }
 
@@ -113,42 +114,111 @@ class PrintController
             }
         }
 
-        // Prepara e dispara a impressão (PrintService faz conversão internamente)
+        // Prepara, conta paginas e envia para impressao usando o mesmo arquivo convertido.
         $printer = new PrintService();
         $printedFile = $dest;
+        $pages = 0;
+        $completed = false;
         $errorMessage = '';
         try {
-            $printedFile = $printer->print($dest, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
-            $success = true;
+            $printedFile = $printer->prepareFile($dest, $orientation, $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4');
+            $pages = PageCounter::count($printedFile);
+            if ($pages < 1) {
+                $pages = 1;
+            }
+
+            $sourceExt = strtolower(pathinfo($dest, PATHINFO_EXTENSION));
+            $completed = $printer->printPrepared($printedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
+            $success = $completed === true;
         } catch (Throwable $e) {
             $printer->log("Erro interno ao imprimir: " . $e->getMessage());
             $errorMessage = $e->getMessage();
             $success = false;
         }
 
-        // Contabiliza o arquivo preparado para impressao, inclusive DOC/DOCX/imagem convertidos.
-        $pages = PageCounter::count($printedFile);
-        if ($success && $pages < 1) {
-            $pages = 1;
-        }
+        $totalPages = $pages * $copies;
 
-        // Registra no banco de dados (QuotaService)
-        $quota = new QuotaService();
-        $quota->register($user, $pages * $copies, $dest);
+        // Registra no banco apenas quando a impressao foi confirmada.
+        if ($success) {
+            $quota = new QuotaService();
+            $quota->register($user, $totalPages, $dest);
+        }
 
         // Grava log customizado
         $this->log($user, $dest, $pages, $copies, $success);
 
         // Mensagem de retorno
-        $msg = $success
-            ? "Impressão enviada ({$copies} cópias, {$pages} páginas)"
-            : "Erro ao enviar impressão" . ($errorMessage ? ": {$errorMessage}" : "");
+        if ($success) {
+            $msg = "Impressão concluída ({$pages} páginas x {$copies} cópias = {$totalPages} páginas contabilizadas)";
+        } elseif ($completed === false && $pages > 0 && $errorMessage === '') {
+            $msg = "Impressão cancelada ou não concluída ({$pages} páginas x {$copies} cópias). Nada foi contabilizado.";
+        } else {
+            $msg = "Erro ao enviar impressão" . ($errorMessage ? ": {$errorMessage}" : "");
+        }
 
         // Resposta AJAX vs Flash
         if ($this->isAjax()) {
-            $this->respond($msg, $success);
+            $this->respond($msg, $success, [
+                'pages' => $pages,
+                'copies' => $copies,
+                'total_pages' => $success ? $totalPages : 0,
+                'counted' => $success,
+            ]);
         } else {
             $this->flash($msg, $success);
+        }
+    }
+
+    public function pageCount()
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            session_start();
+        }
+
+        if (!isset($_SESSION['user'])) {
+            $this->respond('Sessão expirada. Faça login novamente.', false);
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->respond('Método inválido', false);
+        }
+
+        if (!isset($_FILES['arquivo']) || ($_FILES['arquivo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $this->respond('Arquivo não enviado', false);
+        }
+
+        $file = $_FILES['arquivo'];
+        $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+        if (!in_array($ext, $this->allowedExtensions, true)) {
+            $this->respond('Tipo de arquivo não permitido', false);
+        }
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'count_') . '.' . $ext;
+        if (!move_uploaded_file($file['tmp_name'], $tempFile)) {
+            $this->respond('Erro ao preparar arquivo para contagem', false);
+        }
+
+        $preparedFile = $tempFile;
+        try {
+            $printer = new PrintService();
+            $paper = $_POST['paper'] ?? 'A4';
+            $orientation = $_POST['orientation'] ?? 'portrait';
+            $preparedFile = $printer->prepareFile($tempFile, $orientation, $paper);
+            $pages = PageCounter::count($preparedFile);
+            if ($pages < 1) {
+                $pages = 1;
+            }
+
+            $this->respond("Documento com {$pages} " . ($pages === 1 ? 'página' : 'páginas'), true, [
+                'pages' => $pages,
+            ]);
+        } catch (Throwable $e) {
+            $this->respond('Não foi possível contar as páginas: ' . $e->getMessage(), false);
+        } finally {
+            @unlink($tempFile);
+            if ($preparedFile !== $tempFile) {
+                @unlink($preparedFile);
+            }
         }
     }
 
@@ -178,10 +248,10 @@ class PrintController
     }
 
     // Responde em JSON (usado para AJAX)
-    private function respond($msg, $success = true)
+    private function respond($msg, $success = true, $extra = [])
     {
         header('Content-Type: application/json; charset=utf-8');
-        echo json_encode(['success' => $success, 'message' => $msg]);
+        echo json_encode(array_merge(['success' => $success, 'message' => $msg], $extra));
         exit;
     }
 

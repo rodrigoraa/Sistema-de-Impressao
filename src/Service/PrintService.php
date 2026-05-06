@@ -4,6 +4,7 @@ class PrintService
 {
     private $printerName;
     private $isWindows;
+    private $lastPrintCompleted = null;
 
     public function __construct()
     {
@@ -28,8 +29,24 @@ class PrintService
             $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4'
         );
         $sourceExt = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        $this->printPrepared($preparedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
+
+        return $preparedFile;
+    }
+
+    public function printPrepared($preparedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions = [])
+    {
+        if (empty($this->printerName)) {
+            throw new RuntimeException('PRINTER_NAME nao esta configurada');
+        }
+
+        if (!is_file($preparedFile)) {
+            throw new RuntimeException('Arquivo preparado nao encontrado para impressao');
+        }
+
+        $this->lastPrintCompleted = null;
         $preparedExt = strtolower(pathinfo($preparedFile, PATHINFO_EXTENSION));
-        $this->log('Arquivo preparado para impressao: origem=' . $filePath . ' ext=' . $sourceExt . ' mime=' . ($this->detectMime($filePath) ?: '-') . ' preparado=' . $preparedFile . ' ext_preparado=' . $preparedExt . ' tamanho=' . (@filesize($preparedFile) ?: 0));
+        $this->log('Arquivo preparado para impressao: ext_origem=' . $sourceExt . ' preparado=' . $preparedFile . ' ext_preparado=' . $preparedExt . ' tamanho=' . (@filesize($preparedFile) ?: 0));
         if ($sourceExt === 'png') {
             $debugCopy = $this->copyDebugFile($preparedFile, 'png-preparado');
             if ($debugCopy !== null) {
@@ -38,12 +55,17 @@ class PrintService
         }
 
         if ($this->isWindows) {
-            $this->printWindows($preparedFile, $copies, $sides, $orientation, $numberUp, $extraOptions);
+            $this->lastPrintCompleted = $this->printWindows($preparedFile, $copies, $sides, $orientation, $numberUp, $extraOptions);
         } else {
-            $this->printCups($preparedFile, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions, $sourceExt);
+            $this->lastPrintCompleted = $this->printCups($preparedFile, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions, $sourceExt);
         }
 
-        return $preparedFile;
+        return $this->lastPrintCompleted;
+    }
+
+    public function lastPrintCompleted()
+    {
+        return $this->lastPrintCompleted;
     }
 
     public function prepareFile($filePath, $orientation = 'portrait', $paper = 'A4')
@@ -105,6 +127,62 @@ class PrintService
         if ($status !== 0) {
             throw new RuntimeException('Falha ao enviar arquivo para a impressora');
         }
+
+        $jobId = $this->extractCupsJobId(implode(' ', $output));
+        if ($jobId === null) {
+            $this->log('CUPS: nao foi possivel identificar job; contabilizacao permitida pelo aceite do lp');
+            return true;
+        }
+
+        return $this->waitForCupsJob($jobId);
+    }
+
+    private function extractCupsJobId($output)
+    {
+        if (!preg_match('/\b([A-Za-z0-9_.:@-]+-\d+)\b/', $output, $match)) {
+            return null;
+        }
+
+        return $match[1];
+    }
+
+    private function waitForCupsJob($jobId)
+    {
+        $lpstat = $this->findExecutable(['/usr/bin/lpstat', '/bin/lpstat', 'lpstat']);
+        if ($lpstat === null) {
+            $this->log('CUPS: lpstat nao encontrado; contabilizacao permitida pelo aceite do lp');
+            return true;
+        }
+
+        $waitSeconds = max(1, (int) ($_ENV['PRINT_JOB_WAIT_SECONDS'] ?? 120));
+        $deadline = time() + $waitSeconds;
+
+        while (time() <= $deadline) {
+            if ($this->cupsJobInList($lpstat, $jobId, 'completed')) {
+                $this->log('CUPS: job concluido=' . $jobId);
+                return true;
+            }
+
+            if ($this->cupsJobInList($lpstat, $jobId, 'not-completed')) {
+                sleep(2);
+                continue;
+            }
+
+            $this->log('CUPS: job saiu da fila sem conclusao confirmada=' . $jobId);
+            return false;
+        }
+
+        $this->log('CUPS: tempo esgotado aguardando conclusao do job=' . $jobId);
+        return false;
+    }
+
+    private function cupsJobInList($lpstat, $jobId, $which)
+    {
+        $cmd = escapeshellarg($lpstat) . ' -W ' . escapeshellarg($which) . ' -o ' . escapeshellarg($jobId) . ' 2>&1';
+        exec($cmd, $output, $status);
+        $text = implode("\n", $output);
+
+        return $status === 0 && preg_match('/(^|\s)' . preg_quote($jobId, '/') . '\s/', $text) === 1;
     }
 
     private function printWindows($filePath, $copies, $sides, $orientation, $numberUp, $extraOptions)
@@ -150,6 +228,71 @@ class PrintService
         if ($status !== 0) {
             throw new RuntimeException('Falha ao enviar arquivo para a impressora no Windows');
         }
+
+        return $this->waitForWindowsPrintJob($filePath);
+    }
+
+    private function waitForWindowsPrintJob($filePath)
+    {
+        $powershell = $this->findExecutable(['powershell', 'powershell.exe', 'pwsh', 'pwsh.exe']);
+        if ($powershell === null) {
+            $this->log('Windows: PowerShell nao encontrado; contabilizacao permitida pelo envio ao spooler');
+            return true;
+        }
+
+        $document = basename($filePath);
+        $waitSeconds = max(1, (int) ($_ENV['PRINT_JOB_WAIT_SECONDS'] ?? 60));
+        $deadline = time() + $waitSeconds;
+        $seen = false;
+
+        while (time() <= $deadline) {
+            $status = strtolower($this->windowsPrintJobStatus($powershell, $document));
+            if ($status !== '') {
+                $seen = true;
+                if (str_contains($status, 'delet') || str_contains($status, 'cancel') || str_contains($status, 'error')) {
+                    $this->log('Windows: job cancelado/falhou no spooler=' . $document . ' status=' . $status);
+                    return false;
+                }
+
+                if (str_contains($status, 'complete') || str_contains($status, 'printed')) {
+                    $this->log('Windows: job concluido=' . $document . ' status=' . $status);
+                    return true;
+                }
+
+                sleep(1);
+                continue;
+            }
+
+            if ($seen) {
+                $this->log('Windows: job saiu da fila apos ser visto=' . $document);
+                return true;
+            }
+
+            sleep(1);
+        }
+
+        $this->log('Windows: job nao localizado na fila; contabilizacao permitida pelo envio ao spooler=' . $document);
+        return true;
+    }
+
+    private function windowsPrintJobStatus($powershell, $document)
+    {
+        $printer = $this->powershellSingleQuoted($this->printerName);
+        $doc = $this->powershellSingleQuoted('*' . $document . '*');
+        $script = '$job = Get-PrintJob -PrinterName ' . $printer . ' -ErrorAction SilentlyContinue | Where-Object { $_.DocumentName -like ' . $doc . ' -or $_.Name -like ' . $doc . ' } | Select-Object -First 1; if ($job) { [string]$job.JobStatus }';
+        $cmd = escapeshellarg($powershell) . ' -NoProfile -ExecutionPolicy Bypass -Command ' . escapeshellarg($script) . ' 2>&1';
+        exec($cmd, $output, $status);
+
+        if ($status !== 0) {
+            return '';
+        }
+
+        return trim(implode(' ', $output));
+    }
+
+    private function powershellSingleQuoted($value)
+    {
+        return "'" . str_replace("'", "''", $value) . "'";
     }
 
     private function convertOfficeToPdf($filePath)

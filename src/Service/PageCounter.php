@@ -33,11 +33,44 @@ class PageCounter
             return 0;
         }
 
+        $treeCount = self::countFromPageTree($content);
+        if ($treeCount > 0) {
+            return $treeCount;
+        }
+
         if (preg_match_all('/\/Type\s*\/Page\b/', $content, $matches)) {
             return count($matches[0]);
         }
 
         return 0;
+    }
+
+    private static function countFromPageTree($content)
+    {
+        if (!preg_match('/\/Type\s*\/Catalog\b.*?\/Pages\s+(\d+)\s+\d+\s+R/s', $content, $catalog)) {
+            return 0;
+        }
+
+        $pagesObject = self::findPdfObject($content, (int) $catalog[1]);
+        if ($pagesObject === null) {
+            return 0;
+        }
+
+        if (preg_match('/\/Type\s*\/Pages\b.*?\/Count\s+(\d+)/s', $pagesObject, $count)) {
+            return (int) $count[1];
+        }
+
+        return 0;
+    }
+
+    private static function findPdfObject($content, $objectNumber)
+    {
+        $pattern = '/\b' . preg_quote((string) $objectNumber, '/') . '\s+0\s+obj\b(.*?)\bendobj\b/s';
+        if (!preg_match($pattern, $content, $match)) {
+            return null;
+        }
+
+        return $match[1];
     }
 
     private static function findPdfInfo()

@@ -201,6 +201,11 @@ if (!isset($_SESSION['user'])) {
     exit;
 }
 
+if ($uri === '/print/page-count') {
+    (new PrintController())->pageCount();
+    exit;
+}
+
 // PROCESSA
 $controller = new PrintController();
 $viewData = $controller->handle();
