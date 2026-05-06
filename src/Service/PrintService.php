@@ -202,7 +202,17 @@ class PrintService
 
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         if ($ext === 'png') {
-            throw new RuntimeException('PNG precisa ser convertido com ImageMagick para imprimir nesta impressora. Verifique se o comando convert esta instalado e liberado.');
+            $pdfFile = tempnam(sys_get_temp_dir(), 'pngpdf_') . '.pdf';
+            $this->assertCanConvertPngInMemory($info[0], $info[1], filesize($filePath));
+
+            if ($this->writePngPdfWithGd($filePath, $pdfFile, $orientation, $paper)) {
+                $this->log('PNG convertido para PDF via GD: ' . $pdfFile);
+                return $pdfFile;
+            }
+
+            $this->writePngPdf($filePath, $pdfFile, $orientation, $paper);
+            $this->log('PNG convertido para PDF via conversor interno: ' . $pdfFile);
+            return $pdfFile;
         }
 
         if (!in_array($ext, ['jpg', 'jpeg'], true)) {
@@ -301,6 +311,56 @@ class PrintService
             $orientation,
             $paper
         );
+    }
+
+    private function writePngPdfWithGd($imagePath, $pdfPath, $orientation, $paper)
+    {
+        if (!function_exists('imagecreatefrompng')) {
+            return false;
+        }
+
+        $image = @imagecreatefrompng($imagePath);
+        if (!$image) {
+            return false;
+        }
+
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $canvas = imagecreatetruecolor($width, $height);
+        if (!$canvas) {
+            imagedestroy($image);
+            return false;
+        }
+
+        $white = imagecolorallocate($canvas, 255, 255, 255);
+        imagefilledrectangle($canvas, 0, 0, $width, $height, $white);
+        imagealphablending($canvas, true);
+        imagecopy($canvas, $image, 0, 0, 0, 0, $width, $height);
+
+        $rgb = '';
+        for ($y = 0; $y < $height; $y++) {
+            for ($x = 0; $x < $width; $x++) {
+                $color = imagecolorat($canvas, $x, $y);
+                $rgb .= chr(($color >> 16) & 0xff)
+                    . chr(($color >> 8) & 0xff)
+                    . chr($color & 0xff);
+            }
+        }
+
+        imagedestroy($canvas);
+        imagedestroy($image);
+
+        $this->writeImagePdf(
+            gzcompress($rgb),
+            $pdfPath,
+            $width,
+            $height,
+            '/FlateDecode',
+            $orientation,
+            $paper
+        );
+
+        return true;
     }
 
     private function writeImagePdf($imageData, $pdfPath, $imageWidth, $imageHeight, $filter, $orientation, $paper)
@@ -651,7 +711,7 @@ class PrintService
         $candidates = array_filter([
             $_ENV['IMAGEMAGICK_PATH'] ?? null,
             'magick',
-            'convert',
+            $this->isWindows ? null : 'convert',
             'C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe',
             '/usr/bin/magick',
             '/usr/bin/convert',

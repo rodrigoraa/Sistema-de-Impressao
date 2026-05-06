@@ -1,6 +1,5 @@
 <?php
 
-session_start();
 ini_set('log_errors', 1);
 ini_set('error_log', '/tmp/php_error.log');
 
@@ -64,6 +63,39 @@ $config = is_file($projectRoot . '/config/config.php')
 $_ENV['PRINTER_NAME'] = $_ENV['PRINTER_NAME'] ?? ($config['printer_name'] ?? '');
 $_ENV['UPLOAD_PATH'] = $_ENV['UPLOAD_PATH'] ?? ($config['upload_path'] ?? ($projectRoot . '/storage/uploads/'));
 $_ENV['LOG_PATH'] = $_ENV['LOG_PATH'] ?? ($config['log_path'] ?? ($projectRoot . '/storage/logs/app.log'));
+
+$sessionPath = (string) ($_ENV['SESSION_PATH'] ?? ($config['session_path'] ?? ($projectRoot . '/storage/sessions')));
+if ($sessionPath && !is_dir($sessionPath)) {
+    @mkdir($sessionPath, 0775, true);
+}
+if ($sessionPath && is_dir($sessionPath)) {
+    session_save_path($sessionPath);
+}
+
+$sessionDays = max(1, (int) ($_ENV['SESSION_LIFETIME_DAYS'] ?? ($config['session_lifetime_days'] ?? 30)));
+$sessionLifetime = $sessionDays * 24 * 60 * 60;
+ini_set('session.gc_maxlifetime', (string) $sessionLifetime);
+ini_set('session.cookie_lifetime', (string) $sessionLifetime);
+session_set_cookie_params([
+    'lifetime' => $sessionLifetime,
+    'path' => '/',
+    'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
+
+session_start();
+
+// Renova o prazo do cookie a cada acesso enquanto o usuário permanecer logado.
+if (isset($_SESSION['user'])) {
+    setcookie(session_name(), session_id(), [
+        'expires' => time() + $sessionLifetime,
+        'path' => '/',
+        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
 
 // garante diretórios
 $uploadDir = rtrim((string) ($_ENV['UPLOAD_PATH'] ?? ''), '/');

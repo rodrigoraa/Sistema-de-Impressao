@@ -8,7 +8,10 @@ class PrintController
 {
     public function handle()
     {
-        session_start();
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            session_start();
+        }
+
         $userList = [];
 
         // Se não logado, apenas retorna usuário (lista vazia)

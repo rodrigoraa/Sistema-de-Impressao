@@ -11,6 +11,11 @@ class AuthController
 
     public function login()
     {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' && isset($_SESSION['user'])) {
+            header('Location: /');
+            exit;
+        }
+
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $db = $this->db();
@@ -38,6 +43,7 @@ class AuthController
                 }
             }
 
+            session_regenerate_id(true);
             $_SESSION['user'] = $user['cpf'];
             $_SESSION['name'] = $user['name'];
             $_SESSION['role'] = $user['role'];
@@ -60,6 +66,25 @@ class AuthController
 
     public function logout()
     {
+        $_SESSION = [];
+
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            $cookieOptions = [
+                'expires' => time() - 42000,
+                'path' => $params['path'] ?? '/',
+                'secure' => (bool) ($params['secure'] ?? false),
+                'httponly' => (bool) ($params['httponly'] ?? true),
+                'samesite' => $params['samesite'] ?? 'Lax',
+            ];
+
+            if (!empty($params['domain'])) {
+                $cookieOptions['domain'] = $params['domain'];
+            }
+
+            setcookie(session_name(), '', $cookieOptions);
+        }
+
         session_destroy();
         header('Location: /login');
         exit;

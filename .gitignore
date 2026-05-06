@@ -1,3 +1,4 @@
 .env
 
 storage/usage.db
+storage/sessions/
