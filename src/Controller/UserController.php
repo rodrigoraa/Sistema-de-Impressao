@@ -5,6 +5,16 @@ require_once __DIR__ . '/../Service/Database.php';
 
 class UserController
 {
+    private function validateCsrfOrFail()
+    {
+        $token = $_POST['csrf_token'] ?? '';
+        $sessionToken = $_SESSION['csrf_token'] ?? '';
+        if (!is_string($token) || !is_string($sessionToken) || $sessionToken === '' || !hash_equals($sessionToken, $token)) {
+            http_response_code(419);
+            exit('Token CSRF inválido');
+        }
+    }
+
     private function db()
     {
         return Database::connect();
@@ -37,6 +47,7 @@ class UserController
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $this->validateCsrfOrFail();
 
             $db = $this->db();
 
@@ -113,6 +124,12 @@ class UserController
             exit('Acesso negado');
         }
 
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            exit('Método não permitido');
+        }
+        $this->validateCsrfOrFail();
+
         $db = $this->db();
 
         $id = $_POST['id'];
@@ -168,7 +185,13 @@ class UserController
             exit('Acesso negado');
         }
 
-        $id = $_GET['id'] ?? null;
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            exit('Método não permitido');
+        }
+        $this->validateCsrfOrFail();
+
+        $id = $_POST['id'] ?? null;
 
         $db = $this->db();
 
@@ -189,4 +212,3 @@ class UserController
         exit;
     }
 }
-

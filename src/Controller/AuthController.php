@@ -44,6 +44,7 @@ class AuthController
             }
 
             session_regenerate_id(true);
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
             $_SESSION['user'] = $user['cpf'];
             $_SESSION['name'] = $user['name'];
             $_SESSION['role'] = $user['role'];
@@ -90,4 +91,3 @@ class AuthController
         exit;
     }
 }
-

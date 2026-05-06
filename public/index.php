@@ -86,6 +86,10 @@ session_set_cookie_params([
 
 session_start();
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 // Renova o prazo do cookie a cada acesso enquanto o usuário permanecer logado.
 if (isset($_SESSION['user'])) {
     setcookie(session_name(), session_id(), [
@@ -213,4 +217,3 @@ $userList = is_array($viewData) ? ($viewData['userList'] ?? []) : [];
 
 // VIEW
 require $projectRoot . '/views/print.php';
-
