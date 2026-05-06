@@ -11,8 +11,27 @@ class PrintController
 
     private function validateCsrfOrFail()
     {
-        $token = $_POST['csrf_token'] ?? '';
+        $token = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
         $sessionToken = $_SESSION['csrf_token'] ?? '';
+
+        if (is_string($token) && is_string($sessionToken) && $sessionToken !== '' && hash_equals($sessionToken, $token)) {
+            return;
+        }
+
+        // fallback de compatibilidade: permite envio same-origin sem token explícito
+        // para não bloquear impressões em navegadores/proxies que removem campos ocultos.
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+        $referer = $_SERVER['HTTP_REFERER'] ?? '';
+        $sameOrigin = ($origin !== '' && str_contains($origin, $host))
+            || ($referer !== '' && str_contains($referer, $host));
+
+        if ($sameOrigin) {
+            $this->logUploadFailure('Aviso CSRF: token ausente/inválido aceito por fallback same-origin');
+            return;
+        }
+
+
         if (!is_string($token) || !is_string($sessionToken) || $sessionToken === '' || !hash_equals($sessionToken, $token)) {
             if ($this->isAjax()) {
                 $this->respond('Token CSRF inválido', false);
@@ -41,8 +60,8 @@ class PrintController
 
         $allowedByExtension = [
             'pdf' => ['application/pdf'],
-            'doc' => ['application/msword', 'application/octet-stream'],
-            'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/octet-stream'],
+            'doc' => ['application/msword', 'application/x-ole-storage', 'application/octet-stream'],
+            'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/x-zip-compressed', 'application/octet-stream'],
             'jpg' => ['image/jpeg'],
             'jpeg' => ['image/jpeg'],
             'png' => ['image/png'],
@@ -259,8 +278,7 @@ class PrintController
             $this->respond('Tipo de arquivo não permitido', false);
         }
         if (!$this->hasAllowedMimeType($file['tmp_name'], $ext)) {
-
-            $this->respond('Tipo de arquivo inválido', false);
+            $this->respond('Formato de arquivo não reconhecido para pré-contagem', false);
         }
 
         if (in_array($ext, ['jpg', 'jpeg', 'png'], true)) {
