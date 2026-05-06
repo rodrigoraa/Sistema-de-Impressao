@@ -7,6 +7,49 @@ require_once __DIR__ . '/../Service/Database.php';
 class PrintController
 {
     private $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+    private $maxUploadBytes = 20 * 1024 * 1024;
+
+    private function validateCsrfOrFail()
+    {
+        $token = $_POST['csrf_token'] ?? '';
+        $sessionToken = $_SESSION['csrf_token'] ?? '';
+        if (!is_string($token) || !is_string($sessionToken) || $sessionToken === '' || !hash_equals($sessionToken, $token)) {
+            if ($this->isAjax()) {
+                $this->respond('Token CSRF inválido', false);
+            }
+            http_response_code(419);
+            exit('Token CSRF inválido');
+        }
+    }
+
+    private function hasAllowedMimeType($tmpPath, $ext)
+    {
+        if (!is_file($tmpPath)) {
+            return false;
+        }
+
+        if (!function_exists('finfo_open')) {
+            return true;
+        }
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo === false) {
+            return true;
+        }
+        $mime = finfo_file($finfo, $tmpPath);
+        finfo_close($finfo);
+
+        $allowedByExtension = [
+            'pdf' => ['application/pdf'],
+            'doc' => ['application/msword', 'application/octet-stream'],
+            'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/octet-stream'],
+            'jpg' => ['image/jpeg'],
+            'jpeg' => ['image/jpeg'],
+            'png' => ['image/png'],
+        ];
+
+        return isset($allowedByExtension[$ext]) && in_array($mime, $allowedByExtension[$ext], true);
+    }
 
     public function handle()
     {
@@ -39,6 +82,7 @@ class PrintController
         // ============================
         // === Processamento POST ====
         // ============================
+        $this->validateCsrfOrFail();
 
         // Validação inicial
         if (!isset($_FILES['arquivo'])) {
@@ -55,11 +99,17 @@ class PrintController
         $tmpPath = $file['tmp_name'];
         $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
         $size = intval($file['size'] ?? 0);
+        if ($size < 1 || $size > $this->maxUploadBytes) {
+            $this->fail('Arquivo inválido ou acima de 20MB');
+        }
         $this->logUploadFailure("Upload recebido: nome={$origName} ext={$ext} size={$size}");
 
         // Extensões permitidas
         if (!in_array($ext, $this->allowedExtensions, true)) {
             $this->fail("Tipo de arquivo não permitido");
+        }
+        if (!$this->hasAllowedMimeType($tmpPath, $ext)) {
+            $this->fail("Tipo de arquivo inválido");
         }
 
         // Configura caminhos via env (ou config carregada)
@@ -184,6 +234,7 @@ class PrintController
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $this->respond('Método inválido', false);
         }
+        $this->validateCsrfOrFail();
 
         if (!isset($_FILES['arquivo']) || ($_FILES['arquivo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             $this->respond('Arquivo não enviado', false);
@@ -193,6 +244,9 @@ class PrintController
         $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
         if (!in_array($ext, $this->allowedExtensions, true)) {
             $this->respond('Tipo de arquivo não permitido', false);
+        }
+        if (!$this->hasAllowedMimeType($file['tmp_name'], $ext)) {
+            $this->respond('Tipo de arquivo inválido', false);
         }
 
         if (in_array($ext, ['jpg', 'jpeg', 'png'], true)) {

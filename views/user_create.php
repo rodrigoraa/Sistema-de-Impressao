@@ -30,7 +30,7 @@
                 <div class="d-flex align-items-center gap-3">
                     <span class="user">
                         <i class="bi bi-person-circle"></i>
-                        <?= $_SESSION['name'] ?>
+                        <?= htmlspecialchars($_SESSION['name']) ?>
                     </span>
 
                     <a href="/logout" class="btn btn-outline-danger btn-sm">
@@ -56,6 +56,7 @@
                 <div class="card-body">
 
                     <form method="post" class="row g-3">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
 
                         <div class="col-md-6">
                             <label class="form-label">Nome</label>
