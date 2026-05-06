@@ -32,7 +32,7 @@
                 <div class="d-flex align-items-center gap-3">
                     <span class="user">
                         <i class="bi bi-person-circle"></i>
-                        <?= $_SESSION['name'] ?>
+                        <?= htmlspecialchars($_SESSION['name']) ?>
                     </span>
 
                     <a href="/logout" class="btn btn-outline-danger btn-sm">
@@ -67,6 +67,7 @@
                             </h4>
 
                             <form method="post" enctype="multipart/form-data">
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
 
                                 <div class="mb-3 upload-wrapper">
 
@@ -250,6 +251,7 @@
         const preview = document.getElementById('preview');
         const progress = document.getElementById('progressBar');
         const bar = progress.querySelector('.progress-bar');
+        const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
         let pageCountToken = 0;
 
         // clique
@@ -336,6 +338,7 @@
             formData.append('arquivo', file);
             formData.append('paper', document.querySelector('[name="paper"]').value);
             formData.append('orientation', document.querySelector('[name="orientation"]').value);
+            formData.append('csrf_token', csrfToken);
 
             fetch('/print/page-count', {
                 method: 'POST',

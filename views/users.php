@@ -30,7 +30,7 @@
                 <div class="d-flex align-items-center gap-3">
                     <span class="user">
                         <i class="bi bi-person-circle"></i>
-                        <?= $_SESSION['name'] ?>
+                        <?= htmlspecialchars($_SESSION['name']) ?>
                     </span>
 
                     <a href="/logout" class="btn btn-outline-danger btn-sm">
@@ -98,10 +98,15 @@
                                                     <i class="bi bi-pencil"></i>
                                                 </a>
 
-                                                <button class="btn btn-sm btn-outline-danger"
-                                                    onclick="confirmDelete(<?= $u['id'] ?>)">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
+                                                <form method="post" action="/admin/users/delete" class="d-inline">
+                                                    <input type="hidden" name="csrf_token"
+                                                        value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                                    <input type="hidden" name="id" value="<?= (int) $u['id'] ?>">
+                                                    <button class="btn btn-sm btn-outline-danger"
+                                                        onclick="return confirm('Tem certeza que deseja excluir este usuário?')">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
 
                                             </td>
                                         </tr>
@@ -126,14 +131,6 @@
         </main>
 
     </div>
-
-    <script>
-        function confirmDelete(id) {
-            if (confirm("Tem certeza que deseja excluir este usuário?")) {
-                window.location.href = "/admin/users/delete?id=" + id;
-            }
-        }
-    </script>
 
 </body>
 

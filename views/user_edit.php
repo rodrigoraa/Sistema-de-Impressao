@@ -30,7 +30,7 @@
                 <div class="d-flex align-items-center gap-3">
                     <span class="user">
                         <i class="bi bi-person-circle"></i>
-                        <?= $_SESSION['name'] ?>
+                        <?= htmlspecialchars($_SESSION['name']) ?>
                     </span>
 
                     <a href="/logout" class="btn btn-outline-danger btn-sm">
@@ -56,8 +56,9 @@
                 <div class="card-body">
 
                     <form method="post" action="/admin/users/update" class="row g-3">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
 
-                        <input type="hidden" name="id" value="<?= $user['id'] ?>">
+                        <input type="hidden" name="id" value="<?= (int) $user['id'] ?>">
 
                         <div class="col-md-6">
                             <label class="form-label">Nome</label>
@@ -67,7 +68,7 @@
 
                         <div class="col-md-6">
                             <label class="form-label">CPF</label>
-                            <input name="cpf" class="form-control" value="<?= $user['cpf'] ?>" required>
+                            <input name="cpf" class="form-control" value="<?= htmlspecialchars($user['cpf']) ?>" required>
                         </div>
 
                         <div class="col-md-6">
