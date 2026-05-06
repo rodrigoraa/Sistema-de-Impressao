@@ -121,13 +121,14 @@ class PrintController
         $completed = false;
         $errorMessage = '';
         try {
+            $sourceExt = strtolower(pathinfo($dest, PATHINFO_EXTENSION));
+            $originalPages = $sourceExt === 'docx' ? PageCounter::countDocxPages($dest) : 0;
             $printedFile = $printer->prepareFile($dest, $orientation, $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4');
-            $pages = PageCounter::count($printedFile);
+            $pages = $originalPages > 0 ? $originalPages : PageCounter::count($printedFile);
             if ($pages < 1) {
                 $pages = 1;
             }
 
-            $sourceExt = strtolower(pathinfo($dest, PATHINFO_EXTENSION));
             $completed = $printer->printPrepared($printedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
             $success = $completed === true;
         } catch (Throwable $e) {
@@ -193,6 +194,12 @@ class PrintController
             $this->respond('Tipo de arquivo não permitido', false);
         }
 
+        if (in_array($ext, ['jpg', 'jpeg', 'png'], true)) {
+            $this->respond('Documento com 1 página', true, [
+                'pages' => 1,
+            ]);
+        }
+
         $tempFile = tempnam(sys_get_temp_dir(), 'count_') . '.' . $ext;
         if (!move_uploaded_file($file['tmp_name'], $tempFile)) {
             $this->respond('Erro ao preparar arquivo para contagem', false);
@@ -203,8 +210,9 @@ class PrintController
             $printer = new PrintService();
             $paper = $_POST['paper'] ?? 'A4';
             $orientation = $_POST['orientation'] ?? 'portrait';
+            $originalPages = $ext === 'docx' ? PageCounter::countDocxPages($tempFile) : 0;
             $preparedFile = $printer->prepareFile($tempFile, $orientation, $paper);
-            $pages = PageCounter::count($preparedFile);
+            $pages = $originalPages > 0 ? $originalPages : PageCounter::count($preparedFile);
             if ($pages < 1) {
                 $pages = 1;
             }

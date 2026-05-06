@@ -11,8 +11,14 @@ class PageCounter
      */
     public static function count($file)
     {
+        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+
+        if ($ext === 'docx') {
+            return self::countDocxPages($file);
+        }
+
         // Verifica arquivo e extensão
-        if (!file_exists($file) || strtolower(pathinfo($file, PATHINFO_EXTENSION)) !== 'pdf') {
+        if (!file_exists($file) || $ext !== 'pdf') {
             return 0;
         }
 
@@ -40,6 +46,24 @@ class PageCounter
 
         if (preg_match_all('/\/Type\s*\/Page\b/', $content, $matches)) {
             return count($matches[0]);
+        }
+
+        return 0;
+    }
+
+    public static function countDocxPages($file)
+    {
+        if (!is_file($file)) {
+            return 0;
+        }
+
+        $appXml = self::readZipEntry($file, 'docProps/app.xml');
+        if ($appXml === null) {
+            return 0;
+        }
+
+        if (preg_match('/<Pages>(\d+)<\/Pages>/', $appXml, $match)) {
+            return (int) $match[1];
         }
 
         return 0;
@@ -102,5 +126,76 @@ class PageCounter
         }
 
         return null;
+    }
+
+    private static function readZipEntry($zipFile, $entryName)
+    {
+        $data = @file_get_contents($zipFile);
+        if ($data === false) {
+            return null;
+        }
+
+        $eocd = strrpos($data, "PK\x05\x06");
+        if ($eocd === false || $eocd + 22 > strlen($data)) {
+            return null;
+        }
+
+        $dirSize = self::readUInt32($data, $eocd + 12);
+        $dirOffset = self::readUInt32($data, $eocd + 16);
+        $pos = $dirOffset;
+        $end = $dirOffset + $dirSize;
+
+        while ($pos + 46 <= $end && substr($data, $pos, 4) === "PK\x01\x02") {
+            $method = self::readUInt16($data, $pos + 10);
+            $compressedSize = self::readUInt32($data, $pos + 20);
+            $filenameLength = self::readUInt16($data, $pos + 28);
+            $extraLength = self::readUInt16($data, $pos + 30);
+            $commentLength = self::readUInt16($data, $pos + 32);
+            $localOffset = self::readUInt32($data, $pos + 42);
+            $name = substr($data, $pos + 46, $filenameLength);
+
+            if ($name === $entryName) {
+                return self::readZipEntryAtOffset($data, $localOffset, $method, $compressedSize);
+            }
+
+            $pos += 46 + $filenameLength + $extraLength + $commentLength;
+        }
+
+        return null;
+    }
+
+    private static function readZipEntryAtOffset($data, $offset, $method, $compressedSize)
+    {
+        if ($offset + 30 > strlen($data) || substr($data, $offset, 4) !== "PK\x03\x04") {
+            return null;
+        }
+
+        $filenameLength = self::readUInt16($data, $offset + 26);
+        $extraLength = self::readUInt16($data, $offset + 28);
+        $contentOffset = $offset + 30 + $filenameLength + $extraLength;
+        $compressed = substr($data, $contentOffset, $compressedSize);
+
+        if ($method === 0) {
+            return $compressed;
+        }
+
+        if ($method === 8) {
+            $content = @gzinflate($compressed);
+            return $content === false ? null : $content;
+        }
+
+        return null;
+    }
+
+    private static function readUInt16($data, $offset)
+    {
+        $value = unpack('v', substr($data, $offset, 2));
+        return $value ? $value[1] : 0;
+    }
+
+    private static function readUInt32($data, $offset)
+    {
+        $value = unpack('V', substr($data, $offset, 4));
+        return $value ? $value[1] : 0;
     }
 }
