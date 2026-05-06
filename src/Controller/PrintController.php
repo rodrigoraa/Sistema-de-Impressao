@@ -31,6 +31,7 @@ class PrintController
             return;
         }
 
+
         if (!is_string($token) || !is_string($sessionToken) || $sessionToken === '' || !hash_equals($sessionToken, $token)) {
             if ($this->isAjax()) {
                 $this->respond('Token CSRF inválido', false);
