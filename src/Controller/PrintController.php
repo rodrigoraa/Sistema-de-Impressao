@@ -124,9 +124,10 @@ class PrintController
             $sourceExt = strtolower(pathinfo($dest, PATHINFO_EXTENSION));
             $originalPages = $sourceExt === 'docx' ? PageCounter::countDocxPages($dest) : 0;
             $printedFile = $printer->prepareFile($dest, $orientation, $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4');
-            $pages = $originalPages > 0 ? $originalPages : PageCounter::count($printedFile);
+            $convertedPages = PageCounter::count($printedFile);
+            $pages = $convertedPages;
             if ($pages < 1) {
-                $pages = 1;
+                $pages = $originalPages > 0 ? $originalPages : 1;
             }
 
             $completed = $printer->printPrepared($printedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
@@ -212,13 +213,21 @@ class PrintController
             $orientation = $_POST['orientation'] ?? 'portrait';
             $originalPages = $ext === 'docx' ? PageCounter::countDocxPages($tempFile) : 0;
             $preparedFile = $printer->prepareFile($tempFile, $orientation, $paper);
-            $pages = $originalPages > 0 ? $originalPages : PageCounter::count($preparedFile);
+            $convertedPages = PageCounter::count($preparedFile);
+            $pages = $convertedPages;
             if ($pages < 1) {
-                $pages = 1;
+                $pages = $originalPages > 0 ? $originalPages : 1;
             }
 
-            $this->respond("Documento com {$pages} " . ($pages === 1 ? 'página' : 'páginas'), true, [
+            $message = "Documento com {$pages} " . ($pages === 1 ? 'página' : 'páginas');
+            if ($ext === 'docx' && $originalPages > 0 && $convertedPages > 0 && $originalPages !== $convertedPages) {
+                $message .= " após conversão";
+            }
+
+            $this->respond($message, true, [
                 'pages' => $pages,
+                'original_pages' => $originalPages,
+                'converted_pages' => $convertedPages,
             ]);
         } catch (Throwable $e) {
             $this->respond('Não foi possível contar as páginas: ' . $e->getMessage(), false);

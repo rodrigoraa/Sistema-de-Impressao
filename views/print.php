@@ -350,7 +350,10 @@
 
                     if (data.success) {
                         const pagesLabel = data.pages === 1 ? '1 página' : `${data.pages} páginas`;
-                        info.textContent = `${formatSize(file.size)} · ${pagesLabel}`;
+                        const converted = data.original_pages && data.converted_pages && data.original_pages !== data.converted_pages
+                            ? ' após conversão'
+                            : '';
+                        info.textContent = `${formatSize(file.size)} · ${pagesLabel}${converted}`;
                     } else {
                         info.textContent = `${formatSize(file.size)} · ${data.message}`;
                     }

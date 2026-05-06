@@ -156,6 +156,7 @@ class PrintService
 
         $waitSeconds = max(1, (int) ($_ENV['PRINT_JOB_WAIT_SECONDS'] ?? 120));
         $deadline = time() + $waitSeconds;
+        $seen = false;
 
         while (time() <= $deadline) {
             if ($this->cupsJobInList($lpstat, $jobId, 'completed')) {
@@ -164,12 +165,13 @@ class PrintService
             }
 
             if ($this->cupsJobInList($lpstat, $jobId, 'not-completed')) {
+                $seen = true;
                 sleep(2);
                 continue;
             }
 
-            $this->log('CUPS: job saiu da fila sem conclusao confirmada=' . $jobId);
-            return false;
+            $this->log('CUPS: job nao esta mais na fila; considerando concluido pelo aceite do lp=' . $jobId . ' visto=' . ($seen ? 'sim' : 'nao'));
+            return true;
         }
 
         $this->log('CUPS: tempo esgotado aguardando conclusao do job=' . $jobId);
