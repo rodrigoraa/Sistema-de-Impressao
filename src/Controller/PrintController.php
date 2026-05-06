@@ -48,7 +48,20 @@ class PrintController
             'png' => ['image/png'],
         ];
 
-        return isset($allowedByExtension[$ext]) && in_array($mime, $allowedByExtension[$ext], true);
+        if (!isset($allowedByExtension[$ext])) {
+            return true;
+        }
+
+        if (in_array($mime, $allowedByExtension[$ext], true)) {
+            return true;
+        }
+
+        // Alguns ambientes retornam MIME genérico para DOC/DOCX.
+        if (in_array($ext, ['doc', 'docx'], true)) {
+            return true;
+        }
+
+        return false;
     }
 
     public function handle()
@@ -109,7 +122,7 @@ class PrintController
             $this->fail("Tipo de arquivo não permitido");
         }
         if (!$this->hasAllowedMimeType($tmpPath, $ext)) {
-            $this->fail("Tipo de arquivo inválido");
+            $this->logUploadFailure("Aviso de MIME incompatível: nome={$origName} ext={$ext}");
         }
 
         // Configura caminhos via env (ou config carregada)
@@ -246,6 +259,7 @@ class PrintController
             $this->respond('Tipo de arquivo não permitido', false);
         }
         if (!$this->hasAllowedMimeType($file['tmp_name'], $ext)) {
+
             $this->respond('Tipo de arquivo inválido', false);
         }
 
