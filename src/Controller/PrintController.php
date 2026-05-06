@@ -41,8 +41,8 @@ class PrintController
 
         $allowedByExtension = [
             'pdf' => ['application/pdf'],
-            'doc' => ['application/msword', 'application/x-ole-storage', 'application/octet-stream'],
-            'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/x-zip-compressed', 'application/octet-stream'],
+            'doc' => ['application/msword', 'application/octet-stream'],
+            'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/octet-stream'],
             'jpg' => ['image/jpeg'],
             'jpeg' => ['image/jpeg'],
             'png' => ['image/png'],
@@ -259,7 +259,8 @@ class PrintController
             $this->respond('Tipo de arquivo não permitido', false);
         }
         if (!$this->hasAllowedMimeType($file['tmp_name'], $ext)) {
-            $this->respond('Formato de arquivo não reconhecido para pré-contagem', false);
+
+            $this->respond('Tipo de arquivo inválido', false);
         }
 
         if (in_array($ext, ['jpg', 'jpeg', 'png'], true)) {
