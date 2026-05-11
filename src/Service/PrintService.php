@@ -321,6 +321,7 @@ class PrintService
         $sourceExt = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         if (in_array($sourceExt, ['doc', 'docx'], true)) {
             $this->logOfficeFontDiagnostics($filePath, $sourceExt);
+            $this->logOfficeLayoutDiagnostics($filePath, $sourceExt);
         }
 
         $envPrefix = '';
@@ -329,54 +330,106 @@ class PrintService
                 . ' SAL_USE_VCLPLUGIN=gen ';
         }
 
-        $commands = [
-            sprintf(
-                '%s%s %s --headless --invisible --nodefault --norestore --nofirststartwizard --nolockcheck --convert-to %s --outdir %s %s 2>&1',
-                $envPrefix,
-                escapeshellarg($office),
-                escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
-                escapeshellarg('pdf:writer_pdf_Export'),
-                escapeshellarg($outDir),
-                escapeshellarg($filePath)
-            ),
-            sprintf(
-                '%s%s %s --headless --convert-to pdf --outdir %s %s 2>&1',
-                $envPrefix,
-                escapeshellarg($office),
-                escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
-                escapeshellarg($outDir),
-                escapeshellarg($filePath)
-            ),
-            sprintf(
-                '%s --headless --convert-to pdf --outdir %s %s 2>&1',
-                escapeshellarg($office),
-                escapeshellarg($outDir),
-                escapeshellarg($filePath)
-            ),
+        $declaredPages = $sourceExt === 'docx' ? $this->countDocxDeclaredPages($filePath) : 0;
+        $attempts = [
+            [
+                'label' => 'perfil-isolado-filtro-writer',
+                'build' => function ($attemptDir) use ($envPrefix, $office, $profileDir, $filePath) {
+                    return sprintf(
+                        '%s%s %s --headless --invisible --nodefault --norestore --nofirststartwizard --nolockcheck --convert-to %s --outdir %s %s 2>&1',
+                        $envPrefix,
+                        escapeshellarg($office),
+                        escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
+                        escapeshellarg('pdf:writer_pdf_Export'),
+                        escapeshellarg($attemptDir),
+                        escapeshellarg($filePath)
+                    );
+                },
+            ],
+            [
+                'label' => 'perfil-isolado-pdf-simples',
+                'build' => function ($attemptDir) use ($envPrefix, $office, $profileDir, $filePath) {
+                    return sprintf(
+                        '%s%s %s --headless --convert-to pdf --outdir %s %s 2>&1',
+                        $envPrefix,
+                        escapeshellarg($office),
+                        escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
+                        escapeshellarg($attemptDir),
+                        escapeshellarg($filePath)
+                    );
+                },
+            ],
+            [
+                'label' => 'compatibilidade-comando-antigo',
+                'build' => function ($attemptDir) use ($office, $filePath) {
+                    return sprintf(
+                        '%s --headless --convert-to pdf --outdir %s %s 2>&1',
+                        escapeshellarg($office),
+                        escapeshellarg($attemptDir),
+                        escapeshellarg($filePath)
+                    );
+                },
+            ],
         ];
 
-        $expected = $outDir . DIRECTORY_SEPARATOR . pathinfo($filePath, PATHINFO_FILENAME) . '.pdf';
         $lastStatus = 1;
         $lastOutput = [];
-        foreach ($commands as $index => $cmd) {
+        $bestPdf = null;
+        $bestPages = PHP_INT_MAX;
+        foreach ($attempts as $index => $attempt) {
+            $attemptDir = $outDir . DIRECTORY_SEPARATOR . 'attempt-' . ($index + 1);
+            if (!is_dir($attemptDir) && !mkdir($attemptDir, 0775, true)) {
+                continue;
+            }
+
+            $cmd = $attempt['build']($attemptDir);
             $output = [];
             $status = 1;
             exec($cmd, $output, $status);
             $lastStatus = $status;
             $lastOutput = $output;
 
+            $expected = $attemptDir . DIRECTORY_SEPARATOR . pathinfo($filePath, PATHINFO_FILENAME) . '.pdf';
+            $candidate = null;
             if ($status === 0 && is_file($expected)) {
-                $this->log('LibreOffice tentativa ' . ($index + 1) . ': ' . $cmd . ' | OK | ' . implode(' | ', $output));
-                return $expected;
+                $candidate = $expected;
+            }
+            if ($candidate === null) {
+                $converted = glob($attemptDir . DIRECTORY_SEPARATOR . '*.pdf');
+                if ($status === 0 && !empty($converted) && is_file($converted[0])) {
+                    $candidate = $converted[0];
+                }
             }
 
-            $converted = glob($outDir . DIRECTORY_SEPARATOR . '*.pdf');
-            if ($status === 0 && !empty($converted) && is_file($converted[0])) {
-                $this->log('LibreOffice tentativa ' . ($index + 1) . ': ' . $cmd . ' | OK: ' . $converted[0] . ' | ' . implode(' | ', $output));
-                return $converted[0];
+            if ($candidate !== null) {
+                $candidatePages = $this->countPdfPages($candidate);
+                $this->log('LibreOffice tentativa ' . ($index + 1) . ' ' . $attempt['label'] . ': ' . $cmd . ' | OK paginas=' . $candidatePages . ' | ' . implode(' | ', $output));
+
+                if ($candidatePages > 0 && $candidatePages < $bestPages) {
+                    $bestPdf = $candidate;
+                    $bestPages = $candidatePages;
+                } elseif ($bestPdf === null) {
+                    $bestPdf = $candidate;
+                    $bestPages = $candidatePages > 0 ? $candidatePages : PHP_INT_MAX;
+                }
+
+                if ($declaredPages > 0 && $candidatePages > 0 && $candidatePages <= $declaredPages) {
+                    $this->logConvertedPdfDiagnostics($candidate, $sourceExt);
+                    return $candidate;
+                }
+
+                continue;
             }
 
             $this->log('LibreOffice tentativa ' . ($index + 1) . ' falhou: ' . $cmd . ' | status=' . $status . ' | ' . implode(' | ', $output));
+        }
+
+        if ($bestPdf !== null) {
+            if ($declaredPages > 0 && $bestPages > $declaredPages) {
+                $this->log('LibreOffice: melhor conversao ainda aumentou paginas: declarado=' . $declaredPages . ' convertido=' . $bestPages . ' pdf=' . $bestPdf);
+            }
+            $this->logConvertedPdfDiagnostics($bestPdf, $sourceExt);
+            return $bestPdf;
         }
 
         $detail = trim(implode(' | ', $lastOutput));
@@ -890,6 +943,210 @@ class PrintService
         }
 
         $this->log('DOCX fontes solicitadas/resolvidas: ' . implode('; ', $resolved));
+    }
+
+    private function logOfficeLayoutDiagnostics($filePath, $sourceExt)
+    {
+        if ($sourceExt !== 'docx') {
+            return;
+        }
+
+        $documentXml = $this->readDocxEntry($filePath, 'word/document.xml');
+        if ($documentXml === null) {
+            return;
+        }
+
+        $sections = [];
+        if (preg_match_all('/<w:sectPr\b.*?<\/w:sectPr>/s', $documentXml, $matches)) {
+            foreach ($matches[0] as $sectionXml) {
+                $page = $this->parseDocxPageSection($sectionXml);
+                if ($page !== null) {
+                    $sections[] = $page;
+                }
+            }
+        }
+
+        if (!empty($sections)) {
+            $labels = [];
+            foreach (array_slice($sections, 0, 5) as $index => $section) {
+                $labels[] = sprintf(
+                    '#%d %s %.1Fx%.1Fmm margens T%.1F/R%.1F/B%.1F/L%.1Fmm',
+                    $index + 1,
+                    $section['orient'],
+                    $section['width_mm'],
+                    $section['height_mm'],
+                    $section['top_mm'],
+                    $section['right_mm'],
+                    $section['bottom_mm'],
+                    $section['left_mm']
+                );
+            }
+            $this->log('DOCX layout: ' . implode('; ', $labels));
+        }
+
+        $settingsXml = $this->readDocxEntry($filePath, 'word/settings.xml');
+        $compatFlags = [];
+        if ($settingsXml !== null && preg_match('/<w:compat\b.*?<\/w:compat>/s', $settingsXml, $compat)) {
+            if (preg_match_all('/<w:([A-Za-z0-9_]+)\b/', $compat[0], $flags)) {
+                $compatFlags = array_slice(array_unique($flags[1]), 0, 20);
+            }
+        }
+        if (!empty($compatFlags)) {
+            $this->log('DOCX compatibilidade: ' . implode(', ', $compatFlags));
+        }
+    }
+
+    private function parseDocxPageSection($sectionXml)
+    {
+        if (!preg_match('/<w:pgSz\b([^>]*)\/?>/s', $sectionXml, $sizeMatch)) {
+            return null;
+        }
+
+        $sizeAttrs = $this->parseXmlAttributes($sizeMatch[1]);
+        $marginAttrs = [];
+        if (preg_match('/<w:pgMar\b([^>]*)\/?>/s', $sectionXml, $marginMatch)) {
+            $marginAttrs = $this->parseXmlAttributes($marginMatch[1]);
+        }
+
+        $width = (int) ($sizeAttrs['w'] ?? 0);
+        $height = (int) ($sizeAttrs['h'] ?? 0);
+        if ($width < 1 || $height < 1) {
+            return null;
+        }
+
+        return [
+            'orient' => $sizeAttrs['orient'] ?? 'portrait',
+            'width_mm' => $this->twipsToMm($width),
+            'height_mm' => $this->twipsToMm($height),
+            'top_mm' => $this->twipsToMm((int) ($marginAttrs['top'] ?? 0)),
+            'right_mm' => $this->twipsToMm((int) ($marginAttrs['right'] ?? 0)),
+            'bottom_mm' => $this->twipsToMm((int) ($marginAttrs['bottom'] ?? 0)),
+            'left_mm' => $this->twipsToMm((int) ($marginAttrs['left'] ?? 0)),
+        ];
+    }
+
+    private function parseXmlAttributes($text)
+    {
+        $attrs = [];
+        if (preg_match_all('/(?:\w+:)?([A-Za-z0-9_]+)="([^"]*)"/', $text, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $attrs[$match[1]] = html_entity_decode($match[2], ENT_QUOTES | ENT_XML1, 'UTF-8');
+            }
+        }
+
+        return $attrs;
+    }
+
+    private function twipsToMm($twips)
+    {
+        return round(((float) $twips) / 1440 * 25.4, 1);
+    }
+
+    private function logConvertedPdfDiagnostics($pdfFile, $sourceExt)
+    {
+        $debugCopy = $this->copyDebugFile($pdfFile, $sourceExt . '-convertido');
+        if ($debugCopy !== null) {
+            $this->log(strtoupper($sourceExt) . ' diagnostico: copia do PDF convertido=' . $debugCopy);
+        }
+
+        $pdfinfo = $this->findExecutable([$_ENV['PDFINFO_PATH'] ?? null, '/usr/bin/pdfinfo', 'pdfinfo']);
+        if ($pdfinfo === null) {
+            return;
+        }
+
+        $output = [];
+        $status = 1;
+        exec(escapeshellarg($pdfinfo) . ' ' . escapeshellarg($pdfFile) . ' 2>&1', $output, $status);
+        if ($status !== 0) {
+            $this->log('PDF diagnostico: pdfinfo falhou status=' . $status . ' | ' . implode(' | ', $output));
+            return;
+        }
+
+        $interesting = [];
+        foreach ($output as $line) {
+            if (preg_match('/^(Pages|Page size|Creator|Producer):/i', $line)) {
+                $interesting[] = trim($line);
+            }
+        }
+        if (!empty($interesting)) {
+            $this->log('PDF diagnostico convertido: ' . implode(' | ', $interesting));
+        }
+    }
+
+    private function readDocxEntry($filePath, $entry)
+    {
+        if (!class_exists('ZipArchive')) {
+            return null;
+        }
+
+        $zip = new ZipArchive();
+        if ($zip->open($filePath) !== true) {
+            return null;
+        }
+
+        $content = $zip->getFromName($entry);
+        $zip->close();
+
+        return $content === false ? null : $content;
+    }
+
+    private function countDocxDeclaredPages($filePath)
+    {
+        $appXml = $this->readDocxEntry($filePath, 'docProps/app.xml');
+        if ($appXml === null) {
+            return 0;
+        }
+
+        if (preg_match('/<Pages>(\d+)<\/Pages>/', $appXml, $match)) {
+            return (int) $match[1];
+        }
+
+        return 0;
+    }
+
+    private function countPdfPages($pdfFile)
+    {
+        $pdfinfo = $this->findExecutable([$_ENV['PDFINFO_PATH'] ?? null, '/usr/bin/pdfinfo', 'pdfinfo']);
+        if ($pdfinfo !== null) {
+            $output = [];
+            $status = 1;
+            exec(escapeshellarg($pdfinfo) . ' ' . escapeshellarg($pdfFile) . ' 2>&1', $output, $status);
+            if ($status === 0) {
+                foreach ($output as $line) {
+                    if (stripos($line, 'Pages:') === 0) {
+                        return (int) filter_var($line, FILTER_SANITIZE_NUMBER_INT);
+                    }
+                }
+            }
+        }
+
+        $content = @file_get_contents($pdfFile);
+        if ($content === false) {
+            return 0;
+        }
+
+        if (preg_match('/\/Type\s*\/Catalog\b.*?\/Pages\s+(\d+)\s+\d+\s+R/s', $content, $catalog)) {
+            $object = $this->findPdfObject($content, (int) $catalog[1]);
+            if ($object !== null && preg_match('/\/Type\s*\/Pages\b.*?\/Count\s+(\d+)/s', $object, $count)) {
+                return (int) $count[1];
+            }
+        }
+
+        if (preg_match_all('/\/Type\s*\/Page\b/', $content, $matches)) {
+            return count($matches[0]);
+        }
+
+        return 0;
+    }
+
+    private function findPdfObject($content, $objectNumber)
+    {
+        $pattern = '/\b' . preg_quote((string) $objectNumber, '/') . '\s+0\s+obj\b(.*?)\bendobj\b/s';
+        if (!preg_match($pattern, $content, $match)) {
+            return null;
+        }
+
+        return $match[1];
     }
 
     private function writeOfficeFontConfig($configDir)
