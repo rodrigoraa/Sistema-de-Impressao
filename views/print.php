@@ -371,9 +371,15 @@
 
             // sucesso
             label.textContent = file.name;
-            info.textContent = `${formatSize(file.size)} · calculando páginas...`;
+            info.textContent = ['jpg', 'jpeg', 'png'].includes(ext)
+                ? `${formatSize(file.size)} · 1 página`
+                : `${formatSize(file.size)} · calculando páginas...`;
             dropArea.classList.add('success');
-            loadPageCount(file, ++pageCountToken);
+            if (['jpg', 'jpeg', 'png'].includes(ext)) {
+                pageCountToken++;
+            } else {
+                loadPageCount(file, ++pageCountToken);
+            }
 
             const url = URL.createObjectURL(file);
 
@@ -394,6 +400,12 @@
         });
 
         function loadPageCount(file, token) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (['jpg', 'jpeg', 'png'].includes(ext)) {
+                info.textContent = `${formatSize(file.size)} · 1 página`;
+                return;
+            }
+
             const formData = new FormData();
             formData.append('arquivo', file);
             formData.append('paper', document.querySelector('[name="paper"]').value);

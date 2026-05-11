@@ -65,7 +65,7 @@ class PrintController
             'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/x-zip-compressed', 'application/octet-stream'],
             'jpg' => ['image/jpeg'],
             'jpeg' => ['image/jpeg'],
-            'png' => ['image/png'],
+            'png' => ['image/png', 'image/x-png', 'application/png', 'application/octet-stream'],
         ];
 
         if (!isset($allowedByExtension[$ext])) {
@@ -76,8 +76,8 @@ class PrintController
             return true;
         }
 
-        // Alguns ambientes retornam MIME genérico para DOC/DOCX.
-        if (in_array($ext, ['doc', 'docx'], true)) {
+        // Alguns ambientes retornam MIME genérico para DOC/DOCX/PNG.
+        if (in_array($ext, ['doc', 'docx', 'png'], true)) {
             return true;
         }
 
@@ -120,7 +120,7 @@ class PrintController
         // Validação inicial
         if (!isset($_FILES['arquivo'])) {
             $this->logUploadFailure('Arquivo ausente em $_FILES');
-            $this->fail("Arquivo não enviado");
+            $this->fail("Arquivo não enviado. Verifique upload_max_filesize e post_max_size no servidor.");
         }
         $file = $_FILES['arquivo'];
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
@@ -309,7 +309,7 @@ class PrintController
         $this->validateCsrfOrFail();
 
         if (!isset($_FILES['arquivo']) || ($_FILES['arquivo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            $this->respond('Arquivo não enviado', false);
+            $this->respond('Arquivo não enviado. Verifique upload_max_filesize e post_max_size no servidor.', false);
         }
 
         $file = $_FILES['arquivo'];
