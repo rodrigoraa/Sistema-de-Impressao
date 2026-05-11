@@ -231,7 +231,7 @@ class PrintController
         $errorMessage = '';
         try {
             $originalPages = $sourceExt === 'docx' ? PageCounter::countDocxPages($dest) : 0;
-            $printedFile = $printer->prepareFile($dest, $orientation, $paper);
+            $printedFile = $printer->prepareFile($dest, $orientation, $paper, $extraOptions);
             $convertedPages = PageCounter::count($printedFile);
             $pages = $convertedPages;
             if ($pages < 1) {
@@ -337,8 +337,16 @@ class PrintController
             $printer = new PrintService();
             $paper = $_POST['paper'] ?? 'A4';
             $orientation = $_POST['orientation'] ?? 'portrait';
+            $extraOptions = [];
+            foreach (['top', 'right', 'bottom', 'left'] as $side) {
+                $field = 'margin_' . $side;
+                if (isset($_POST[$field]) && $_POST[$field] !== '' && is_numeric($_POST[$field])) {
+                    $mm = max(0, min(100, (float) $_POST[$field]));
+                    $extraOptions['page-' . $side] = (string) (int) round($mm * 72 / 25.4);
+                }
+            }
             $originalPages = $ext === 'docx' ? PageCounter::countDocxPages($tempFile) : 0;
-            $preparedFile = $printer->prepareFile($tempFile, $orientation, $paper);
+            $preparedFile = $printer->prepareFile($tempFile, $orientation, $paper, $extraOptions);
             $convertedPages = PageCounter::count($preparedFile);
             $pages = $convertedPages;
             if ($pages < 1) {

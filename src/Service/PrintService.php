@@ -26,7 +26,8 @@ class PrintService
         $preparedFile = $this->prepareFile(
             $filePath,
             $orientation,
-            $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4'
+            $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4',
+            $extraOptions
         );
         $sourceExt = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         $this->printPrepared($preparedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
@@ -68,7 +69,7 @@ class PrintService
         return $this->lastPrintCompleted;
     }
 
-    public function prepareFile($filePath, $orientation = 'portrait', $paper = 'A4')
+    public function prepareFile($filePath, $orientation = 'portrait', $paper = 'A4', $extraOptions = [])
     {
         if (!is_file($filePath)) {
             throw new RuntimeException('Arquivo nao encontrado para impressao');
@@ -80,7 +81,7 @@ class PrintService
         }
 
         if (in_array($ext, ['doc', 'docx'], true)) {
-            return $this->convertOfficeToPdf($filePath);
+            return $this->convertOfficeToPdf($filePath, $extraOptions);
         }
 
         if (in_array($ext, ['jpg', 'jpeg', 'png'], true)) {
@@ -297,7 +298,7 @@ class PrintService
         return "'" . str_replace("'", "''", $value) . "'";
     }
 
-    private function convertOfficeToPdf($filePath)
+    private function convertOfficeToPdf($filePath, $extraOptions = [])
     {
         $office = $this->findLibreOffice();
         if ($office === null) {
@@ -330,11 +331,12 @@ class PrintService
                 . ' SAL_USE_VCLPLUGIN=gen ';
         }
 
+        $sourceForPdf = $this->prepareOfficeSourceForConversion($filePath, $sourceExt, $extraOptions, $office, $outDir, $envPrefix, $profileDir);
         $declaredPages = $sourceExt === 'docx' ? $this->countDocxDeclaredPages($filePath) : 0;
         $attempts = [
             [
                 'label' => 'perfil-isolado-filtro-writer',
-                'build' => function ($attemptDir) use ($envPrefix, $office, $profileDir, $filePath) {
+                'build' => function ($attemptDir) use ($envPrefix, $office, $profileDir, $sourceForPdf) {
                     return sprintf(
                         '%s%s %s --headless --invisible --nodefault --norestore --nofirststartwizard --nolockcheck --convert-to %s --outdir %s %s 2>&1',
                         $envPrefix,
@@ -342,31 +344,31 @@ class PrintService
                         escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
                         escapeshellarg('pdf:writer_pdf_Export'),
                         escapeshellarg($attemptDir),
-                        escapeshellarg($filePath)
+                        escapeshellarg($sourceForPdf)
                     );
                 },
             ],
             [
                 'label' => 'perfil-isolado-pdf-simples',
-                'build' => function ($attemptDir) use ($envPrefix, $office, $profileDir, $filePath) {
+                'build' => function ($attemptDir) use ($envPrefix, $office, $profileDir, $sourceForPdf) {
                     return sprintf(
                         '%s%s %s --headless --convert-to pdf --outdir %s %s 2>&1',
                         $envPrefix,
                         escapeshellarg($office),
                         escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
                         escapeshellarg($attemptDir),
-                        escapeshellarg($filePath)
+                        escapeshellarg($sourceForPdf)
                     );
                 },
             ],
             [
                 'label' => 'compatibilidade-comando-antigo',
-                'build' => function ($attemptDir) use ($office, $filePath) {
+                'build' => function ($attemptDir) use ($office, $sourceForPdf) {
                     return sprintf(
                         '%s --headless --convert-to pdf --outdir %s %s 2>&1',
                         escapeshellarg($office),
                         escapeshellarg($attemptDir),
-                        escapeshellarg($filePath)
+                        escapeshellarg($sourceForPdf)
                     );
                 },
             ],
@@ -389,7 +391,7 @@ class PrintService
             $lastStatus = $status;
             $lastOutput = $output;
 
-            $expected = $attemptDir . DIRECTORY_SEPARATOR . pathinfo($filePath, PATHINFO_FILENAME) . '.pdf';
+            $expected = $attemptDir . DIRECTORY_SEPARATOR . pathinfo($sourceForPdf, PATHINFO_FILENAME) . '.pdf';
             $candidate = null;
             if ($status === 0 && is_file($expected)) {
                 $candidate = $expected;
@@ -969,6 +971,133 @@ class PrintService
         }
 
         $this->log('DOCX fontes solicitadas/resolvidas: ' . implode('; ', $resolved));
+    }
+
+    private function prepareOfficeSourceForConversion($filePath, $sourceExt, $extraOptions, $office, $outDir, $envPrefix, $profileDir)
+    {
+        $margins = $this->officeMarginsFromOptions($extraOptions);
+        if (empty($margins)) {
+            return $filePath;
+        }
+
+        if (!class_exists('ZipArchive')) {
+            $this->log('Office margens: ZipArchive indisponivel; conversao seguira sem alterar margens do documento.');
+            return $filePath;
+        }
+
+        $docxFile = $filePath;
+        if ($sourceExt === 'doc') {
+            $docxFile = $this->convertDocToDocx($filePath, $office, $outDir, $envPrefix, $profileDir);
+            if ($docxFile === null) {
+                $this->log('DOC margens: nao foi possivel criar DOCX intermediario; conversao seguira com o DOC original.');
+                return $filePath;
+            }
+        }
+
+        if ($sourceExt !== 'doc' && $sourceExt !== 'docx') {
+            return $filePath;
+        }
+
+        $patched = $outDir . DIRECTORY_SEPARATOR . pathinfo($docxFile, PATHINFO_FILENAME) . '-margens.docx';
+        if (!@copy($docxFile, $patched)) {
+            $this->log('Office margens: nao foi possivel criar copia DOCX para ajuste.');
+            return $docxFile;
+        }
+
+        $zip = new ZipArchive();
+        if ($zip->open($patched) !== true) {
+            $this->log('Office margens: nao foi possivel abrir DOCX intermediario.');
+            return $docxFile;
+        }
+
+        $xml = $zip->getFromName('word/document.xml');
+        if ($xml === false) {
+            $zip->close();
+            return $docxFile;
+        }
+
+        $xml = $this->applyDocxMargins($xml, $margins);
+        $zip->deleteName('word/document.xml');
+        $zip->addFromString('word/document.xml', $xml);
+        $zip->close();
+
+        $this->log('Office margens aplicadas antes da conversao PDF: ' . implode(', ', array_map(fn($k, $v) => $k . '=' . $v . 'twips', array_keys($margins), $margins)));
+        return $patched;
+    }
+
+    private function convertDocToDocx($filePath, $office, $outDir, $envPrefix, $profileDir)
+    {
+        $docxDir = $outDir . DIRECTORY_SEPARATOR . 'docx-intermediario';
+        if (!is_dir($docxDir) && !mkdir($docxDir, 0775, true)) {
+            return null;
+        }
+
+        $cmd = sprintf(
+            '%s%s %s --headless --convert-to docx --outdir %s %s 2>&1',
+            $envPrefix,
+            escapeshellarg($office),
+            escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
+            escapeshellarg($docxDir),
+            escapeshellarg($filePath)
+        );
+        exec($cmd, $output, $status);
+
+        $expected = $docxDir . DIRECTORY_SEPARATOR . pathinfo($filePath, PATHINFO_FILENAME) . '.docx';
+        if ($status === 0 && is_file($expected)) {
+            $this->log('DOC convertido para DOCX intermediario para aplicar margens: ' . $expected);
+            return $expected;
+        }
+
+        $converted = glob($docxDir . DIRECTORY_SEPARATOR . '*.docx');
+        if ($status === 0 && !empty($converted) && is_file($converted[0])) {
+            $this->log('DOC convertido para DOCX intermediario para aplicar margens: ' . $converted[0]);
+            return $converted[0];
+        }
+
+        $this->log('DOC para DOCX falhou ao aplicar margens: ' . $cmd . ' | status=' . $status . ' | ' . implode(' | ', $output));
+        return null;
+    }
+
+    private function officeMarginsFromOptions($extraOptions)
+    {
+        $map = [
+            'page-top' => 'top',
+            'page-right' => 'right',
+            'page-bottom' => 'bottom',
+            'page-left' => 'left',
+        ];
+        $margins = [];
+
+        foreach ($map as $option => $docxName) {
+            if (!isset($extraOptions[$option]) || !is_numeric($extraOptions[$option])) {
+                continue;
+            }
+
+            $points = max(0, min(288, (float) $extraOptions[$option]));
+            $margins[$docxName] = (int) round($points * 20);
+        }
+
+        return $margins;
+    }
+
+    private function applyDocxMargins($xml, $margins)
+    {
+        if (empty($margins)) {
+            return $xml;
+        }
+
+        return preg_replace_callback('/<w:pgMar\b([^>]*)\/>/s', function ($match) use ($margins) {
+            $attrs = $match[1];
+            foreach ($margins as $name => $twips) {
+                if (preg_match('/\bw:' . preg_quote($name, '/') . '="[^"]*"/', $attrs)) {
+                    $attrs = preg_replace('/\bw:' . preg_quote($name, '/') . '="[^"]*"/', 'w:' . $name . '="' . $twips . '"', $attrs);
+                } else {
+                    $attrs .= ' w:' . $name . '="' . $twips . '"';
+                }
+            }
+
+            return '<w:pgMar' . $attrs . '/>';
+        }, $xml);
     }
 
     private function logOfficeLayoutDiagnostics($filePath, $sourceExt)

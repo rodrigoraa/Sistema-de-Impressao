@@ -398,6 +398,10 @@
             formData.append('arquivo', file);
             formData.append('paper', document.querySelector('[name="paper"]').value);
             formData.append('orientation', document.querySelector('[name="orientation"]').value);
+            ['top', 'right', 'bottom', 'left'].forEach(side => {
+                const el = document.querySelector(`[name="margin_${side}"]`);
+                if (el && el.value !== '') formData.append(`margin_${side}`, el.value);
+            });
             formData.append('csrf_token', csrfToken);
 
             fetch('/print/page-count', {
@@ -427,7 +431,7 @@
                 });
         }
 
-        ['paper', 'orientation'].forEach(name => {
+        ['paper', 'orientation', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left'].forEach(name => {
             document.querySelector(`[name="${name}"]`).addEventListener('change', () => {
                 const file = input.files[0];
                 if (file) {
