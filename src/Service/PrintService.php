@@ -47,10 +47,10 @@ class PrintService
         $this->lastPrintCompleted = null;
         $preparedExt = strtolower(pathinfo($preparedFile, PATHINFO_EXTENSION));
         $this->log('Arquivo preparado para impressao: ext_origem=' . $sourceExt . ' preparado=' . $preparedFile . ' ext_preparado=' . $preparedExt . ' tamanho=' . (@filesize($preparedFile) ?: 0));
-        if ($sourceExt === 'png') {
-            $debugCopy = $this->copyDebugFile($preparedFile, 'png-preparado');
+        if (in_array($sourceExt, ['doc', 'docx', 'png'], true)) {
+            $debugCopy = $this->copyDebugFile($preparedFile, $sourceExt . '-preparado');
             if ($debugCopy !== null) {
-                $this->log('PNG diagnostico: copia do arquivo preparado=' . $debugCopy);
+                $this->log(strtoupper($sourceExt) . ' diagnostico: copia do arquivo preparado=' . $debugCopy);
             }
         }
 
@@ -309,9 +309,34 @@ class PrintService
             throw new RuntimeException('Nao foi possivel criar pasta temporaria para conversao');
         }
 
+        $profileDir = $outDir . DIRECTORY_SEPARATOR . 'lo-profile';
+        $homeDir = $outDir . DIRECTORY_SEPARATOR . 'lo-home';
+        $configDir = $outDir . DIRECTORY_SEPARATOR . 'lo-config';
+        foreach ([$profileDir, $homeDir, $configDir] as $dir) {
+            if (!is_dir($dir) && !mkdir($dir, 0775, true)) {
+                throw new RuntimeException('Nao foi possivel criar ambiente temporario do LibreOffice');
+            }
+        }
+        $this->writeOfficeFontConfig($configDir);
+
+        $sourceExt = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        if (in_array($sourceExt, ['doc', 'docx'], true)) {
+            $this->logOfficeFontDiagnostics($filePath, $sourceExt);
+        }
+
+        $envPrefix = '';
+        if (!$this->isWindows) {
+            $envPrefix = 'HOME=' . escapeshellarg($homeDir)
+                . ' XDG_CONFIG_HOME=' . escapeshellarg($configDir)
+                . ' SAL_USE_VCLPLUGIN=gen ';
+        }
+
         $cmd = sprintf(
-            '%s --headless --convert-to pdf --outdir %s %s 2>&1',
+            '%s%s --headless --invisible --nodefault --norestore --nofirststartwizard --nolockcheck %s --convert-to %s --outdir %s %s 2>&1',
+            $envPrefix,
             escapeshellarg($office),
+            escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
+            escapeshellarg('pdf:writer_pdf_Export'),
             escapeshellarg($outDir),
             escapeshellarg($filePath)
         );
@@ -319,7 +344,7 @@ class PrintService
 
         $expected = $outDir . DIRECTORY_SEPARATOR . pathinfo($filePath, PATHINFO_FILENAME) . '.pdf';
         if ($status === 0 && is_file($expected)) {
-            $this->log('LibreOffice: ' . $cmd . ' | OK');
+            $this->log('LibreOffice: ' . $cmd . ' | OK | ' . implode(' | ', $output));
             return $expected;
         }
 
@@ -783,6 +808,119 @@ class PrintService
         }
 
         return $result;
+    }
+
+    private function logOfficeFontDiagnostics($filePath, $sourceExt)
+    {
+        if ($sourceExt === 'doc') {
+            $this->log('DOC diagnostico: formato binario legado; se a formatacao mudar, confira fontes instaladas no Linux e salve como DOCX/PDF para comparar.');
+            return;
+        }
+
+        if ($sourceExt !== 'docx' || !class_exists('ZipArchive')) {
+            return;
+        }
+
+        $zip = new ZipArchive();
+        if ($zip->open($filePath) !== true) {
+            return;
+        }
+
+        $fonts = [];
+        foreach (['word/document.xml', 'word/styles.xml', 'word/numbering.xml'] as $entry) {
+            $xml = $zip->getFromName($entry);
+            if ($xml === false) {
+                continue;
+            }
+
+            if (preg_match_all('/w:(?:ascii|hAnsi|eastAsia|cs)="([^"]+)"/', $xml, $matches)) {
+                foreach ($matches[1] as $font) {
+                    $font = trim(html_entity_decode($font, ENT_QUOTES | ENT_XML1, 'UTF-8'));
+                    if ($font !== '' && !str_starts_with($font, '+')) {
+                        $fonts[$font] = true;
+                    }
+                }
+            }
+        }
+        $zip->close();
+
+        $fonts = array_slice(array_keys($fonts), 0, 20);
+        if (empty($fonts)) {
+            return;
+        }
+
+        $resolved = [];
+        $fcMatch = $this->isWindows ? null : $this->findExecutable(['/usr/bin/fc-match', 'fc-match']);
+        foreach ($fonts as $font) {
+            if ($fcMatch === null) {
+                $resolved[] = $font;
+                continue;
+            }
+
+            $output = [];
+            $status = 1;
+            exec(escapeshellarg($fcMatch) . ' -f ' . escapeshellarg('%{family}\n') . ' ' . escapeshellarg($font) . ' 2>/dev/null', $output, $status);
+            $match = $status === 0 && !empty($output[0]) ? trim($output[0]) : '?';
+            $resolved[] = $font . '=>' . $match;
+        }
+
+        $this->log('DOCX fontes solicitadas/resolvidas: ' . implode('; ', $resolved));
+    }
+
+    private function writeOfficeFontConfig($configDir)
+    {
+        if ($this->isWindows) {
+            return;
+        }
+
+        $fontConfigDir = $configDir . DIRECTORY_SEPARATOR . 'fontconfig';
+        if (!is_dir($fontConfigDir) && !@mkdir($fontConfigDir, 0775, true)) {
+            return;
+        }
+
+        $aliases = [
+            'Calibri' => ['Carlito', 'Liberation Sans', 'DejaVu Sans'],
+            'Cambria' => ['Caladea', 'Liberation Serif', 'DejaVu Serif'],
+            'Arial' => ['Liberation Sans', 'DejaVu Sans'],
+            'Times New Roman' => ['Liberation Serif', 'DejaVu Serif'],
+            'Courier New' => ['Liberation Mono', 'DejaVu Sans Mono'],
+            'Verdana' => ['DejaVu Sans', 'Liberation Sans'],
+            'Tahoma' => ['DejaVu Sans', 'Liberation Sans'],
+        ];
+
+        $xml = "<?xml version=\"1.0\"?>\n<!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">\n<fontconfig>\n";
+        foreach ($aliases as $source => $targets) {
+            $xml .= "  <alias binding=\"same\">\n";
+            $xml .= "    <family>" . htmlspecialchars($source, ENT_XML1) . "</family>\n";
+            $xml .= "    <prefer>\n";
+            foreach ($targets as $target) {
+                $xml .= "      <family>" . htmlspecialchars($target, ENT_XML1) . "</family>\n";
+            }
+            $xml .= "    </prefer>\n";
+            $xml .= "  </alias>\n";
+        }
+        $xml .= "</fontconfig>\n";
+
+        if (@file_put_contents($fontConfigDir . DIRECTORY_SEPARATOR . 'fonts.conf', $xml) !== false) {
+            $this->log('LibreOffice: fontconfig temporario criado para fontes Office metricamente compativeis');
+        }
+    }
+
+    private function pathToFileUri($path)
+    {
+        $path = str_replace('\\', '/', realpath($path) ?: $path);
+        $parts = array_map('rawurlencode', explode('/', $path));
+        $uriPath = implode('/', $parts);
+
+        if (preg_match('/^[A-Za-z]:\//', $path)) {
+            return 'file:///' . $uriPath;
+        }
+
+        if (str_starts_with($path, '/')) {
+            return 'file://' . $uriPath;
+        }
+
+        return 'file:///' . $uriPath;
     }
 
     private function detectMime($filePath)

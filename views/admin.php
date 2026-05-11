@@ -90,7 +90,7 @@
                             <thead>
                                 <tr>
                                     <th>Professor</th>
-                                    <th>Total de páginas</th>
+                                    <th>Total contabilizado</th>
                                 </tr>
                             </thead>
 
@@ -111,7 +111,7 @@
                                             </td>
                                             <td>
                                                 <span class="badge bg-primary">
-                                                    <?= $row['total'] ?> páginas
+                                                    <?= $row['total'] ?> contabilizadas
                                                 </span>
                                             </td>
                                         </tr>
@@ -132,6 +132,10 @@
 
                 <a href="/admin/users" class="btn btn-outline-secondary">
                     <i class="bi bi-people"></i> Usuários
+                </a>
+
+                <a href="/prints" class="btn btn-outline-primary">
+                    <i class="bi bi-list-task"></i> Fila de impressão
                 </a>
 
             </div>

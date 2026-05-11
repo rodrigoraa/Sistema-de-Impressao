@@ -3,6 +3,7 @@ require_once __DIR__ . '/../Service/PrintService.php';
 require_once __DIR__ . '/../Service/PageCounter.php';
 require_once __DIR__ . '/../Service/QuotaService.php';
 require_once __DIR__ . '/../Service/Database.php';
+require_once __DIR__ . '/../Service/PrintJobService.php';
 
 class PrintController
 {
@@ -191,26 +192,35 @@ class PrintController
         if (!empty($_POST['scale'])) {
             if ($_POST['scale'] === 'fit') {
                 $extraOptions['fit-to-page'] = 'true';
-            } elseif (is_numeric($_POST['scale'])) {
+            } elseif (is_numeric($_POST['scale']) && $_POST['scale'] !== '100') {
                 $extraOptions['scaling'] = $_POST['scale'];
             }
         }
 
         // Prepara, conta paginas e envia para impressao usando o mesmo arquivo convertido.
         $printer = new PrintService();
+        $jobService = new PrintJobService();
+        $sourceExt = strtolower(pathinfo($dest, PATHINFO_EXTENSION));
+        $paper = $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4';
+        $jobId = $jobService->create($user, $origName, $dest, $sourceExt, $copies, $numberUp, $sides, $orientation, $paper);
         $printedFile = $dest;
         $pages = 0;
+        $chargedPages = 0;
         $completed = false;
         $errorMessage = '';
         try {
-            $sourceExt = strtolower(pathinfo($dest, PATHINFO_EXTENSION));
             $originalPages = $sourceExt === 'docx' ? PageCounter::countDocxPages($dest) : 0;
-            $printedFile = $printer->prepareFile($dest, $orientation, $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4');
+            $printedFile = $printer->prepareFile($dest, $orientation, $paper);
             $convertedPages = PageCounter::count($printedFile);
             $pages = $convertedPages;
             if ($pages < 1) {
                 $pages = $originalPages > 0 ? $originalPages : 1;
             }
+            if ($sourceExt === 'docx' && $originalPages > 0 && $convertedPages > $originalPages) {
+                $printer->log("DOCX conversao aumentou paginas: original={$originalPages} convertido={$convertedPages} arquivo={$dest}");
+            }
+            $chargedPages = $this->billablePages($pages, $copies, $numberUp);
+            $jobService->markProcessing($jobId, $printedFile, $pages, $chargedPages);
 
             $completed = $printer->printPrepared($printedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
             $success = $completed === true;
@@ -220,12 +230,20 @@ class PrintController
             $success = false;
         }
 
-        $totalPages = $pages * $copies;
+        if ($chargedPages < 1 && $pages > 0) {
+            $chargedPages = $this->billablePages($pages, $copies, $numberUp);
+        }
+
+        if ($success) {
+            $jobService->markCompleted($jobId, $printedFile, $pages, $chargedPages);
+        } else {
+            $jobService->markFailed($jobId, $printedFile, $pages, $chargedPages, $errorMessage ?: 'Impressao nao concluida');
+        }
 
         // Registra no banco apenas quando a impressao foi confirmada.
         if ($success) {
             $quota = new QuotaService();
-            $quota->register($user, $totalPages, $dest);
+            $quota->register($user, $chargedPages, $dest);
         }
 
         // Grava log customizado
@@ -233,7 +251,7 @@ class PrintController
 
         // Mensagem de retorno
         if ($success) {
-            $msg = "Impressão concluída ({$pages} páginas x {$copies} cópias = {$totalPages} páginas contabilizadas)";
+            $msg = "Impressão concluída ({$pages} páginas, {$numberUp} por folha, {$copies} cópias = {$chargedPages} contabilizadas)";
         } elseif ($completed === false && $pages > 0 && $errorMessage === '') {
             $msg = "Impressão cancelada ou não concluída ({$pages} páginas x {$copies} cópias). Nada foi contabilizado.";
         } else {
@@ -245,7 +263,7 @@ class PrintController
             $this->respond($msg, $success, [
                 'pages' => $pages,
                 'copies' => $copies,
-                'total_pages' => $success ? $totalPages : 0,
+                'total_pages' => $success ? $chargedPages : 0,
                 'counted' => $success,
             ]);
         } else {
@@ -330,6 +348,15 @@ class PrintController
     {
         return !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
             && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+    }
+
+    private function billablePages($pages, $copies, $numberUp)
+    {
+        $pages = max(1, (int) $pages);
+        $copies = max(1, (int) $copies);
+        $numberUp = max(1, (int) $numberUp);
+
+        return (int) ceil($pages / $numberUp) * $copies;
     }
 
     // Redireciona com flash message na sessão

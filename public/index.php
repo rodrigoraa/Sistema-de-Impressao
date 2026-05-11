@@ -120,6 +120,7 @@ require_once $projectRoot . '/src/Controller/AdminController.php';
 require_once $projectRoot . '/src/Controller/UserController.php';
 require_once $projectRoot . '/src/Controller/SetupController.php';
 require_once $projectRoot . '/src/Controller/PrinterController.php';
+require_once $projectRoot . '/src/Controller/PrintJobController.php';
 
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
@@ -207,6 +208,11 @@ if (!isset($_SESSION['user'])) {
 
 if ($uri === '/print/page-count') {
     (new PrintController())->pageCount();
+    exit;
+}
+
+if ($uri === '/prints') {
+    (new PrintJobController())->index();
     exit;
 }
 

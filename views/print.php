@@ -35,6 +35,10 @@
                         <?= htmlspecialchars($_SESSION['name']) ?>
                     </span>
 
+                    <a href="/prints" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-list-task"></i> Fila
+                    </a>
+
                     <a href="/logout" class="btn btn-outline-danger btn-sm">
                         <i class="bi bi-box-arrow-right"></i> Sair
                     </a>
@@ -147,9 +151,9 @@
                                 <div class="mb-3">
                                     <label class="form-label">Escala</label>
                                     <select class="form-select" name="scale">
+                                        <option value="fit">Ajustar à página</option>
                                         <option value="100">100%</option>
                                         <option value="90">90%</option>
-                                        <option value="fit">Ajustar à página</option>
                                     </select>
                                 </div>
 
