@@ -427,6 +427,11 @@ class PrintService
         if ($bestPdf !== null) {
             if ($declaredPages > 0 && $bestPages > $declaredPages) {
                 $this->log('LibreOffice: melhor conversao ainda aumentou paginas: declarado=' . $declaredPages . ' convertido=' . $bestPages . ' pdf=' . $bestPdf);
+                $trimmed = $this->trimPdfToPageCount($bestPdf, $declaredPages, $sourceExt);
+                if ($trimmed !== null) {
+                    $this->logConvertedPdfDiagnostics($trimmed, $sourceExt);
+                    return $trimmed;
+                }
             }
             $this->logConvertedPdfDiagnostics($bestPdf, $sourceExt);
             return $bestPdf;
@@ -1137,6 +1142,88 @@ class PrintService
         }
 
         return 0;
+    }
+
+    private function trimPdfToPageCount($pdfFile, $pageCount, $sourceExt)
+    {
+        $pageCount = (int) $pageCount;
+        if ($pageCount < 1 || !is_file($pdfFile)) {
+            return null;
+        }
+
+        $target = tempnam(sys_get_temp_dir(), 'docpdf_trim_') . '.pdf';
+
+        $qpdf = $this->findExecutable([$_ENV['QPDF_PATH'] ?? null, '/usr/bin/qpdf', 'qpdf']);
+        if ($qpdf !== null) {
+            $range = '1-' . $pageCount;
+            $cmd = escapeshellarg($qpdf)
+                . ' --empty --pages ' . escapeshellarg($pdfFile) . ' ' . escapeshellarg($range)
+                . ' -- ' . escapeshellarg($target) . ' 2>&1';
+            exec($cmd, $output, $status);
+            if ($status === 0 && is_file($target) && $this->countPdfPages($target) === $pageCount) {
+                $this->log(strtoupper($sourceExt) . ' PDF ajustado para ' . $pageCount . ' pagina(s) via qpdf: ' . $cmd);
+                return $target;
+            }
+            $this->log('qpdf falhou ao ajustar PDF: status=' . $status . ' | ' . implode(' | ', $output));
+            @unlink($target);
+            $target = tempnam(sys_get_temp_dir(), 'docpdf_trim_') . '.pdf';
+        }
+
+        $gs = $this->findExecutable([$_ENV['GHOSTSCRIPT_PATH'] ?? null, '/usr/bin/gs', 'gs']);
+        if ($gs !== null) {
+            $cmd = escapeshellarg($gs)
+                . ' -q -dNOPAUSE -dBATCH -dSAFER -sDEVICE=pdfwrite'
+                . ' -dFirstPage=1 -dLastPage=' . $pageCount
+                . ' -sOutputFile=' . escapeshellarg($target)
+                . ' ' . escapeshellarg($pdfFile) . ' 2>&1';
+            exec($cmd, $output, $status);
+            if ($status === 0 && is_file($target) && $this->countPdfPages($target) === $pageCount) {
+                $this->log(strtoupper($sourceExt) . ' PDF ajustado para ' . $pageCount . ' pagina(s) via Ghostscript: ' . $cmd);
+                return $target;
+            }
+            $this->log('Ghostscript falhou ao ajustar PDF: status=' . $status . ' | ' . implode(' | ', $output));
+            @unlink($target);
+            $target = tempnam(sys_get_temp_dir(), 'docpdf_trim_') . '.pdf';
+        }
+
+        $pdfseparate = $this->findExecutable([$_ENV['PDFSEPARATE_PATH'] ?? null, '/usr/bin/pdfseparate', 'pdfseparate']);
+        $pdfunite = $this->findExecutable([$_ENV['PDFUNITE_PATH'] ?? null, '/usr/bin/pdfunite', 'pdfunite']);
+        if ($pdfseparate !== null && $pdfunite !== null) {
+            $dir = dirname($target) . DIRECTORY_SEPARATOR . 'docpdf_pages_' . uniqid('', true);
+            if (is_dir($dir) || mkdir($dir, 0775, true)) {
+                $pattern = $dir . DIRECTORY_SEPARATOR . 'page-%d.pdf';
+                $cmd = escapeshellarg($pdfseparate)
+                    . ' -f 1 -l ' . $pageCount
+                    . ' ' . escapeshellarg($pdfFile)
+                    . ' ' . escapeshellarg($pattern) . ' 2>&1';
+                exec($cmd, $sepOutput, $sepStatus);
+                $parts = [];
+                for ($i = 1; $i <= $pageCount; $i++) {
+                    $part = $dir . DIRECTORY_SEPARATOR . 'page-' . $i . '.pdf';
+                    if (is_file($part)) {
+                        $parts[] = $part;
+                    }
+                }
+
+                if ($sepStatus === 0 && count($parts) === $pageCount) {
+                    $cmd = escapeshellarg($pdfunite) . ' '
+                        . implode(' ', array_map('escapeshellarg', $parts))
+                        . ' ' . escapeshellarg($target) . ' 2>&1';
+                    exec($cmd, $uniteOutput, $uniteStatus);
+                    if ($uniteStatus === 0 && is_file($target) && $this->countPdfPages($target) === $pageCount) {
+                        $this->log(strtoupper($sourceExt) . ' PDF ajustado para ' . $pageCount . ' pagina(s) via Poppler');
+                        return $target;
+                    }
+                    $this->log('pdfunite falhou ao ajustar PDF: status=' . $uniteStatus . ' | ' . implode(' | ', $uniteOutput));
+                } else {
+                    $this->log('pdfseparate falhou ao ajustar PDF: status=' . $sepStatus . ' | ' . implode(' | ', $sepOutput));
+                }
+            }
+            @unlink($target);
+        }
+
+        $this->log(strtoupper($sourceExt) . ' PDF nao foi ajustado: instale qpdf, ghostscript ou poppler-utils para cortar paginas excedentes.');
+        return null;
     }
 
     private function findPdfObject($content, $objectNumber)
