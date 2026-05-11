@@ -237,8 +237,8 @@ class PrintController
             if ($pages < 1) {
                 $pages = $originalPages > 0 ? $originalPages : 1;
             }
-            if ($sourceExt === 'docx' && $originalPages > 0 && $convertedPages > $originalPages) {
-                $printer->log("DOCX conversao aumentou paginas: original={$originalPages} convertido={$convertedPages} arquivo={$dest}");
+            if ($sourceExt === 'docx' && $originalPages > 0 && $convertedPages > 0 && $convertedPages !== $originalPages) {
+                $printer->log("DOCX metadado de paginas diverge do PDF convertido: metadado={$originalPages} convertido={$convertedPages} arquivo={$dest}");
             }
             $billableSourcePages = $this->selectedPageCount($pages, $extraOptions);
             $chargedPages = $this->billablePages($billableSourcePages, $copies, $numberUp);
@@ -346,13 +346,9 @@ class PrintController
             }
 
             $message = "Documento com {$pages} " . ($pages === 1 ? 'página' : 'páginas');
-            if ($ext === 'docx' && $originalPages > 0 && $convertedPages > 0 && $originalPages !== $convertedPages) {
-                $message .= " após conversão";
-            }
-
             $this->respond($message, true, [
                 'pages' => $pages,
-                'original_pages' => $originalPages,
+                'original_pages' => 0,
                 'converted_pages' => $convertedPages,
             ]);
         } catch (Throwable $e) {
