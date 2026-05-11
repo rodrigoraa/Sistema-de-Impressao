@@ -49,6 +49,22 @@
 
         <!-- MAIN -->
         <main class="container py-4">
+            <div class="page-title">
+                <div>
+                    <h1>Nova impressão</h1>
+                    <p>Envie o arquivo, revise as opções e acompanhe pela fila quando precisar.</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="/prints" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-clock-history"></i> Histórico
+                    </a>
+                    <?php if ($_SESSION['role'] === 'admin'): ?>
+                        <a href="/admin" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-speedometer2"></i> Painel
+                        </a>
+                    <?php endif; ?>
+                </div>
+            </div>
 
             <!-- ALERT -->
             <?php if (!empty($_SESSION['flash'])): ?>
@@ -67,9 +83,9 @@
                     <div class="card shadow-sm border-0">
                         <div class="card-body">
 
-                            <h4 class="mb-3">
-                                <i class="bi bi-printer"></i> Nova impressão
-                            </h4>
+                            <div class="card-title-line">
+                                <h4><i class="bi bi-printer"></i> Configuração</h4>
+                            </div>
 
                             <form id="printForm" method="post" enctype="multipart/form-data">
                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
@@ -102,83 +118,85 @@
 
                                 </div>
 
-                                <div class="mb-3">
-                                    <label class="form-label">Cópias</label>
-                                    <input type="number" class="form-control" name="copies" value="1" min="1">
-                                </div>
+                                <div class="option-grid mb-3">
+                                    <div>
+                                        <label class="form-label">Cópias</label>
+                                        <input type="number" class="form-control" name="copies" value="1" min="1">
+                                    </div>
 
-                                <div class="mb-3">
-                                    <label class="form-label">Modo</label>
-                                    <select class="form-select" name="sides">
-                                        <option value="one-sided">Simples</option>
-                                        <option value="two-sided-long-edge">Frente e verso</option>
-                                    </select>
-                                </div>
+                                    <div>
+                                        <label class="form-label">Modo</label>
+                                        <select class="form-select" name="sides">
+                                            <option value="one-sided">Simples</option>
+                                            <option value="two-sided-long-edge">Frente e verso</option>
+                                        </select>
+                                    </div>
 
-                                <div class="mb-3">
-                                    <label class="form-label">Orientação</label>
-                                    <select class="form-select" name="orientation">
-                                        <option value="portrait">Retrato</option>
-                                        <option value="landscape">Paisagem</option>
-                                    </select>
-                                </div>
+                                    <div>
+                                        <label class="form-label">Orientação</label>
+                                        <select class="form-select" name="orientation">
+                                            <option value="portrait">Retrato</option>
+                                            <option value="landscape">Paisagem</option>
+                                        </select>
+                                    </div>
 
-                                <div class="mb-3">
-                                    <label class="form-label">Qualidade</label>
-                                    <select class="form-select" name="quality">
-                                        <option value="3">Normal</option>
-                                        <option value="5">Alta</option>
-                                    </select>
-                                </div>
+                                    <div>
+                                        <label class="form-label">Qualidade</label>
+                                        <select class="form-select" name="quality">
+                                            <option value="3">Normal</option>
+                                            <option value="5">Alta</option>
+                                        </select>
+                                    </div>
 
-                                <div class="mb-3">
-                                    <label class="form-label">Páginas por folha</label>
-                                    <select class="form-select" name="number_up">
-                                        <option value="1">1 por folha</option>
-                                        <option value="2">2 por folha</option>
-                                        <option value="4">4 por folha</option>
-                                        <option value="8">8 por folha</option>
-                                    </select>
-                                </div>
+                                    <div>
+                                        <label class="form-label">Páginas por folha</label>
+                                        <select class="form-select" name="number_up">
+                                            <option value="1">1 por folha</option>
+                                            <option value="2">2 por folha</option>
+                                            <option value="4">4 por folha</option>
+                                            <option value="8">8 por folha</option>
+                                        </select>
+                                    </div>
 
-                                <div class="mb-3">
-                                    <label class="form-label">Tamanho do papel</label>
-                                    <select class="form-select" name="paper">
-                                        <option value="A4">A4</option>
-                                        <option value="Letter">Carta</option>
-                                    </select>
-                                </div>
+                                    <div>
+                                        <label class="form-label">Tamanho do papel</label>
+                                        <select class="form-select" name="paper">
+                                            <option value="A4">A4</option>
+                                            <option value="Letter">Carta</option>
+                                        </select>
+                                    </div>
 
-                                <div class="mb-3">
-                                    <label class="form-label">Escala</label>
-                                    <select class="form-select" name="scale">
-                                        <option value="fit">Ajustar à página</option>
-                                        <option value="100">100%</option>
-                                        <option value="95">95%</option>
-                                        <option value="90">90%</option>
-                                        <option value="80">80%</option>
-                                        <option value="custom">Personalizada</option>
-                                    </select>
-                                </div>
+                                    <div>
+                                        <label class="form-label">Escala</label>
+                                        <select class="form-select" name="scale">
+                                            <option value="fit">Ajustar à página</option>
+                                            <option value="100">100%</option>
+                                            <option value="95">95%</option>
+                                            <option value="90">90%</option>
+                                            <option value="80">80%</option>
+                                            <option value="custom">Personalizada</option>
+                                        </select>
+                                    </div>
 
-                                <div class="mb-3 d-none" id="scaleCustomBox">
-                                    <label class="form-label">Escala personalizada (%)</label>
-                                    <input type="number" class="form-control" name="scale_percent" value="100" min="10" max="400">
-                                </div>
+                                    <div class="d-none" id="scaleCustomBox">
+                                        <label class="form-label">Escala personalizada (%)</label>
+                                        <input type="number" class="form-control" name="scale_percent" value="100" min="10" max="400">
+                                    </div>
 
-                                <div class="mb-3">
-                                    <label class="form-label">Páginas</label>
-                                    <input type="text" class="form-control" name="page_ranges" placeholder="Ex.: 1,3-5">
-                                    <small class="text-muted">Deixe em branco para imprimir todas</small>
-                                </div>
+                                    <div class="wide">
+                                        <label class="form-label">Páginas</label>
+                                        <input type="text" class="form-control" name="page_ranges" placeholder="Ex.: 1,3-5">
+                                        <small class="text-muted">Deixe em branco para imprimir todas</small>
+                                    </div>
 
-                                <div class="mb-3">
-                                    <label class="form-label">Seleção de páginas</label>
-                                    <select class="form-select" name="page_set">
-                                        <option value="">Todas</option>
-                                        <option value="odd">Ímpares</option>
-                                        <option value="even">Pares</option>
-                                    </select>
+                                    <div class="wide">
+                                        <label class="form-label">Seleção de páginas</label>
+                                        <select class="form-select" name="page_set">
+                                            <option value="">Todas</option>
+                                            <option value="odd">Ímpares</option>
+                                            <option value="even">Pares</option>
+                                        </select>
+                                    </div>
                                 </div>
 
                                 <div class="mb-3">
@@ -247,34 +265,39 @@
                 <!-- INFO -->
                 <div class="col-lg-6">
 
-                    <div class="card shadow-sm border-0">
+                    <div class="card shadow-sm border-0 info-panel">
                         <div class="card-body">
 
-                            <h5 class="mb-3">
-                                <i class="bi bi-info-circle"></i> Instruções
-                            </h5>
+                            <div class="card-title-line">
+                                <h5><i class="bi bi-info-circle"></i> Atalhos</h5>
+                            </div>
 
                             <ul class="list-unstyled info-list">
                                 <li><i class="bi bi-check-circle"></i> Envie arquivos PDF, DOC, DOCX ou imagem</li>
                                 <li><i class="bi bi-check-circle"></i> Escolha frente e verso se necessário</li>
+                                <li><i class="bi bi-check-circle"></i> Consulte arquivos impressos para baixar ou reimprimir</li>
                                 <li><i class="bi bi-check-circle"></i> Administradores podem imprimir para outros
                                     usuários</li>
                             </ul>
+
+                            <div class="quick-actions mt-3">
+                                <a href="/prints">
+                                    <span><i class="bi bi-list-task"></i> Ver fila e histórico</span>
+                                    <i class="bi bi-chevron-right"></i>
+                                </a>
+                                <?php if ($_SESSION['role'] === 'admin'): ?>
+                                    <a href="/admin">
+                                        <span><i class="bi bi-speedometer2"></i> Abrir painel admin</span>
+                                        <i class="bi bi-chevron-right"></i>
+                                    </a>
+                                <?php endif; ?>
+                            </div>
 
                         </div>
                     </div>
 
                 </div>
 
-            </div>
-
-            <!-- FOOTER -->
-            <div class="mt-4 text-center">
-                <?php if ($_SESSION['role'] === 'admin'): ?>
-                    <a href="/admin" class="btn btn-outline-secondary btn-sm">
-                        <i class="bi bi-speedometer2"></i> Painel
-                    </a>
-                <?php endif; ?>
             </div>
 
         </main>

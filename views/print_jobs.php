@@ -3,13 +3,10 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Fila de Impressão</title>
-
+    <title>Histórico de Impressão</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-
     <link rel="stylesheet" href="/css/base.css">
     <link rel="stylesheet" href="/css/admin.css">
 </head>
@@ -30,128 +27,112 @@
             <div class="container d-flex justify-content-between align-items-center">
                 <div class="d-flex align-items-center gap-2">
                     <img src="/image/logo_escola.png" class="logo">
-                    <strong>Fila de Impressão</strong>
+                    <strong>Histórico de Impressão</strong>
                 </div>
-
                 <div class="d-flex align-items-center gap-3">
-                    <span class="user">
-                        <i class="bi bi-person-circle"></i>
-                        <?= htmlspecialchars($_SESSION['name'] ?? $_SESSION['user']) ?>
-                    </span>
-
-                    <a href="/logout" class="btn btn-outline-danger btn-sm">
-                        <i class="bi bi-box-arrow-right"></i> Sair
-                    </a>
+                    <span class="user"><i class="bi bi-person-circle"></i> <?= htmlspecialchars($_SESSION['name'] ?? $_SESSION['user']) ?></span>
+                    <a href="/logout" class="btn btn-outline-danger btn-sm"><i class="bi bi-box-arrow-right"></i> Sair</a>
                 </div>
             </div>
         </header>
 
         <main class="container py-4">
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
-                <h4 class="mb-0"><i class="bi bi-list-task"></i> <?= $isAdmin ? 'Todas as impressões' : 'Minhas impressões' ?></h4>
+            <?php if (!empty($_SESSION['flash'])): ?>
+                <div class="alert alert-<?= ($_SESSION['flash_type'] ?? '') === 'error' ? 'danger' : 'success' ?>">
+                    <?= htmlspecialchars($_SESSION['flash']); unset($_SESSION['flash'], $_SESSION['flash_type']); ?>
+                </div>
+            <?php endif; ?>
 
+            <section class="page-title">
+                <div>
+                    <p class="section-kicker mb-1"><?= $isAdmin ? 'Administração' : 'Professor' ?></p>
+                    <h1><?= $isAdmin ? 'Todas as impressões' : 'Minhas impressões' ?></h1>
+                </div>
                 <div class="d-flex gap-2">
                     <?php if ($isAdmin): ?>
-                        <a href="/admin" class="btn btn-outline-secondary btn-sm">
-                            <i class="bi bi-bar-chart"></i> Relatório
-                        </a>
+                        <a href="/admin" class="btn btn-outline-secondary"><i class="bi bi-speedometer2"></i> Painel</a>
                     <?php endif; ?>
-                    <a href="/" class="btn btn-outline-primary btn-sm">
-                        <i class="bi bi-printer"></i> Nova impressão
-                    </a>
+                    <a href="/" class="btn btn-primary"><i class="bi bi-printer"></i> Nova impressão</a>
                 </div>
-            </div>
+            </section>
 
-            <div class="card shadow-sm border-0 mb-4">
-                <div class="card-body">
-                    <form method="get" class="row g-3 align-items-end">
-                        <div class="col-md-4">
-                            <label class="form-label">Status</label>
-                            <select name="status" class="form-select">
-                                <option value="">Todos</option>
-                                <?php foreach ($statusLabels as $value => $meta): ?>
-                                    <option value="<?= $value ?>" <?= $currentStatus === $value ? 'selected' : '' ?>>
-                                        <?= $meta['label'] ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
+            <section class="metric-grid">
+                <div class="metric"><span>Total</span><strong><?= (int) $stats['total'] ?></strong></div>
+                <div class="metric"><span>Impressas</span><strong><?= (int) $stats['completed'] ?></strong></div>
+                <div class="metric"><span>Na fila</span><strong><?= (int) $stats['active'] ?></strong></div>
+                <div class="metric"><span>Erros</span><strong><?= (int) $stats['failed'] ?></strong></div>
+            </section>
 
-                        <div class="col-md-2">
-                            <button class="btn btn-primary w-100">
-                                <i class="bi bi-search"></i> Filtrar
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
+            <section class="panel">
+                <form method="get" class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">Status</label>
+                        <select name="status" class="form-select">
+                            <option value="">Todos</option>
+                            <?php foreach ($statusLabels as $value => $meta): ?>
+                                <option value="<?= $value ?>" <?= $currentStatus === $value ? 'selected' : '' ?>><?= $meta['label'] ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-primary w-100"><i class="bi bi-search"></i> Filtrar</button>
+                    </div>
+                </form>
+            </section>
 
-            <div class="card shadow-sm border-0">
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead>
-                                <tr>
-                                    <th>Arquivo</th>
-                                    <?php if ($isAdmin): ?>
-                                        <th>Professor</th>
-                                    <?php endif; ?>
-                                    <th>Status</th>
-                                    <th>Páginas</th>
-                                    <th>Cópias</th>
-                                    <th>Por folha</th>
-                                    <th>Contabilizado</th>
-                                    <th>Enviado em</th>
-                                </tr>
-                            </thead>
-
-                            <tbody>
-                                <?php if (empty($jobs)): ?>
+            <section class="panel">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle data-table">
+                        <thead>
+                            <tr>
+                                <th>Arquivo</th>
+                                <?php if ($isAdmin): ?><th>Professor</th><?php endif; ?>
+                                <th>Status</th>
+                                <th>Configuração</th>
+                                <th>Contabilizado</th>
+                                <th>Data</th>
+                                <th class="text-end">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($jobs)): ?>
+                                <tr><td colspan="<?= $isAdmin ? 7 : 6 ?>" class="text-center text-muted py-4">Nenhuma impressão encontrada</td></tr>
+                            <?php else: ?>
+                                <?php foreach ($jobs as $job): ?>
+                                    <?php $meta = $statusLabels[$job['status']] ?? $statusLabels['queued']; ?>
                                     <tr>
-                                        <td colspan="<?= $isAdmin ? 8 : 7 ?>" class="text-center text-muted">
-                                            Nenhuma impressão encontrada
+                                        <td>
+                                            <div class="fw-semibold text-truncate file-name"><?= htmlspecialchars($job['original_name']) ?></div>
+                                            <?php if (!empty($job['error_message'])): ?>
+                                                <small class="text-danger"><?= htmlspecialchars($job['error_message']) ?></small>
+                                            <?php else: ?>
+                                                <small class="text-muted"><?= strtoupper(htmlspecialchars($job['source_ext'] ?? '')) ?> · <?= (int) $job['pages'] ?> pág.</small>
+                                            <?php endif; ?>
+                                        </td>
+                                        <?php if ($isAdmin): ?>
+                                            <td><?= htmlspecialchars($job['user_name'] ?: $job['user']) ?><br><small class="text-muted"><?= htmlspecialchars($job['user']) ?></small></td>
+                                        <?php endif; ?>
+                                        <td><span class="badge <?= $meta['class'] ?>"><i class="bi <?= $meta['icon'] ?>"></i> <?= $meta['label'] ?></span></td>
+                                        <td><small><?= (int) $job['copies'] ?> cópia(s), <?= (int) $job['number_up'] ?> por folha<br><?= htmlspecialchars($job['paper'] ?: 'A4') ?> · <?= htmlspecialchars($job['orientation'] ?: 'portrait') ?></small></td>
+                                        <td><span class="badge text-bg-primary"><?= (int) $job['charged_pages'] ?></span></td>
+                                        <td><small><?= htmlspecialchars($job['created_at']) ?></small></td>
+                                        <td class="text-end">
+                                            <div class="btn-group btn-group-sm">
+                                                <a class="btn btn-outline-secondary" title="Baixar arquivo" href="/prints/download?id=<?= (int) $job['id'] ?>"><i class="bi bi-download"></i></a>
+                                                <form method="post" action="/prints/reprint" class="d-inline">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                                    <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
+                                                    <button class="btn btn-outline-primary" title="Reimprimir" onclick="return confirm('Reimprimir este arquivo?')"><i class="bi bi-arrow-repeat"></i></button>
+                                                </form>
+                                            </div>
                                         </td>
                                     </tr>
-                                <?php else: ?>
-                                    <?php foreach ($jobs as $job): ?>
-                                        <?php $meta = $statusLabels[$job['status']] ?? $statusLabels['queued']; ?>
-                                        <tr>
-                                            <td>
-                                                <div class="fw-semibold"><?= htmlspecialchars($job['original_name']) ?></div>
-                                                <?php if (!empty($job['error_message'])): ?>
-                                                    <small class="text-danger"><?= htmlspecialchars($job['error_message']) ?></small>
-                                                <?php else: ?>
-                                                    <small class="text-muted"><?= strtoupper(htmlspecialchars($job['source_ext'] ?? '')) ?></small>
-                                                <?php endif; ?>
-                                            </td>
-                                            <?php if ($isAdmin): ?>
-                                                <td>
-                                                    <?= htmlspecialchars($job['user_name'] ?: $job['user']) ?><br>
-                                                    <small class="text-muted"><?= htmlspecialchars($job['user']) ?></small>
-                                                </td>
-                                            <?php endif; ?>
-                                            <td>
-                                                <span class="badge <?= $meta['class'] ?>">
-                                                    <i class="bi <?= $meta['icon'] ?>"></i> <?= $meta['label'] ?>
-                                                </span>
-                                            </td>
-                                            <td><?= (int) $job['pages'] ?></td>
-                                            <td><?= (int) $job['copies'] ?></td>
-                                            <td><?= (int) $job['number_up'] ?></td>
-                                            <td>
-                                                <span class="badge text-bg-primary">
-                                                    <?= (int) $job['charged_pages'] ?>
-                                                </span>
-                                            </td>
-                                            <td><?= htmlspecialchars($job['created_at']) ?></td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
                 </div>
-            </div>
+            </section>
         </main>
     </div>
 </body>

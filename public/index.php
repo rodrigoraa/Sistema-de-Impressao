@@ -216,6 +216,16 @@ if ($uri === '/prints') {
     exit;
 }
 
+if ($uri === '/prints/download') {
+    (new PrintJobController())->download();
+    exit;
+}
+
+if ($uri === '/prints/reprint') {
+    (new PrintJobController())->reprint();
+    exit;
+}
+
 // PROCESSA
 $controller = new PrintController();
 $viewData = $controller->handle();

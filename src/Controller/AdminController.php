@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../Service/AuthService.php';
 require_once __DIR__ . '/../Service/Database.php';
+require_once __DIR__ . '/../Service/PrintJobService.php';
 
 class AdminController
 {
@@ -42,6 +43,12 @@ class AdminController
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             $data[] = $row;
         }
+
+        $totalMonth = 0;
+        foreach ($data as $row) {
+            $totalMonth += (int) ($row['total'] ?? 0);
+        }
+        $jobStats = (new PrintJobService())->statsForUser($_SESSION['user'], true);
 
         require __DIR__ . '/../../views/admin.php';
     }

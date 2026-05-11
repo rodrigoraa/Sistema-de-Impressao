@@ -95,6 +95,60 @@ class PrintJobService
         return $jobs;
     }
 
+    public function findVisible($id, $user, $isAdmin = false)
+    {
+        $sql = "
+            SELECT pj.*, u.name AS user_name
+            FROM print_jobs pj
+            LEFT JOIN users u ON u.cpf = pj.user
+            WHERE pj.id = :id
+        ";
+        if (!$isAdmin) {
+            $sql .= " AND pj.user = :user";
+        }
+        $sql .= " LIMIT 1";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':id', (int) $id, SQLITE3_INTEGER);
+        if (!$isAdmin) {
+            $stmt->bindValue(':user', $user, SQLITE3_TEXT);
+        }
+
+        $result = $stmt->execute();
+        $row = $result ? $result->fetchArray(SQLITE3_ASSOC) : false;
+
+        return $row ?: null;
+    }
+
+    public function statsForUser($user, $isAdmin = false)
+    {
+        $where = $isAdmin ? '' : 'WHERE user = :user';
+        $stmt = $this->db->prepare("
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                SUM(CASE WHEN status IN ('queued', 'processing') THEN 1 ELSE 0 END) AS active,
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN charged_pages ELSE 0 END), 0) AS charged
+            FROM print_jobs
+            {$where}
+        ");
+        if (!$isAdmin) {
+            $stmt->bindValue(':user', $user, SQLITE3_TEXT);
+        }
+
+        $result = $stmt->execute();
+        $row = $result ? $result->fetchArray(SQLITE3_ASSOC) : [];
+
+        return [
+            'total' => (int) ($row['total'] ?? 0),
+            'completed' => (int) ($row['completed'] ?? 0),
+            'failed' => (int) ($row['failed'] ?? 0),
+            'active' => (int) ($row['active'] ?? 0),
+            'charged' => (int) ($row['charged'] ?? 0),
+        ];
+    }
+
     private function updateStatus($id, $status, $preparedFile, $pages, $chargedPages, $errorMessage, $finished)
     {
         $now = date('Y-m-d H:i:s');
