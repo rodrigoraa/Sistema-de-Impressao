@@ -430,12 +430,19 @@ class PrintService
             if ($declaredPages > 0 && $bestPages > $declaredPages) {
                 $this->log('LibreOffice: metadado DOCX declara menos paginas que o PDF convertido; usando PDF completo. declarado=' . $declaredPages . ' convertido=' . $bestPages . ' pdf=' . $bestPdf);
                 if ($sourceExt === 'docx') {
-                    $tightPdf = $this->tryTightenDocxToDeclaredPages($sourceForPdf, $declaredPages, $office, $outDir, $envPrefix, $profileDir);
+                    $tightPdf = $this->tryFitDocxToDeclaredPages($sourceForPdf, $declaredPages, $office, $outDir, $envPrefix, $profileDir);
                     if ($tightPdf !== null) {
-                        $this->log('DOCX ajustado por margens de seguranca para respeitar paginas declaradas=' . $declaredPages);
+                        $this->log('DOCX ajustado por perfil compacto para respeitar paginas declaradas=' . $declaredPages);
                         $this->logConvertedPdfDiagnostics($tightPdf, $sourceExt);
                         return $tightPdf;
                     }
+                }
+
+                $blankTrimmed = $this->trimTrailingBlankPdfPages($bestPdf, $declaredPages, $bestPages, $sourceExt);
+                if ($blankTrimmed !== null) {
+                    $this->log('DOCX paginas finais vazias removidas apos conversao. declarado=' . $declaredPages . ' convertido=' . $bestPages);
+                    $this->logConvertedPdfDiagnostics($blankTrimmed, $sourceExt);
+                    return $blankTrimmed;
                 }
 
                 if ($sourceExt === 'docx' && $declaredPages === 1 && $this->isSinglePageGraphicDocx($filePath)) {
@@ -446,6 +453,8 @@ class PrintService
                         return $trimmed;
                     }
                 }
+
+                $this->log('DOCX: nao foi possivel reduzir paginas sem cortar conteudo; usando melhor PDF gerado pelo conversor. declarado=' . $declaredPages . ' convertido=' . $bestPages);
             }
             $this->logConvertedPdfDiagnostics($bestPdf, $sourceExt);
             return $bestPdf;
@@ -1428,7 +1437,69 @@ class PrintService
         return null;
     }
 
-    private function tryTightenDocxToDeclaredPages($docxFile, $declaredPages, $office, $outDir, $envPrefix, $profileDir)
+    private function trimTrailingBlankPdfPages($pdfFile, $declaredPages, $actualPages, $sourceExt)
+    {
+        $declaredPages = (int) $declaredPages;
+        $actualPages = (int) $actualPages;
+        if ($declaredPages < 1 || $actualPages <= $declaredPages || !is_file($pdfFile)) {
+            return null;
+        }
+
+        for ($page = $declaredPages + 1; $page <= $actualPages; $page++) {
+            if (!$this->isPdfPageBlankByBoundingBox($pdfFile, $page)) {
+                $this->log('DOCX pagina excedente nao removida: pagina ' . $page . ' possui conteudo detectavel ou nao pode ser analisada.');
+                return null;
+            }
+        }
+
+        return $this->trimPdfToPageCount($pdfFile, $declaredPages, $sourceExt);
+    }
+
+    private function isPdfPageBlankByBoundingBox($pdfFile, $page)
+    {
+        $gs = $this->findExecutable([$_ENV['GHOSTSCRIPT_PATH'] ?? null, '/usr/bin/gs', 'gs']);
+        if ($gs === null) {
+            $this->log('DOCX pagina excedente: Ghostscript nao encontrado para verificar pagina em branco.');
+            return false;
+        }
+
+        $cmd = escapeshellarg($gs)
+            . ' -q -dNOPAUSE -dBATCH -dSAFER -sDEVICE=bbox'
+            . ' -dFirstPage=' . (int) $page
+            . ' -dLastPage=' . (int) $page
+            . ' ' . escapeshellarg($pdfFile) . ' 2>&1';
+        $output = [];
+        $status = 1;
+        exec($cmd, $output, $status);
+        if ($status !== 0) {
+            $this->log('DOCX pagina excedente: bbox falhou pagina=' . (int) $page . ' status=' . $status . ' | ' . implode(' | ', $output));
+            return false;
+        }
+
+        $bbox = null;
+        foreach ($output as $line) {
+            if (preg_match('/%%HiResBoundingBox:\s+([0-9.\-]+)\s+([0-9.\-]+)\s+([0-9.\-]+)\s+([0-9.\-]+)/', $line, $match)) {
+                $bbox = array_map('floatval', array_slice($match, 1));
+            } elseif ($bbox === null && preg_match('/%%BoundingBox:\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)/', $line, $match)) {
+                $bbox = array_map('floatval', array_slice($match, 1));
+            }
+        }
+
+        if ($bbox === null) {
+            $this->log('DOCX pagina excedente: bbox nao retornou limites pagina=' . (int) $page . ' | ' . implode(' | ', $output));
+            return false;
+        }
+
+        [$left, $bottom, $right, $top] = $bbox;
+        $width = max(0.0, $right - $left);
+        $height = max(0.0, $top - $bottom);
+        $isBlank = $width <= 0.5 && $height <= 0.5;
+        $this->log('DOCX pagina excedente bbox pagina=' . (int) $page . ' limites=' . implode(',', $bbox) . ' branco=' . ($isBlank ? 'sim' : 'nao'));
+
+        return $isBlank;
+    }
+
+    private function tryFitDocxToDeclaredPages($docxFile, $declaredPages, $office, $outDir, $envPrefix, $profileDir)
     {
         $declaredPages = (int) $declaredPages;
         if ($declaredPages < 1 || !is_file($docxFile) || strtolower(pathinfo($docxFile, PATHINFO_EXTENSION)) !== 'docx') {
@@ -1440,13 +1511,24 @@ class PrintService
             return null;
         }
 
-        foreach ([120, 180, 240, 300] as $deltaTwips) {
-            $patched = $outDir . DIRECTORY_SEPARATOR . 'docx-tight-' . $deltaTwips . '.docx';
-            if (!$this->copyDocxWithReducedMargins($docxFile, $patched, $deltaTwips)) {
+        $profiles = [
+            ['name' => 'margens', 'margin_delta' => 240, 'font_scale' => 1.00, 'spacing_scale' => 0.92],
+            ['name' => 'leve', 'margin_delta' => 360, 'font_scale' => 0.97, 'spacing_scale' => 0.88],
+            ['name' => 'medio', 'margin_delta' => 480, 'font_scale' => 0.94, 'spacing_scale' => 0.82],
+            ['name' => 'forte', 'margin_delta' => 600, 'font_scale' => 0.90, 'spacing_scale' => 0.72],
+            ['name' => 'maximo', 'margin_delta' => 720, 'font_scale' => 0.86, 'spacing_scale' => 0.60],
+            ['name' => 'emergencia', 'margin_delta' => 900, 'font_scale' => 0.80, 'spacing_scale' => 0.45],
+            ['name' => 'critico', 'margin_delta' => 1080, 'font_scale' => 0.72, 'spacing_scale' => 0.30],
+            ['name' => 'limite', 'margin_delta' => 1260, 'font_scale' => 0.66, 'spacing_scale' => 0.20],
+        ];
+
+        foreach ($profiles as $profile) {
+            $patched = $outDir . DIRECTORY_SEPARATOR . 'docx-fit-' . $profile['name'] . '.docx';
+            if (!$this->copyDocxWithFitProfile($docxFile, $patched, $profile)) {
                 continue;
             }
 
-            $attemptDir = $outDir . DIRECTORY_SEPARATOR . 'tight-' . $deltaTwips;
+            $attemptDir = $outDir . DIRECTORY_SEPARATOR . 'fit-' . $profile['name'];
             if (!is_dir($attemptDir) && !mkdir($attemptDir, 0775, true)) {
                 continue;
             }
@@ -1471,12 +1553,12 @@ class PrintService
             }
 
             if ($candidate === null) {
-                $this->log('DOCX ajuste paginas falhou delta=' . $deltaTwips . 'twips | status=' . $status . ' | ' . implode(' | ', $output));
+                $this->log('DOCX ajuste paginas falhou perfil=' . $profile['name'] . ' | status=' . $status . ' | ' . implode(' | ', $output));
                 continue;
             }
 
             $pages = $this->countPdfPages($candidate);
-            $this->log('DOCX ajuste paginas delta=' . $deltaTwips . 'twips gerou paginas=' . $pages . ' esperado=' . $declaredPages);
+            $this->log('DOCX ajuste paginas perfil=' . $profile['name'] . ' gerou paginas=' . $pages . ' esperado=' . $declaredPages);
             if ($pages > 0 && $pages <= $declaredPages) {
                 return $candidate;
             }
@@ -1486,7 +1568,7 @@ class PrintService
         return null;
     }
 
-    private function copyDocxWithReducedMargins($source, $target, $deltaTwips)
+    private function copyDocxWithFitProfile($source, $target, $profile)
     {
         if (!@copy($source, $target)) {
             return false;
@@ -1497,33 +1579,20 @@ class PrintService
             return false;
         }
 
-        $xml = $zip->getFromName('word/document.xml');
-        if ($xml === false) {
-            $zip->close();
-            return false;
-        }
-
         $changed = false;
-        $xml = preg_replace_callback('/<w:pgMar\b([^>]*)\/>/s', function ($match) use ($deltaTwips, &$changed) {
-            $attrs = $match[1];
-            foreach (['top', 'right', 'bottom', 'left'] as $name) {
-                if (!preg_match('/\bw:' . $name . '="(\d+)"/', $attrs, $m)) {
-                    continue;
-                }
-
-                $current = (int) $m[1];
-                $minimum = in_array($name, ['top', 'bottom'], true) ? 360 : 300;
-                $next = max($minimum, $current - (int) $deltaTwips);
-                if ($next === $current) {
-                    continue;
-                }
-
-                $attrs = preg_replace('/\bw:' . $name . '="\d+"/', 'w:' . $name . '="' . $next . '"', $attrs);
-                $changed = true;
+        foreach (['word/document.xml', 'word/styles.xml'] as $entry) {
+            $xml = $zip->getFromName($entry);
+            if ($xml === false) {
+                continue;
             }
 
-            return '<w:pgMar' . $attrs . '/>';
-        }, $xml);
+            $patched = $this->applyDocxFitProfileXml($xml, $profile);
+            if ($patched !== $xml) {
+                $zip->deleteName($entry);
+                $zip->addFromString($entry, $patched);
+                $changed = true;
+            }
+        }
 
         if (!$changed) {
             $zip->close();
@@ -1531,10 +1600,76 @@ class PrintService
             return false;
         }
 
-        $zip->deleteName('word/document.xml');
-        $zip->addFromString('word/document.xml', $xml);
         $zip->close();
         return true;
+    }
+
+    private function applyDocxFitProfileXml($xml, $profile)
+    {
+        $marginDelta = (int) ($profile['margin_delta'] ?? 0);
+        $fontScale = (float) ($profile['font_scale'] ?? 1.0);
+        $spacingScale = (float) ($profile['spacing_scale'] ?? 1.0);
+
+        if ($marginDelta > 0) {
+            $xml = preg_replace_callback('/<w:pgMar\b([^>]*)\/>/s', function ($match) use ($marginDelta) {
+                $attrs = $match[1];
+                foreach (['top', 'right', 'bottom', 'left'] as $name) {
+                    if (!preg_match('/\bw:' . $name . '="(\d+)"/', $attrs, $m)) {
+                        continue;
+                    }
+
+                    $current = (int) $m[1];
+                    $next = max(120, $current - $marginDelta);
+                    $attrs = preg_replace('/\bw:' . $name . '="\d+"/', 'w:' . $name . '="' . $next . '"', $attrs);
+                }
+
+                return '<w:pgMar' . $attrs . '/>';
+            }, $xml);
+        }
+
+        if ($fontScale > 0 && $fontScale < 1) {
+            $xml = preg_replace_callback('/<w:sz(Cs)?\b([^>]*)\/>/s', function ($match) use ($fontScale) {
+                $attrs = $match[2];
+                if (!preg_match('/\bw:val="(\d+)"/', $attrs, $m)) {
+                    return $match[0];
+                }
+
+                $current = (int) $m[1];
+                $next = max(12, (int) round($current * $fontScale));
+                $attrs = preg_replace('/\bw:val="\d+"/', 'w:val="' . $next . '"', $attrs);
+
+                return '<w:sz' . $match[1] . $attrs . '/>';
+            }, $xml);
+        }
+
+        if ($spacingScale > 0 && $spacingScale < 1) {
+            $xml = preg_replace_callback('/<w:spacing\b([^>]*)\/>/s', function ($match) use ($spacingScale) {
+                $attrs = $match[1];
+                foreach (['before', 'after', 'line'] as $name) {
+                    if (!preg_match('/\bw:' . $name . '="(\d+)"/', $attrs, $m)) {
+                        continue;
+                    }
+
+                    $current = (int) $m[1];
+                    $next = max(0, (int) round($current * $spacingScale));
+                    $attrs = preg_replace('/\bw:' . $name . '="\d+"/', 'w:' . $name . '="' . $next . '"', $attrs);
+                }
+
+                return '<w:spacing' . $attrs . '/>';
+            }, $xml);
+        }
+
+        $xml = preg_replace_callback('/<w:cols\b([^>]*)\/>/s', function ($match) {
+            $attrs = $match[1];
+            if (preg_match('/\bw:space="(\d+)"/', $attrs, $m)) {
+                $next = max(120, (int) round(((int) $m[1]) * 0.6));
+                $attrs = preg_replace('/\bw:space="\d+"/', 'w:space="' . $next . '"', $attrs);
+            }
+
+            return '<w:cols' . $attrs . '/>';
+        }, $xml);
+
+        return $xml;
     }
 
     private function findPdfObject($content, $objectNumber)

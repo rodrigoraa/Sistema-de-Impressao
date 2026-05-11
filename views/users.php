@@ -44,8 +44,12 @@
         <!-- MAIN -->
         <main class="container py-4">
 
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h4><i class="bi bi-people"></i> Usuários</h4>
+            <div class="user-toolbar">
+                <div>
+                    <p class="section-kicker mb-1">Administração</p>
+                    <h1><i class="bi bi-people"></i> Usuários</h1>
+                    <p>Gerencie professores e administradores autorizados a imprimir.</p>
+                </div>
 
                 <a href="/admin/users/create" class="btn btn-primary btn-sm">
                     <i class="bi bi-person-plus"></i> Novo usuário
@@ -72,7 +76,8 @@
 
                                 <?php if (empty($users)): ?>
                                     <tr>
-                                        <td colspan="4" class="text-center text-muted">
+                                        <td colspan="4" class="empty-state">
+                                            <i class="bi bi-people"></i>
                                             Nenhum usuário cadastrado
                                         </td>
                                     </tr>
@@ -85,9 +90,9 @@
 
                                             <td>
                                                 <?php if ($u['role'] === 'admin'): ?>
-                                                    <span class="badge bg-danger">Admin</span>
+                                                    <span class="badge role-badge-admin">Admin</span>
                                                 <?php else: ?>
-                                                    <span class="badge bg-secondary">Professor</span>
+                                                    <span class="badge role-badge-user">Professor</span>
                                                 <?php endif; ?>
                                             </td>
 

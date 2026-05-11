@@ -1,17 +1,227 @@
+:root {
+    --app-bg: #f3f6fa;
+    --app-surface: #ffffff;
+    --app-surface-2: #f8fafc;
+    --app-ink: #172033;
+    --app-muted: #647084;
+    --app-line: #dbe3ec;
+    --app-brand: #155e75;
+    --app-brand-dark: #0f3f4f;
+    --app-brand-soft: #e8f5f8;
+    --app-success: #15803d;
+    --app-warning: #a16207;
+    --app-danger: #b42318;
+    --app-shadow: 0 12px 32px rgba(23, 32, 51, 0.08);
+}
+
+* {
+    box-sizing: border-box;
+}
+
 body {
     margin: 0;
-    font-family: "Manrope", sans-serif;
-    background: #f4f7fb;
+    font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--app-bg);
+    color: var(--app-ink);
+    letter-spacing: 0;
 }
 
 .container {
-    max-width: 1100px;
+    max-width: 1180px;
 }
 
-.card {
-    border-radius: 16px;
+.app-shell {
+    min-height: 100vh;
+}
+
+.app-header {
+    background: var(--app-brand-dark);
+    color: #fff;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 24px rgba(15, 63, 79, 0.18);
+}
+
+.app-header .container {
+    gap: 16px;
+}
+
+.logo {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: #fff;
+    object-fit: contain;
+    padding: 3px;
+}
+
+.user {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: rgba(255, 255, 255, 0.92);
+    font-weight: 600;
+}
+
+.page-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.page-title h1,
+.page-title h4 {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 750;
+    color: var(--app-ink);
+}
+
+.page-title p {
+    margin: 5px 0 0;
+    color: var(--app-muted);
+}
+
+.section-kicker {
+    color: var(--app-brand);
+    font-size: .78rem;
+    font-weight: 750;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.card,
+.panel,
+.metric {
+    background: var(--app-surface);
+    border: 1px solid var(--app-line) !important;
+    border-radius: 8px !important;
+    box-shadow: var(--app-shadow);
+}
+
+.card-body,
+.panel {
+    padding: 20px;
+}
+
+.form-label {
+    color: #263244;
+    font-weight: 650;
+}
+
+.form-control,
+.form-select {
+    border-color: #cfd9e5;
+    border-radius: 8px;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--app-brand);
+    box-shadow: 0 0 0 .2rem rgba(21, 94, 117, 0.14);
 }
 
 .btn {
-    border-radius: 12px;
+    border-radius: 8px;
+    font-weight: 650;
+}
+
+.btn-primary {
+    background: var(--app-brand);
+    border-color: var(--app-brand);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    background: var(--app-brand-dark);
+    border-color: var(--app-brand-dark);
+}
+
+.btn-outline-primary {
+    color: var(--app-brand);
+    border-color: var(--app-brand);
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+    background: var(--app-brand);
+    border-color: var(--app-brand);
+}
+
+.table {
+    color: var(--app-ink);
+}
+
+.table thead th,
+.data-table thead th {
+    background: #eef4f8;
+    color: #2b3a4a;
+    border-bottom: 1px solid var(--app-line);
+    font-size: .78rem;
+    font-weight: 750;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+.table tbody td,
+.data-table tbody td {
+    border-color: #edf2f7;
+    vertical-align: middle;
+}
+
+.table-hover tbody tr:hover {
+    background-color: #f8fbfd;
+}
+
+.badge {
+    border-radius: 999px;
+    font-size: .76rem;
+    font-weight: 700;
+    padding: 6px 10px;
+}
+
+.alert {
+    border-radius: 8px;
+    border-width: 1px;
+}
+
+.empty-state {
+    padding: 34px 16px;
+    text-align: center;
+    color: var(--app-muted);
+}
+
+.empty-state i {
+    display: block;
+    color: #94a3b8;
+    font-size: 2rem;
+    margin-bottom: 8px;
+}
+
+.btn-group form {
+    display: inline-flex;
+}
+
+@media (max-width: 768px) {
+    .app-header .container {
+        align-items: flex-start !important;
+        flex-direction: column;
+    }
+
+    .app-header .container > .d-flex:last-child {
+        flex-wrap: wrap;
+        gap: 8px !important;
+    }
+
+    .page-title {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .card-body,
+    .panel {
+        padding: 16px;
+    }
 }

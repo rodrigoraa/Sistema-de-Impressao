@@ -1,29 +1,40 @@
-.app-header {
-    background: #0f4c81;
-    color: white;
-    padding: 12px 0;
+.user-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 18px;
 }
 
-.logo {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
+.user-toolbar h1,
+.user-toolbar h4 {
+    margin: 0;
+    font-size: 1.55rem;
+    font-weight: 750;
 }
 
-.user {
-    font-weight: 500;
+.user-toolbar p {
+    margin: 5px 0 0;
+    color: var(--app-muted);
 }
 
-.card {
-    border-radius: 16px;
+.user-form-card {
+    max-width: 860px;
 }
 
-.table thead {
-    background: #0f4c81;
-    color: white;
+.role-badge-admin {
+    background: #fee2e2;
+    color: #991b1b;
 }
 
-.badge {
-    padding: 6px 10px;
-    font-size: 0.85rem;
+.role-badge-user {
+    background: #e8f5f8;
+    color: #155e75;
+}
+
+@media (max-width: 768px) {
+    .user-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
 }

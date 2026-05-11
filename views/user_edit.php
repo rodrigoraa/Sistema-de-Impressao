@@ -44,15 +44,19 @@
         <!-- MAIN -->
         <main class="container py-4">
 
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h4><i class="bi bi-pencil-square"></i> Editar usuário</h4>
+            <div class="user-toolbar">
+                <div>
+                    <p class="section-kicker mb-1">Usuários</p>
+                    <h1><i class="bi bi-pencil-square"></i> Editar usuário</h1>
+                    <p>Atualize dados de acesso e perfil do usuário.</p>
+                </div>
 
                 <a href="/admin/users" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-arrow-left"></i> Voltar
                 </a>
             </div>
 
-            <div class="card shadow-sm border-0">
+            <div class="card shadow-sm border-0 user-form-card">
                 <div class="card-body">
 
                     <form method="post" action="/admin/users/update" class="row g-3">
