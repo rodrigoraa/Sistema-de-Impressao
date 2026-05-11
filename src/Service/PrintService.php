@@ -311,13 +311,12 @@ class PrintService
 
         $profileDir = $outDir . DIRECTORY_SEPARATOR . 'lo-profile';
         $homeDir = $outDir . DIRECTORY_SEPARATOR . 'lo-home';
-        $configDir = $outDir . DIRECTORY_SEPARATOR . 'lo-config';
-        foreach ([$profileDir, $homeDir, $configDir] as $dir) {
+        foreach ([$profileDir, $homeDir] as $dir) {
             if (!is_dir($dir) && !mkdir($dir, 0775, true)) {
                 throw new RuntimeException('Nao foi possivel criar ambiente temporario do LibreOffice');
             }
         }
-        $this->writeOfficeFontConfig($configDir);
+        $this->writeOfficeFontConfig($homeDir . DIRECTORY_SEPARATOR . '.config');
 
         $sourceExt = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         if (in_array($sourceExt, ['doc', 'docx'], true)) {
@@ -327,35 +326,61 @@ class PrintService
         $envPrefix = '';
         if (!$this->isWindows) {
             $envPrefix = 'HOME=' . escapeshellarg($homeDir)
-                . ' XDG_CONFIG_HOME=' . escapeshellarg($configDir)
                 . ' SAL_USE_VCLPLUGIN=gen ';
         }
 
-        $cmd = sprintf(
-            '%s%s --headless --invisible --nodefault --norestore --nofirststartwizard --nolockcheck %s --convert-to %s --outdir %s %s 2>&1',
-            $envPrefix,
-            escapeshellarg($office),
-            escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
-            escapeshellarg('pdf:writer_pdf_Export'),
-            escapeshellarg($outDir),
-            escapeshellarg($filePath)
-        );
-        exec($cmd, $output, $status);
+        $commands = [
+            sprintf(
+                '%s%s %s --headless --invisible --nodefault --norestore --nofirststartwizard --nolockcheck --convert-to %s --outdir %s %s 2>&1',
+                $envPrefix,
+                escapeshellarg($office),
+                escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
+                escapeshellarg('pdf:writer_pdf_Export'),
+                escapeshellarg($outDir),
+                escapeshellarg($filePath)
+            ),
+            sprintf(
+                '%s%s %s --headless --convert-to pdf --outdir %s %s 2>&1',
+                $envPrefix,
+                escapeshellarg($office),
+                escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
+                escapeshellarg($outDir),
+                escapeshellarg($filePath)
+            ),
+            sprintf(
+                '%s --headless --convert-to pdf --outdir %s %s 2>&1',
+                escapeshellarg($office),
+                escapeshellarg($outDir),
+                escapeshellarg($filePath)
+            ),
+        ];
 
         $expected = $outDir . DIRECTORY_SEPARATOR . pathinfo($filePath, PATHINFO_FILENAME) . '.pdf';
-        if ($status === 0 && is_file($expected)) {
-            $this->log('LibreOffice: ' . $cmd . ' | OK | ' . implode(' | ', $output));
-            return $expected;
+        $lastStatus = 1;
+        $lastOutput = [];
+        foreach ($commands as $index => $cmd) {
+            $output = [];
+            $status = 1;
+            exec($cmd, $output, $status);
+            $lastStatus = $status;
+            $lastOutput = $output;
+
+            if ($status === 0 && is_file($expected)) {
+                $this->log('LibreOffice tentativa ' . ($index + 1) . ': ' . $cmd . ' | OK | ' . implode(' | ', $output));
+                return $expected;
+            }
+
+            $converted = glob($outDir . DIRECTORY_SEPARATOR . '*.pdf');
+            if ($status === 0 && !empty($converted) && is_file($converted[0])) {
+                $this->log('LibreOffice tentativa ' . ($index + 1) . ': ' . $cmd . ' | OK: ' . $converted[0] . ' | ' . implode(' | ', $output));
+                return $converted[0];
+            }
+
+            $this->log('LibreOffice tentativa ' . ($index + 1) . ' falhou: ' . $cmd . ' | status=' . $status . ' | ' . implode(' | ', $output));
         }
 
-        $converted = glob($outDir . DIRECTORY_SEPARATOR . '*.pdf');
-        if ($status === 0 && !empty($converted) && is_file($converted[0])) {
-            $this->log('LibreOffice: ' . $cmd . ' | OK: ' . $converted[0]);
-            return $converted[0];
-        }
-
-        $this->log('LibreOffice falhou: ' . $cmd . ' | status=' . $status . ' | ' . implode(' | ', $output));
-        throw new RuntimeException('Falha ao converter DOC/DOCX para PDF');
+        $detail = trim(implode(' | ', $lastOutput));
+        throw new RuntimeException('Falha ao converter DOC/DOCX para PDF' . ($detail !== '' ? ': ' . substr($detail, 0, 180) : ''));
     }
 
     private function convertImageToPdf($filePath, $orientation, $paper)
