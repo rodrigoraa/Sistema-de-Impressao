@@ -105,20 +105,20 @@ class PrintService
         }
 
         if (in_array($sourceExt, ['jpg', 'jpeg', 'png'], true)) {
-            $this->log('CUPS imagem: usando envio simples equivalente ao lp manual');
-        } else {
-            $cmd .= ' -o orientation-requested=' . ($orientation === 'landscape' ? 4 : 3);
-            $cmd .= ' -o print-quality=' . intval($quality);
-            $cmd .= ' -o sides=' . $this->cupsSides($sides);
+            $this->log('CUPS imagem: enviando PDF preparado com opcoes de papel/orientacao.');
+        }
 
-            if ($numberUp > 1) {
-                $cmd .= ' -o number-up=' . intval($numberUp);
-                $cmd .= ' -o number-up-layout=lrtb';
-            }
+        $cmd .= ' -o orientation-requested=' . ($orientation === 'landscape' ? 4 : 3);
+        $cmd .= ' -o print-quality=' . intval($quality);
+        $cmd .= ' -o sides=' . $this->cupsSides($sides);
 
-            foreach ($this->cupsExtraOptions($extraOptions) as $key => $val) {
-                $cmd .= ' -o ' . escapeshellarg($key . '=' . $val);
-            }
+        if ($numberUp > 1) {
+            $cmd .= ' -o number-up=' . intval($numberUp);
+            $cmd .= ' -o number-up-layout=lrtb';
+        }
+
+        foreach ($this->cupsExtraOptions($extraOptions) as $key => $val) {
+            $cmd .= ' -o ' . escapeshellarg($key . '=' . $val);
         }
 
         $cmd .= ' ' . escapeshellarg($filePath) . ' 2>&1';
@@ -468,9 +468,15 @@ class PrintService
                 return $pdfFile;
             }
 
-            $this->writePngPdf($filePath, $pdfFile, $orientation, $paper);
-            $this->log('PNG convertido para PDF via conversor interno: ' . $pdfFile);
-            return $pdfFile;
+            try {
+                $this->writePngPdf($filePath, $pdfFile, $orientation, $paper);
+                $this->log('PNG convertido para PDF via conversor interno: ' . $pdfFile);
+                return $pdfFile;
+            } catch (Throwable $e) {
+                @unlink($pdfFile);
+                $this->log('PNG conversor interno falhou: ' . $e->getMessage());
+                throw new RuntimeException('Falha ao converter PNG. Instale ImageMagick ou habilite a extensao PHP GD no servidor.');
+            }
         }
 
         if (!in_array($ext, ['jpg', 'jpeg'], true)) {
@@ -494,6 +500,7 @@ class PrintService
     {
         $tool = $this->findImageMagick();
         if ($tool === null) {
+            $this->log('ImageMagick nao encontrado para converter imagem; tentando fallback interno.');
             return null;
         }
 
@@ -595,25 +602,23 @@ class PrintService
         imagealphablending($canvas, true);
         imagecopy($canvas, $image, 0, 0, 0, 0, $width, $height);
 
-        $rgb = '';
-        for ($y = 0; $y < $height; $y++) {
-            for ($x = 0; $x < $width; $x++) {
-                $color = imagecolorat($canvas, $x, $y);
-                $rgb .= chr(($color >> 16) & 0xff)
-                    . chr(($color >> 8) & 0xff)
-                    . chr($color & 0xff);
-            }
-        }
+        ob_start();
+        $ok = imagejpeg($canvas, null, 92);
+        $jpegData = ob_get_clean();
 
         imagedestroy($canvas);
         imagedestroy($image);
 
+        if (!$ok || $jpegData === false || $jpegData === '') {
+            return false;
+        }
+
         $this->writeImagePdf(
-            gzcompress($rgb),
+            $jpegData,
             $pdfPath,
             $width,
             $height,
-            '/FlateDecode',
+            '/DCTDecode',
             $orientation,
             $paper
         );

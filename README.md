@@ -2,7 +2,7 @@
 
 ## Requisitos
 - PHP 8+ com extensão `sqlite3` habilitada
-- Linux: `lp`/CUPS, `libreoffice`, fontes compatíveis com Microsoft Office e ImageMagick recomendado para imagens grandes
+- Linux: `lp`/CUPS, `libreoffice`, fontes compatíveis com Microsoft Office e ImageMagick recomendado para imagens/PNG
 - Windows: SumatraPDF para enviar PDFs à impressora e LibreOffice para DOC/DOCX
 - Permissão de escrita em `storage/`
 
@@ -32,4 +32,8 @@ IMAGEMAGICK_PATH=/usr/bin/convert
 - Se texto, tabelas ou paginação mudarem, confira o log: ele registra fontes solicitadas no DOCX e a fonte que o Linux resolveu via `fc-match`. Fontes ausentes são a causa mais comum de quebra de formatação.
 - Na conversão, o sistema cria aliases temporários para fontes comuns do Word, como Calibri→Carlito e Cambria→Caladea. Mesmo assim, essas fontes precisam estar instaladas no servidor para o resultado ficar mais fiel.
 - Em Debian/Ubuntu, normalmente ajuda instalar pacotes como `fonts-liberation`, `fonts-crosextra-carlito`, `fonts-crosextra-caladea` e, quando licenciado/disponível, fontes Microsoft compatíveis.
+
+## PNG no Linux
+- Para imprimir PNG de forma confiável, instale ImageMagick (`imagemagick`) ou habilite a extensão PHP `gd`.
+- Sem ImageMagick/GD, o sistema usa um conversor interno limitado e pode rejeitar PNG interlaçado, grande ou com formatos menos comuns.
 
