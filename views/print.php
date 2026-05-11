@@ -502,6 +502,9 @@
             })
                 .then(async response => {
                     const text = await response.text();
+                    if (response.status === 413) {
+                        throw new Error('Arquivo maior que o limite aceito pelo nginx. Ajuste client_max_body_size no servidor.');
+                    }
                     try {
                         return JSON.parse(text);
                     } catch {

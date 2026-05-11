@@ -26,6 +26,29 @@ SUMATRA_PATH=C:\Program Files\SumatraPDF\SumatraPDF.exe
 IMAGEMAGICK_PATH=/usr/bin/convert
 ```
 
+## Limite de upload no nginx/PHP
+Se aparecer `413 Request Entity Too Large`, o nginx bloqueou o arquivo antes de chegar ao PHP. Ajuste o site do nginx:
+
+```nginx
+server {
+    client_max_body_size 25M;
+}
+```
+
+Depois recarregue:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+O PHP também precisa permitir o mesmo tamanho ou maior:
+
+```ini
+upload_max_filesize = 25M
+post_max_size = 25M
+```
+
 ## Diagnóstico de DOC/DOCX no Linux
 - DOC/DOCX são convertidos para PDF pelo LibreOffice antes de ir para o CUPS.
 - O sistema salva uma cópia do PDF convertido em `storage/print-debug/` para comparar se o problema aconteceu na conversão ou só na impressão.
