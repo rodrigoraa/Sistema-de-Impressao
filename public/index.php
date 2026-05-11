@@ -47,6 +47,59 @@ function loadEnvFile($path)
 
 $projectRoot = dirname(__DIR__);
 
+function servePublicAssetIfRequested($projectRoot)
+{
+    $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+    $uri = str_replace('\\', '/', $uri);
+    $scriptName = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
+    $basePath = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
+    if ($basePath === '/') {
+        $basePath = '';
+    }
+    if ($basePath !== '' && str_starts_with($uri, $basePath . '/')) {
+        $uri = substr($uri, strlen($basePath));
+    }
+
+    if (!preg_match('#^/(css|image|js)/[A-Za-z0-9._/\- ]+$#', $uri)) {
+        return;
+    }
+
+    $publicRoot = realpath($projectRoot . '/public');
+    $file = realpath($projectRoot . '/public' . rawurldecode($uri));
+    if ($publicRoot === false || $file === false || !is_file($file)) {
+        http_response_code(404);
+        exit;
+    }
+
+    $publicRoot = rtrim(str_replace('\\', '/', $publicRoot), '/') . '/';
+    $fileNormalized = str_replace('\\', '/', $file);
+    if (!str_starts_with($fileNormalized, $publicRoot)) {
+        http_response_code(404);
+        exit;
+    }
+
+    $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+    $types = [
+        'css' => 'text/css; charset=utf-8',
+        'js' => 'application/javascript; charset=utf-8',
+        'png' => 'image/png',
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'gif' => 'image/gif',
+        'svg' => 'image/svg+xml',
+        'ico' => 'image/x-icon',
+        'webp' => 'image/webp',
+    ];
+
+    header('Content-Type: ' . ($types[$ext] ?? 'application/octet-stream'));
+    header('Content-Length: ' . filesize($file));
+    header('Cache-Control: public, max-age=3600');
+    readfile($file);
+    exit;
+}
+
+servePublicAssetIfRequested($projectRoot);
+
 // composer/vendor é opcional (muitos hosts não sobem o vendor no deploy)
 $autoload = $projectRoot . '/vendor/autoload.php';
 if (is_file($autoload)) {
