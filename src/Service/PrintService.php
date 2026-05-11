@@ -429,6 +429,15 @@ class PrintService
         if ($bestPdf !== null) {
             if ($declaredPages > 0 && $bestPages > $declaredPages) {
                 $this->log('LibreOffice: metadado DOCX declara menos paginas que o PDF convertido; usando PDF completo. declarado=' . $declaredPages . ' convertido=' . $bestPages . ' pdf=' . $bestPdf);
+                if ($sourceExt === 'docx') {
+                    $tightPdf = $this->tryTightenDocxToDeclaredPages($sourceForPdf, $declaredPages, $office, $outDir, $envPrefix, $profileDir);
+                    if ($tightPdf !== null) {
+                        $this->log('DOCX ajustado por margens de seguranca para respeitar paginas declaradas=' . $declaredPages);
+                        $this->logConvertedPdfDiagnostics($tightPdf, $sourceExt);
+                        return $tightPdf;
+                    }
+                }
+
                 if ($sourceExt === 'docx' && $declaredPages === 1 && $this->isSinglePageGraphicDocx($filePath)) {
                     $trimmed = $this->trimPdfToPageCount($bestPdf, 1, $sourceExt);
                     if ($trimmed !== null) {
@@ -1417,6 +1426,115 @@ class PrintService
 
         $this->log(strtoupper($sourceExt) . ' PDF grafico nao foi ajustado: instale qpdf, ghostscript ou poppler-utils.');
         return null;
+    }
+
+    private function tryTightenDocxToDeclaredPages($docxFile, $declaredPages, $office, $outDir, $envPrefix, $profileDir)
+    {
+        $declaredPages = (int) $declaredPages;
+        if ($declaredPages < 1 || !is_file($docxFile) || strtolower(pathinfo($docxFile, PATHINFO_EXTENSION)) !== 'docx') {
+            return null;
+        }
+
+        if (!class_exists('ZipArchive')) {
+            $this->log('DOCX ajuste paginas: ZipArchive indisponivel; nao foi possivel testar margens de seguranca.');
+            return null;
+        }
+
+        foreach ([120, 180, 240, 300] as $deltaTwips) {
+            $patched = $outDir . DIRECTORY_SEPARATOR . 'docx-tight-' . $deltaTwips . '.docx';
+            if (!$this->copyDocxWithReducedMargins($docxFile, $patched, $deltaTwips)) {
+                continue;
+            }
+
+            $attemptDir = $outDir . DIRECTORY_SEPARATOR . 'tight-' . $deltaTwips;
+            if (!is_dir($attemptDir) && !mkdir($attemptDir, 0775, true)) {
+                continue;
+            }
+
+            $cmd = sprintf(
+                '%s%s %s --headless --invisible --nodefault --norestore --nofirststartwizard --nolockcheck --convert-to %s --outdir %s %s 2>&1',
+                $envPrefix,
+                escapeshellarg($office),
+                escapeshellarg('-env:UserInstallation=' . $this->pathToFileUri($profileDir)),
+                escapeshellarg('pdf:writer_pdf_Export'),
+                escapeshellarg($attemptDir),
+                escapeshellarg($patched)
+            );
+
+            $output = [];
+            $status = 1;
+            exec($cmd, $output, $status);
+            $candidate = $attemptDir . DIRECTORY_SEPARATOR . pathinfo($patched, PATHINFO_FILENAME) . '.pdf';
+            if ($status !== 0 || !is_file($candidate)) {
+                $converted = glob($attemptDir . DIRECTORY_SEPARATOR . '*.pdf');
+                $candidate = !empty($converted) && is_file($converted[0]) ? $converted[0] : null;
+            }
+
+            if ($candidate === null) {
+                $this->log('DOCX ajuste paginas falhou delta=' . $deltaTwips . 'twips | status=' . $status . ' | ' . implode(' | ', $output));
+                continue;
+            }
+
+            $pages = $this->countPdfPages($candidate);
+            $this->log('DOCX ajuste paginas delta=' . $deltaTwips . 'twips gerou paginas=' . $pages . ' esperado=' . $declaredPages);
+            if ($pages > 0 && $pages <= $declaredPages) {
+                return $candidate;
+            }
+        }
+
+        $this->log('DOCX ajuste paginas: margens de seguranca nao reduziram o PDF para as paginas declaradas.');
+        return null;
+    }
+
+    private function copyDocxWithReducedMargins($source, $target, $deltaTwips)
+    {
+        if (!@copy($source, $target)) {
+            return false;
+        }
+
+        $zip = new ZipArchive();
+        if ($zip->open($target) !== true) {
+            return false;
+        }
+
+        $xml = $zip->getFromName('word/document.xml');
+        if ($xml === false) {
+            $zip->close();
+            return false;
+        }
+
+        $changed = false;
+        $xml = preg_replace_callback('/<w:pgMar\b([^>]*)\/>/s', function ($match) use ($deltaTwips, &$changed) {
+            $attrs = $match[1];
+            foreach (['top', 'right', 'bottom', 'left'] as $name) {
+                if (!preg_match('/\bw:' . $name . '="(\d+)"/', $attrs, $m)) {
+                    continue;
+                }
+
+                $current = (int) $m[1];
+                $minimum = in_array($name, ['top', 'bottom'], true) ? 360 : 300;
+                $next = max($minimum, $current - (int) $deltaTwips);
+                if ($next === $current) {
+                    continue;
+                }
+
+                $attrs = preg_replace('/\bw:' . $name . '="\d+"/', 'w:' . $name . '="' . $next . '"', $attrs);
+                $changed = true;
+            }
+
+            return '<w:pgMar' . $attrs . '/>';
+        }, $xml);
+
+        if (!$changed) {
+            $zip->close();
+            @unlink($target);
+            return false;
+        }
+
+        $zip->deleteName('word/document.xml');
+        $zip->addFromString('word/document.xml', $xml);
+        $zip->close();
+        return true;
     }
 
     private function findPdfObject($content, $objectNumber)

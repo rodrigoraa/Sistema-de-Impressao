@@ -459,7 +459,8 @@
                         const converted = data.original_pages && data.converted_pages && data.original_pages !== data.converted_pages
                             ? ' após conversão'
                             : '';
-                        info.textContent = `${formatSize(file.size)} · ${pagesLabel}${converted}`;
+                        const warning = data.warning ? ` · atenção: ${data.warning}` : '';
+                        info.textContent = `${formatSize(file.size)} · ${pagesLabel}${converted}${warning}`;
                     } else {
                         info.textContent = `${formatSize(file.size)} · ${data.message}`;
                     }

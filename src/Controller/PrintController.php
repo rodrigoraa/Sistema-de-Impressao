@@ -354,10 +354,16 @@ class PrintController
             }
 
             $message = "Documento com {$pages} " . ($pages === 1 ? 'página' : 'páginas');
+            $warning = '';
+            if ($originalPages > 0 && $convertedPages > $originalPages) {
+                $warning = "O DOCX declara {$originalPages} " . ($originalPages === 1 ? 'página' : 'páginas') . ", mas a conversão gerou {$convertedPages}.";
+            }
+
             $this->respond($message, true, [
                 'pages' => $pages,
-                'original_pages' => 0,
+                'original_pages' => $originalPages,
                 'converted_pages' => $convertedPages,
+                'warning' => $warning,
             ]);
         } catch (Throwable $e) {
             $this->respond('Não foi possível contar as páginas: ' . $e->getMessage(), false);
