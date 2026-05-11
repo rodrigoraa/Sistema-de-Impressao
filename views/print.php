@@ -57,6 +57,7 @@
                     unset($_SESSION['flash']); ?>
                 </div>
             <?php endif; ?>
+            <div id="printResult" class="alert d-none"></div>
 
             <div class="row g-4">
 
@@ -70,7 +71,7 @@
                                 <i class="bi bi-printer"></i> Nova impressão
                             </h4>
 
-                            <form method="post" enctype="multipart/form-data">
+                            <form id="printForm" method="post" enctype="multipart/form-data">
                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
 
                                 <div class="mb-3 upload-wrapper">
@@ -305,6 +306,9 @@
         const preview = document.getElementById('preview');
         const progress = document.getElementById('progressBar');
         const bar = progress.querySelector('.progress-bar');
+        const printForm = document.getElementById('printForm');
+        const btnPrint = document.getElementById('btnPrint');
+        const resultBox = document.getElementById('printResult');
         const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
         let pageCountToken = 0;
         const scaleSelect = document.querySelector('[name="scale"]');
@@ -453,17 +457,74 @@
             });
         });
 
-        // progresso fake (UX)
-        document.querySelector('form').addEventListener('submit', () => {
+        function showPrintResult(message, success) {
+            resultBox.className = `alert alert-${success ? 'success' : 'danger'}`;
+            resultBox.textContent = message;
+            resultBox.classList.remove('d-none');
+            resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function setPrintingState(active) {
+            const text = btnPrint.querySelector('.text');
+            const spinner = btnPrint.querySelector('.spinner-border');
+            btnPrint.disabled = active;
+            text.textContent = active ? 'Enviando...' : 'Imprimir';
+            spinner.classList.toggle('d-none', !active);
+            progress.classList.toggle('d-none', !active);
+            if (!active) {
+                bar.style.width = '0%';
+            }
+        }
+
+        // envio AJAX para exibir erros sem deixar a pagina presa carregando
+        printForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            resultBox.classList.add('d-none');
             progress.classList.remove('d-none');
+            setPrintingState(true);
 
             let percent = 0;
             const interval = setInterval(() => {
-                percent += 10;
+                percent = Math.min(percent + 10, 95);
                 bar.style.width = percent + '%';
+            }, 500);
 
-                if (percent >= 100) clearInterval(interval);
-            }, 100);
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 180000);
+
+            fetch(printForm.action || window.location.href, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: new FormData(printForm),
+                signal: controller.signal
+            })
+                .then(async response => {
+                    const text = await response.text();
+                    try {
+                        return JSON.parse(text);
+                    } catch {
+                        throw new Error(text || 'Resposta inválida do servidor');
+                    }
+                })
+                .then(data => {
+                    showPrintResult(data.message || 'Impressão enviada', !!data.success);
+                    if (data.success) {
+                        bar.style.width = '100%';
+                    }
+                })
+                .catch(error => {
+                    const message = error.name === 'AbortError'
+                        ? 'Tempo esgotado ao enviar impressão. Verifique a fila e os logs do servidor.'
+                        : `Erro ao enviar impressão: ${error.message}`;
+                    showPrintResult(message, false);
+                })
+                .finally(() => {
+                    clearTimeout(timeout);
+                    clearInterval(interval);
+                    setPrintingState(false);
+                });
         });
 
         fetch('/printer/options')

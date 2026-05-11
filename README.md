@@ -35,5 +35,5 @@ IMAGEMAGICK_PATH=/usr/bin/convert
 
 ## PNG no Linux
 - Para imprimir PNG de forma confiável, instale ImageMagick (`imagemagick`) ou habilite a extensão PHP `gd`.
-- Sem ImageMagick/GD, o sistema usa um conversor interno limitado e pode rejeitar PNG interlaçado, grande ou com formatos menos comuns.
+- Sem ImageMagick/GD, o sistema retorna erro claro em vez de tentar conversão lenta em PHP puro.
 

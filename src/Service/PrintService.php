@@ -460,6 +460,11 @@ class PrintService
 
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         if ($ext === 'png') {
+            if (!function_exists('imagecreatefrompng')) {
+                $this->log('PNG sem conversor disponivel: ImageMagick nao encontrado e PHP GD nao habilitado.');
+                throw new RuntimeException('PNG nao pode ser convertido neste servidor. Instale ImageMagick ou habilite a extensao PHP GD.');
+            }
+
             $pdfFile = tempnam(sys_get_temp_dir(), 'pngpdf_') . '.pdf';
             $this->assertCanConvertPngInMemory($info[0], $info[1], filesize($filePath));
 
@@ -468,15 +473,8 @@ class PrintService
                 return $pdfFile;
             }
 
-            try {
-                $this->writePngPdf($filePath, $pdfFile, $orientation, $paper);
-                $this->log('PNG convertido para PDF via conversor interno: ' . $pdfFile);
-                return $pdfFile;
-            } catch (Throwable $e) {
-                @unlink($pdfFile);
-                $this->log('PNG conversor interno falhou: ' . $e->getMessage());
-                throw new RuntimeException('Falha ao converter PNG. Instale ImageMagick ou habilite a extensao PHP GD no servidor.');
-            }
+            @unlink($pdfFile);
+            throw new RuntimeException('Falha ao converter PNG usando PHP GD. Instale ImageMagick no servidor.');
         }
 
         if (!in_array($ext, ['jpg', 'jpeg'], true)) {
