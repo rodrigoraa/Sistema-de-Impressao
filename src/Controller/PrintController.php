@@ -192,8 +192,29 @@ class PrintController
         if (!empty($_POST['scale'])) {
             if ($_POST['scale'] === 'fit') {
                 $extraOptions['fit-to-page'] = 'true';
-            } elseif (is_numeric($_POST['scale']) && $_POST['scale'] !== '100') {
-                $extraOptions['scaling'] = $_POST['scale'];
+            } elseif ($_POST['scale'] === 'custom') {
+                $scalePercent = (int) ($_POST['scale_percent'] ?? 100);
+                if ($scalePercent >= 10 && $scalePercent <= 400) {
+                    $extraOptions['scaling'] = (string) $scalePercent;
+                }
+            } elseif (is_numeric($_POST['scale'])) {
+                $scalePercent = (int) $_POST['scale'];
+                if ($scalePercent >= 10 && $scalePercent <= 400) {
+                    $extraOptions['scaling'] = (string) $scalePercent;
+                }
+            }
+        }
+        if (!empty($_POST['page_ranges']) && $this->isValidPageRanges($_POST['page_ranges'])) {
+            $extraOptions['page-ranges'] = preg_replace('/\s+/', '', $_POST['page_ranges']);
+        }
+        if (in_array($_POST['page_set'] ?? '', ['odd', 'even'], true)) {
+            $extraOptions['page-set'] = $_POST['page_set'];
+        }
+        foreach (['top', 'right', 'bottom', 'left'] as $side) {
+            $field = 'margin_' . $side;
+            if (isset($_POST[$field]) && $_POST[$field] !== '' && is_numeric($_POST[$field])) {
+                $mm = max(0, min(100, (float) $_POST[$field]));
+                $extraOptions['page-' . $side] = (string) (int) round($mm * 72 / 25.4);
             }
         }
 
@@ -219,7 +240,8 @@ class PrintController
             if ($sourceExt === 'docx' && $originalPages > 0 && $convertedPages > $originalPages) {
                 $printer->log("DOCX conversao aumentou paginas: original={$originalPages} convertido={$convertedPages} arquivo={$dest}");
             }
-            $chargedPages = $this->billablePages($pages, $copies, $numberUp);
+            $billableSourcePages = $this->selectedPageCount($pages, $extraOptions);
+            $chargedPages = $this->billablePages($billableSourcePages, $copies, $numberUp);
             $jobService->markProcessing($jobId, $printedFile, $pages, $chargedPages);
 
             $completed = $printer->printPrepared($printedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
@@ -231,7 +253,7 @@ class PrintController
         }
 
         if ($chargedPages < 1 && $pages > 0) {
-            $chargedPages = $this->billablePages($pages, $copies, $numberUp);
+            $chargedPages = $this->billablePages($this->selectedPageCount($pages, $extraOptions), $copies, $numberUp);
         }
 
         if ($success) {
@@ -357,6 +379,59 @@ class PrintController
         $numberUp = max(1, (int) $numberUp);
 
         return (int) ceil($pages / $numberUp) * $copies;
+    }
+
+    private function isValidPageRanges($value)
+    {
+        $value = preg_replace('/\s+/', '', (string) $value);
+        if ($value === '' || !preg_match('/^\d+(-\d+)?(,\d+(-\d+)?)*$/', $value)) {
+            return false;
+        }
+
+        foreach (explode(',', $value) as $part) {
+            if (str_contains($part, '-')) {
+                [$start, $end] = array_map('intval', explode('-', $part, 2));
+                if ($start < 1 || $end < $start) {
+                    return false;
+                }
+            } elseif ((int) $part < 1) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function selectedPageCount($totalPages, $extraOptions)
+    {
+        $totalPages = max(1, (int) $totalPages);
+        $selected = [];
+
+        if (!empty($extraOptions['page-ranges']) && $this->isValidPageRanges($extraOptions['page-ranges'])) {
+            foreach (explode(',', $extraOptions['page-ranges']) as $part) {
+                if (str_contains($part, '-')) {
+                    [$start, $end] = array_map('intval', explode('-', $part, 2));
+                } else {
+                    $start = $end = (int) $part;
+                }
+
+                for ($page = max(1, $start); $page <= min($totalPages, $end); $page++) {
+                    $selected[$page] = true;
+                }
+            }
+        } else {
+            for ($page = 1; $page <= $totalPages; $page++) {
+                $selected[$page] = true;
+            }
+        }
+
+        if (($extraOptions['page-set'] ?? '') === 'odd') {
+            $selected = array_filter($selected, fn($on, $page) => ((int) $page) % 2 === 1, ARRAY_FILTER_USE_BOTH);
+        } elseif (($extraOptions['page-set'] ?? '') === 'even') {
+            $selected = array_filter($selected, fn($on, $page) => ((int) $page) % 2 === 0, ARRAY_FILTER_USE_BOTH);
+        }
+
+        return max(1, count($selected));
     }
 
     // Redireciona com flash message na sessão

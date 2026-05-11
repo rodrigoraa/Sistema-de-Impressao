@@ -153,8 +153,58 @@
                                     <select class="form-select" name="scale">
                                         <option value="fit">Ajustar à página</option>
                                         <option value="100">100%</option>
+                                        <option value="95">95%</option>
                                         <option value="90">90%</option>
+                                        <option value="80">80%</option>
+                                        <option value="custom">Personalizada</option>
                                     </select>
+                                </div>
+
+                                <div class="mb-3 d-none" id="scaleCustomBox">
+                                    <label class="form-label">Escala personalizada (%)</label>
+                                    <input type="number" class="form-control" name="scale_percent" value="100" min="10" max="400">
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Páginas</label>
+                                    <input type="text" class="form-control" name="page_ranges" placeholder="Ex.: 1,3-5">
+                                    <small class="text-muted">Deixe em branco para imprimir todas</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Seleção de páginas</label>
+                                    <select class="form-select" name="page_set">
+                                        <option value="">Todas</option>
+                                        <option value="odd">Ímpares</option>
+                                        <option value="even">Pares</option>
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Margens (mm)</label>
+                                    <div class="row g-2">
+                                        <div class="col-6">
+                                            <input type="number" class="form-control" name="margin_top" min="0" max="100" step="0.1" placeholder="Superior">
+                                        </div>
+                                        <div class="col-6">
+                                            <input type="number" class="form-control" name="margin_right" min="0" max="100" step="0.1" placeholder="Direita">
+                                        </div>
+                                        <div class="col-6">
+                                            <input type="number" class="form-control" name="margin_bottom" min="0" max="100" step="0.1" placeholder="Inferior">
+                                        </div>
+                                        <div class="col-6">
+                                            <input type="number" class="form-control" name="margin_left" min="0" max="100" step="0.1" placeholder="Esquerda">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <button class="btn btn-outline-secondary w-100" type="button" data-bs-toggle="collapse" data-bs-target="#printerAdvanced">
+                                        <i class="bi bi-sliders"></i> Opções da impressora
+                                    </button>
+                                    <div class="collapse mt-3" id="printerAdvanced">
+                                        <div class="row g-3" id="advanced-options"></div>
+                                    </div>
                                 </div>
 
                                 <?php if ($_SESSION['role'] === 'admin'): ?>
@@ -257,6 +307,12 @@
         const bar = progress.querySelector('.progress-bar');
         const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
         let pageCountToken = 0;
+        const scaleSelect = document.querySelector('[name="scale"]');
+        const scaleCustomBox = document.getElementById('scaleCustomBox');
+
+        scaleSelect.addEventListener('change', () => {
+            scaleCustomBox.classList.toggle('d-none', scaleSelect.value !== 'custom');
+        });
 
         // clique
         dropArea.onclick = () => input.click();

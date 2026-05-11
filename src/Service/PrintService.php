@@ -879,11 +879,25 @@ class PrintService
 
     private function cupsExtraOptions($extraOptions)
     {
-        $allowed = ['media', 'scaling', 'fit-to-page'];
+        $allowed = [
+            'media',
+            'scaling',
+            'fit-to-page',
+            'page-ranges',
+            'page-set',
+            'page-top',
+            'page-right',
+            'page-bottom',
+            'page-left',
+        ];
         $result = [];
 
         foreach ($extraOptions as $key => $val) {
-            if ($val === '' || $val === null || !in_array($key, $allowed, true)) {
+            if ($val === '' || $val === null) {
+                continue;
+            }
+
+            if (!in_array($key, $allowed, true) && !$this->isSafeCupsOption($key, $val)) {
                 continue;
             }
 
@@ -891,6 +905,18 @@ class PrintService
         }
 
         return $result;
+    }
+
+    private function isSafeCupsOption($key, $val)
+    {
+        $key = (string) $key;
+        $val = (string) $val;
+
+        if (!preg_match('/^[A-Za-z0-9_.-]{1,80}$/', $key)) {
+            return false;
+        }
+
+        return preg_match('/^[A-Za-z0-9_.:,+\-\/]{1,160}$/', $val) === 1;
     }
 
     private function logOfficeFontDiagnostics($filePath, $sourceExt)
