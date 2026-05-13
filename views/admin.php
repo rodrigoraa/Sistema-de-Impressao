@@ -37,7 +37,7 @@
                     <a href="/" class="btn btn-primary"><i class="bi bi-printer"></i> Nova impressão</a>
                     <a href="/admin/users" class="btn btn-outline-secondary"><i class="bi bi-people"></i> Usuários</a>
                     <a href="/prints?status=failed" class="btn btn-outline-danger"><i class="bi bi-exclamation-triangle"></i> Ver erros</a>
-                    <a href="/prints?status=completed" class="btn btn-outline-primary"><i class="bi bi-folder2-open"></i> Arquivos impressos</a>
+                <a href="/prints?status=active" class="btn btn-outline-primary"><i class="bi bi-list-task"></i> Fila de impressão</a>
                 </div>
             </section>
 
