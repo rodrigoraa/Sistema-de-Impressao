@@ -334,6 +334,8 @@
         const resultBox = document.getElementById('printResult');
         const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
         let pageCountToken = 0;
+        let previewToken = 0;
+        let previewObjectUrl = '';
         const scaleSelect = document.querySelector('[name="scale"]');
         const scaleCustomBox = document.getElementById('scaleCustomBox');
 
@@ -376,7 +378,12 @@
             const ext = file.name.split('.').pop().toLowerCase();
 
             preview.innerHTML = '';
+            preview.onclick = null;
             dropArea.classList.remove('error', 'success');
+            if (previewObjectUrl) {
+                URL.revokeObjectURL(previewObjectUrl);
+                previewObjectUrl = '';
+            }
 
             // valida tipo
             if (!allowed.includes(ext)) {
@@ -422,9 +429,53 @@
             }
 
             if (['doc', 'docx'].includes(ext)) {
-                preview.innerHTML = `<p class="text-muted">Pré-visualização disponível após envio</p>`;
+                preview.innerHTML = `<p class="text-muted">Gerando pré-visualização em PDF...</p>`;
+                loadDocumentPreview(file, ++previewToken);
             }
         });
+
+        function appendPreviewOptions(formData) {
+            formData.append('paper', document.querySelector('[name="paper"]').value);
+            formData.append('orientation', document.querySelector('[name="orientation"]').value);
+            ['top', 'right', 'bottom', 'left'].forEach(side => {
+                const el = document.querySelector(`[name="margin_${side}"]`);
+                if (el && el.value !== '') formData.append(`margin_${side}`, el.value);
+            });
+            formData.append('csrf_token', csrfToken);
+        }
+
+        function loadDocumentPreview(file, token) {
+            const formData = new FormData();
+            formData.append('arquivo', file);
+            appendPreviewOptions(formData);
+
+            fetch('/print/preview', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+                .then(async response => {
+                    if (!response.ok) {
+                        throw new Error(await response.text() || 'Não foi possível gerar a pré-visualização');
+                    }
+                    return response.blob();
+                })
+                .then(blob => {
+                    if (token !== previewToken) return;
+                    if (previewObjectUrl) {
+                        URL.revokeObjectURL(previewObjectUrl);
+                    }
+                    previewObjectUrl = URL.createObjectURL(blob);
+                    preview.innerHTML = `<iframe src="${previewObjectUrl}" style="cursor:pointer;"></iframe>`;
+                    preview.onclick = () => openModal(previewObjectUrl, 'pdf');
+                })
+                .catch(error => {
+                    if (token !== previewToken) return;
+                    preview.innerHTML = `<p class="text-danger">${error.message}</p>`;
+                });
+        }
 
         function loadPageCount(file, token) {
             const ext = file.name.split('.').pop().toLowerCase();
@@ -435,13 +486,7 @@
 
             const formData = new FormData();
             formData.append('arquivo', file);
-            formData.append('paper', document.querySelector('[name="paper"]').value);
-            formData.append('orientation', document.querySelector('[name="orientation"]').value);
-            ['top', 'right', 'bottom', 'left'].forEach(side => {
-                const el = document.querySelector(`[name="margin_${side}"]`);
-                if (el && el.value !== '') formData.append(`margin_${side}`, el.value);
-            });
-            formData.append('csrf_token', csrfToken);
+            appendPreviewOptions(formData);
 
             fetch('/print/page-count', {
                 method: 'POST',
@@ -475,8 +520,13 @@
             document.querySelector(`[name="${name}"]`).addEventListener('change', () => {
                 const file = input.files[0];
                 if (file) {
+                    const ext = file.name.split('.').pop().toLowerCase();
                     info.textContent = `${formatSize(file.size)} · recalculando páginas...`;
                     loadPageCount(file, ++pageCountToken);
+                    if (['doc', 'docx'].includes(ext)) {
+                        preview.innerHTML = `<p class="text-muted">Atualizando pré-visualização em PDF...</p>`;
+                        loadDocumentPreview(file, ++previewToken);
+                    }
                 }
             });
         });

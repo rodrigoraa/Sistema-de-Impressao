@@ -375,6 +375,92 @@ class PrintController
         }
     }
 
+    public function preview()
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            session_start();
+        }
+
+        if (!isset($_SESSION['user'])) {
+            http_response_code(401);
+            exit('Sessão expirada. Faça login novamente.');
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            exit('Método inválido');
+        }
+
+        $this->validateCsrfOrFail();
+
+        if (!isset($_FILES['arquivo']) || ($_FILES['arquivo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            http_response_code(400);
+            exit('Arquivo não enviado. Verifique upload_max_filesize e post_max_size no servidor.');
+        }
+
+        $file = $_FILES['arquivo'];
+        $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+        if (!in_array($ext, ['pdf', 'doc', 'docx'], true)) {
+            http_response_code(400);
+            exit('Pré-visualização disponível apenas para PDF, DOC e DOCX.');
+        }
+
+        $size = intval($file['size'] ?? 0);
+        if ($size < 1 || $size > $this->maxUploadBytes) {
+            http_response_code(400);
+            exit('Arquivo inválido ou acima de 20MB.');
+        }
+
+        if (!$this->hasAllowedMimeType($file['tmp_name'], $ext)) {
+            http_response_code(400);
+            exit('Formato de arquivo não reconhecido para pré-visualização.');
+        }
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'preview_') . '.' . $ext;
+        if (!move_uploaded_file($file['tmp_name'], $tempFile)) {
+            http_response_code(500);
+            exit('Erro ao preparar arquivo para pré-visualização.');
+        }
+
+        $previewFile = $tempFile;
+        try {
+            if (in_array($ext, ['doc', 'docx'], true)) {
+                $printer = new PrintService();
+                $paper = $_POST['paper'] ?? 'A4';
+                $orientation = $_POST['orientation'] ?? 'portrait';
+                $extraOptions = [];
+                foreach (['top', 'right', 'bottom', 'left'] as $side) {
+                    $field = 'margin_' . $side;
+                    if (isset($_POST[$field]) && $_POST[$field] !== '' && is_numeric($_POST[$field])) {
+                        $mm = max(0, min(100, (float) $_POST[$field]));
+                        $extraOptions['page-' . $side] = (string) (int) round($mm * 72 / 25.4);
+                    }
+                }
+                $previewFile = $printer->prepareFile($tempFile, $orientation, $paper, $extraOptions);
+            }
+
+            if (!is_file($previewFile)) {
+                throw new RuntimeException('PDF de pré-visualização não foi gerado.');
+            }
+
+            header('Content-Type: application/pdf');
+            header('Content-Length: ' . filesize($previewFile));
+            header('Content-Disposition: inline; filename="' . $this->previewPdfName($file['name'] ?? 'documento.pdf') . '"');
+            header('Cache-Control: no-store, private');
+            readfile($previewFile);
+        } catch (Throwable $e) {
+            http_response_code(500);
+            echo 'Não foi possível gerar a pré-visualização: ' . $e->getMessage();
+        } finally {
+            @unlink($tempFile);
+            if ($previewFile !== $tempFile) {
+                @unlink($previewFile);
+            }
+        }
+
+        exit;
+    }
+
     // Detecta requisição AJAX (XMLHttpRequest)
     private function isAjax()
     {
@@ -442,6 +528,15 @@ class PrintController
         }
 
         return max(1, count($selected));
+    }
+
+    private function previewPdfName($name)
+    {
+        $base = pathinfo((string) $name, PATHINFO_FILENAME);
+        $base = preg_replace('/[^A-Za-z0-9._-]+/', '_', $base);
+        $base = trim((string) $base, '._-');
+
+        return ($base !== '' ? $base : 'documento') . '.pdf';
     }
 
     // Redireciona com flash message na sessão

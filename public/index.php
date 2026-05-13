@@ -264,6 +264,11 @@ if ($uri === '/print/page-count') {
     exit;
 }
 
+if ($uri === '/print/preview') {
+    (new PrintController())->preview();
+    exit;
+}
+
 if ($uri === '/prints') {
     (new PrintJobController())->index();
     exit;
