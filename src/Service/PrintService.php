@@ -1506,11 +1506,6 @@ class PrintService
             return null;
         }
 
-        if (!class_exists('ZipArchive')) {
-            $this->log('DOCX ajuste paginas: ZipArchive indisponivel; nao foi possivel testar margens de seguranca.');
-            return null;
-        }
-
         $profiles = [
             ['name' => 'margens', 'margin_delta' => 240, 'font_scale' => 1.00, 'spacing_scale' => 0.92],
             ['name' => 'leve', 'margin_delta' => 360, 'font_scale' => 0.97, 'spacing_scale' => 0.88],
@@ -1570,6 +1565,10 @@ class PrintService
 
     private function copyDocxWithFitProfile($source, $target, $profile)
     {
+        if (!class_exists('ZipArchive')) {
+            return $this->copyDocxWithFitProfileUsingShell($source, $target, $profile);
+        }
+
         if (!@copy($source, $target)) {
             return false;
         }
@@ -1602,6 +1601,142 @@ class PrintService
 
         $zip->close();
         return true;
+    }
+
+    private function copyDocxWithFitProfileUsingShell($source, $target, $profile)
+    {
+        $workDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'docx_fit_' . uniqid('', true);
+        if (!is_dir($workDir) && !@mkdir($workDir, 0775, true)) {
+            return false;
+        }
+
+        try {
+            if (!$this->extractDocxArchive($source, $workDir)) {
+                return false;
+            }
+
+            $changed = false;
+            foreach (['word/document.xml', 'word/styles.xml'] as $entry) {
+                $path = $workDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $entry);
+                if (!is_file($path)) {
+                    continue;
+                }
+
+                $xml = @file_get_contents($path);
+                if ($xml === false) {
+                    continue;
+                }
+
+                $patched = $this->applyDocxFitProfileXml($xml, $profile);
+                if ($patched !== $xml && @file_put_contents($path, $patched) !== false) {
+                    $changed = true;
+                }
+            }
+
+            if (!$changed) {
+                return false;
+            }
+
+            return $this->createDocxArchive($workDir, $target);
+        } finally {
+            $this->removeDirectoryRecursive($workDir);
+        }
+    }
+
+    private function extractDocxArchive($source, $destination)
+    {
+        if ($this->isWindows) {
+            $powershell = $this->findExecutable(['powershell', 'powershell.exe', 'pwsh', 'pwsh.exe']);
+            if ($powershell !== null) {
+                $zipSource = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'docx_src_' . uniqid('', true) . '.zip';
+                if (!@copy($source, $zipSource)) {
+                    return false;
+                }
+                $script = 'Expand-Archive -LiteralPath ' . $this->powershellSingleQuoted($zipSource)
+                    . ' -DestinationPath ' . $this->powershellSingleQuoted($destination) . ' -Force';
+                $cmd = escapeshellarg($powershell) . ' -NoProfile -ExecutionPolicy Bypass -Command ' . escapeshellarg($script) . ' 2>&1';
+                exec($cmd, $output, $status);
+                @unlink($zipSource);
+                if ($status === 0) {
+                    return true;
+                }
+                $this->log('DOCX ajuste paginas: Expand-Archive falhou status=' . $status . ' | ' . implode(' | ', $output));
+            }
+        }
+
+        $unzip = $this->findExecutable([$_ENV['UNZIP_PATH'] ?? null, '/usr/bin/unzip', 'unzip']);
+        if ($unzip !== null) {
+            $cmd = escapeshellarg($unzip) . ' -q ' . escapeshellarg($source) . ' -d ' . escapeshellarg($destination) . ' 2>&1';
+            exec($cmd, $output, $status);
+            if ($status === 0) {
+                return true;
+            }
+            $this->log('DOCX ajuste paginas: unzip falhou status=' . $status . ' | ' . implode(' | ', $output));
+        }
+
+        $this->log('DOCX ajuste paginas: ZipArchive indisponivel e nenhum extrator ZIP encontrado.');
+        return false;
+    }
+
+    private function createDocxArchive($sourceDir, $target)
+    {
+        @unlink($target);
+        if ($this->isWindows) {
+            $powershell = $this->findExecutable(['powershell', 'powershell.exe', 'pwsh', 'pwsh.exe']);
+            if ($powershell !== null) {
+                $zipTarget = $target . '.zip';
+                @unlink($zipTarget);
+                $script = '$items = Get-ChildItem -LiteralPath ' . $this->powershellSingleQuoted($sourceDir) . ' -Force; '
+                    . 'Compress-Archive -LiteralPath $items.FullName -DestinationPath ' . $this->powershellSingleQuoted($zipTarget) . ' -Force';
+                $cmd = escapeshellarg($powershell) . ' -NoProfile -ExecutionPolicy Bypass -Command ' . escapeshellarg($script) . ' 2>&1';
+                exec($cmd, $output, $status);
+                if ($status === 0 && is_file($zipTarget) && @rename($zipTarget, $target)) {
+                    return true;
+                }
+                $this->log('DOCX ajuste paginas: Compress-Archive falhou status=' . $status . ' | ' . implode(' | ', $output));
+                @unlink($zipTarget);
+            }
+        }
+
+        $zip = $this->findExecutable([$_ENV['ZIP_PATH'] ?? null, '/usr/bin/zip', 'zip']);
+        if ($zip !== null) {
+            $cmd = 'cd ' . escapeshellarg($sourceDir) . ' && ' . escapeshellarg($zip) . ' -qr ' . escapeshellarg($target) . ' . 2>&1';
+            exec($cmd, $output, $status);
+            if ($status === 0 && is_file($target)) {
+                return true;
+            }
+            $this->log('DOCX ajuste paginas: zip falhou status=' . $status . ' | ' . implode(' | ', $output));
+        }
+
+        $this->log('DOCX ajuste paginas: ZipArchive indisponivel e nenhum compactador ZIP encontrado.');
+        return false;
+    }
+
+    private function removeDirectoryRecursive($dir)
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $items = scandir($dir);
+        if ($items === false) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            $path = $dir . DIRECTORY_SEPARATOR . $item;
+            if (is_dir($path) && !is_link($path)) {
+                $this->removeDirectoryRecursive($path);
+            } else {
+                @unlink($path);
+            }
+        }
+
+        @rmdir($dir);
     }
 
     private function applyDocxFitProfileXml($xml, $profile)
