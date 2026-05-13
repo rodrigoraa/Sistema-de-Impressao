@@ -51,6 +51,12 @@
                     <p>Gerencie professores e administradores autorizados a imprimir.</p>
                 </div>
 
+                <div class="mt-4 text-center">
+                    <a href="/admin" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> Voltar ao painel
+                    </a>
+                </div>
+
                 <a href="/admin/users/create" class="btn btn-primary btn-sm">
                     <i class="bi bi-person-plus"></i> Novo usuário
                 </a>
@@ -125,12 +131,6 @@
                     </div>
 
                 </div>
-            </div>
-
-            <div class="mt-4 text-center">
-                <a href="/admin" class="btn btn-outline-secondary">
-                    <i class="bi bi-arrow-left"></i> Voltar ao painel
-                </a>
             </div>
 
         </main>
