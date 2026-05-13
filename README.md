@@ -53,7 +53,7 @@ post_max_size = 25M
 - DOC/DOCX são convertidos para PDF pelo LibreOffice antes de ir para o CUPS.
 - O sistema salva uma cópia do PDF convertido em `storage/print-debug/` para comparar se o problema aconteceu na conversão ou só na impressão.
 - Se texto, tabelas ou paginação mudarem, confira o log: ele registra fontes solicitadas no DOCX e a fonte que o Linux resolveu via `fc-match`. Fontes ausentes são a causa mais comum de quebra de formatação.
-- Na conversão, o sistema cria aliases temporários para fontes comuns do Word, como Calibri→Carlito e Cambria→Caladea. Mesmo assim, essas fontes precisam estar instaladas no servidor para o resultado ficar mais fiel.
+- Na conversão, o sistema cria aliases temporários para fontes comuns do Word, como Aptos→Carlito/Liberation Sans, Calibri→Carlito e Cambria→Caladea. Mesmo assim, essas fontes precisam estar instaladas no servidor para o resultado ficar mais fiel.
 - Em Debian/Ubuntu, normalmente ajuda instalar pacotes como `fonts-liberation`, `fonts-crosextra-carlito`, `fonts-crosextra-caladea` e, quando licenciado/disponível, fontes Microsoft compatíveis.
 
 ## PNG no Linux

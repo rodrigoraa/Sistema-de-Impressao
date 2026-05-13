@@ -1694,6 +1694,11 @@ class PrintService
         }
 
         $aliases = [
+            'Aptos' => ['Carlito', 'Liberation Sans', 'DejaVu Sans'],
+            'Aptos Display' => ['Carlito', 'Liberation Sans', 'DejaVu Sans'],
+            'Aptos Narrow' => ['Arial Narrow', 'Liberation Sans Narrow', 'Liberation Sans', 'DejaVu Sans'],
+            'Aptos Mono' => ['Liberation Mono', 'DejaVu Sans Mono'],
+            'Aptos Serif' => ['Caladea', 'Liberation Serif', 'DejaVu Serif'],
             'Calibri' => ['Carlito', 'Liberation Sans', 'DejaVu Sans'],
             'Cambria' => ['Caladea', 'Liberation Serif', 'DejaVu Serif'],
             'Arial' => ['Liberation Sans', 'DejaVu Sans'],
