@@ -370,9 +370,10 @@ class PrintService
             ],
             [
                 'label' => 'compatibilidade-comando-antigo',
-                'build' => function ($attemptDir) use ($office, $sourceForPdf) {
+                'build' => function ($attemptDir) use ($envPrefix, $office, $sourceForPdf) {
                     return sprintf(
-                        '%s --headless --convert-to pdf --outdir %s %s 2>&1',
+                        '%s%s --headless --convert-to pdf --outdir %s %s 2>&1',
+                        $envPrefix,
                         escapeshellarg($office),
                         escapeshellarg($attemptDir),
                         escapeshellarg($sourceForPdf)
@@ -1020,7 +1021,7 @@ class PrintService
             if (preg_match_all('/w:(?:ascii|hAnsi|eastAsia|cs)="([^"]+)"/', $xml, $matches)) {
                 foreach ($matches[1] as $font) {
                     $font = trim(html_entity_decode($font, ENT_QUOTES | ENT_XML1, 'UTF-8'));
-                    if ($font !== '' && !str_starts_with($font, '+')) {
+                    if ($this->isDocxFontName($font)) {
                         $fonts[$font] = true;
                     }
                 }
@@ -1052,6 +1053,28 @@ class PrintService
         }
 
         $this->log('DOCX fontes solicitadas/resolvidas: ' . implode('; ', $resolved));
+    }
+
+    private function isDocxFontName($font)
+    {
+        if (!is_string($font)) {
+            return false;
+        }
+
+        $font = trim($font);
+        if ($font === '' || str_starts_with($font, '+')) {
+            return false;
+        }
+
+        if (preg_match('/^[a-z]{2,3}(?:-[A-Z]{2})?$/', $font)) {
+            return false;
+        }
+
+        if (preg_match('/^(major|minor|none)/i', $font)) {
+            return false;
+        }
+
+        return true;
     }
 
     private function prepareOfficeSourceForConversion($filePath, $sourceExt, $extraOptions, $office, $outDir, $envPrefix, $profileDir)
@@ -1878,7 +1901,7 @@ class PrintService
         $parts = [
             'HOME=' . escapeshellarg($homeDir),
             'XDG_CONFIG_HOME=' . escapeshellarg($homeDir . DIRECTORY_SEPARATOR . '.config'),
-            'SAL_USE_VCLPLUGIN=gen',
+            'SAL_USE_VCLPLUGIN=svp',
         ];
 
         if (is_string($fontConfigFile) && $fontConfigFile !== '') {
