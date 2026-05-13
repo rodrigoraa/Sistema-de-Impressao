@@ -326,17 +326,16 @@ class PrintService
                 throw new RuntimeException('Nao foi possivel criar ambiente temporario do LibreOffice');
             }
         }
-        $this->writeOfficeFontConfig($homeDir . DIRECTORY_SEPARATOR . '.config');
+        $fontConfigFile = $this->writeOfficeFontConfig($homeDir . DIRECTORY_SEPARATOR . '.config');
 
         if (in_array($sourceExt, ['doc', 'docx'], true)) {
-            $this->logOfficeFontDiagnostics($filePath, $sourceExt);
+            $this->logOfficeFontDiagnostics($filePath, $sourceExt, $homeDir, $fontConfigFile);
             $this->logOfficeLayoutDiagnostics($filePath, $sourceExt);
         }
 
         $envPrefix = '';
         if (!$this->isWindows) {
-            $envPrefix = 'HOME=' . escapeshellarg($homeDir)
-                . ' SAL_USE_VCLPLUGIN=gen ';
+            $envPrefix = $this->officeConversionEnvPrefix($homeDir, $fontConfigFile);
         }
 
         $sourceForPdf = $this->prepareOfficeSourceForConversion($filePath, $sourceExt, $extraOptions, $office, $outDir, $envPrefix, $profileDir);
@@ -995,7 +994,7 @@ class PrintService
         return preg_match('/^[A-Za-z0-9_.:,+\-\/]{1,160}$/', $val) === 1;
     }
 
-    private function logOfficeFontDiagnostics($filePath, $sourceExt)
+    private function logOfficeFontDiagnostics($filePath, $sourceExt, $homeDir = null, $fontConfigFile = null)
     {
         if ($sourceExt === 'doc') {
             $this->log('DOC diagnostico: formato binario legado; se a formatacao mudar, confira fontes instaladas no Linux e salve como DOCX/PDF para comparar.');
@@ -1044,7 +1043,10 @@ class PrintService
 
             $output = [];
             $status = 1;
-            exec(escapeshellarg($fcMatch) . ' -f ' . escapeshellarg('%{family}\n') . ' ' . escapeshellarg($font) . ' 2>/dev/null', $output, $status);
+            $envPrefix = (!$this->isWindows && $homeDir !== null)
+                ? $this->officeConversionEnvPrefix($homeDir, $fontConfigFile)
+                : '';
+            exec($envPrefix . escapeshellarg($fcMatch) . ' -f ' . escapeshellarg('%{file}:%{family}\n') . ' ' . escapeshellarg($font) . ' 2>/dev/null', $output, $status);
             $match = $status === 0 && !empty($output[0]) ? trim($output[0]) : '?';
             $resolved[] = $font . '=>' . $match;
         }
@@ -1867,15 +1869,40 @@ class PrintService
         return $match[1];
     }
 
+    private function officeConversionEnvPrefix($homeDir, $fontConfigFile = null)
+    {
+        if ($this->isWindows) {
+            return '';
+        }
+
+        $parts = [
+            'HOME=' . escapeshellarg($homeDir),
+            'XDG_CONFIG_HOME=' . escapeshellarg($homeDir . DIRECTORY_SEPARATOR . '.config'),
+            'SAL_USE_VCLPLUGIN=gen',
+        ];
+
+        if (is_string($fontConfigFile) && $fontConfigFile !== '') {
+            $parts[] = 'FONTCONFIG_FILE=' . escapeshellarg($fontConfigFile);
+            $parts[] = 'FONTCONFIG_PATH=' . escapeshellarg(dirname($fontConfigFile));
+        }
+
+        return implode(' ', $parts) . ' ';
+    }
+
     private function writeOfficeFontConfig($configDir)
     {
         if ($this->isWindows) {
-            return;
+            return null;
         }
 
         $fontConfigDir = $configDir . DIRECTORY_SEPARATOR . 'fontconfig';
         if (!is_dir($fontConfigDir) && !@mkdir($fontConfigDir, 0775, true)) {
-            return;
+            return null;
+        }
+
+        $fontCacheDir = $fontConfigDir . DIRECTORY_SEPARATOR . 'cache';
+        if (!is_dir($fontCacheDir)) {
+            @mkdir($fontCacheDir, 0775, true);
         }
 
         $aliases = [
@@ -1894,6 +1921,7 @@ class PrintService
         ];
 
         $xml = "<?xml version=\"1.0\"?>\n<!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">\n<fontconfig>\n";
+        $xml .= "  <cachedir>" . htmlspecialchars($fontCacheDir, ENT_XML1) . "</cachedir>\n";
         foreach ($this->officeFontDirectories() as $fontDir) {
             $xml .= "  <dir>" . htmlspecialchars($fontDir, ENT_XML1) . "</dir>\n";
         }
@@ -1909,9 +1937,14 @@ class PrintService
         }
         $xml .= "</fontconfig>\n";
 
-        if (@file_put_contents($fontConfigDir . DIRECTORY_SEPARATOR . 'fonts.conf', $xml) !== false) {
-            $this->log('LibreOffice: fontconfig temporario criado para fontes Office metricamente compativeis');
+        $fontConfigFile = $fontConfigDir . DIRECTORY_SEPARATOR . 'fonts.conf';
+        if (@file_put_contents($fontConfigFile, $xml) !== false) {
+            $dirs = $this->officeFontDirectories();
+            $this->log('LibreOffice: fontconfig temporario criado para fontes Office. arquivo=' . $fontConfigFile . ' dirs=' . implode(';', $dirs));
+            return $fontConfigFile;
         }
+
+        return null;
     }
 
     private function officeFontDirectories()
