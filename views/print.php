@@ -189,41 +189,6 @@
                                         <small class="text-muted">Deixe em branco para imprimir todas</small>
                                     </div>
 
-                                    <div class="wide">
-                                        <label class="form-label">Seleção de páginas</label>
-                                        <select class="form-select" name="page_set">
-                                            <option value="">Todas</option>
-                                            <option value="odd">Ímpares</option>
-                                            <option value="even">Pares</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label">Margens (mm)</label>
-                                    <div class="row g-2">
-                                        <div class="col-6">
-                                            <input type="number" class="form-control" name="margin_top" min="0" max="100" step="0.1" placeholder="Superior">
-                                        </div>
-                                        <div class="col-6">
-                                            <input type="number" class="form-control" name="margin_right" min="0" max="100" step="0.1" placeholder="Direita">
-                                        </div>
-                                        <div class="col-6">
-                                            <input type="number" class="form-control" name="margin_bottom" min="0" max="100" step="0.1" placeholder="Inferior">
-                                        </div>
-                                        <div class="col-6">
-                                            <input type="number" class="form-control" name="margin_left" min="0" max="100" step="0.1" placeholder="Esquerda">
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <button class="btn btn-outline-secondary w-100" type="button" data-bs-toggle="collapse" data-bs-target="#printerAdvanced">
-                                        <i class="bi bi-sliders"></i> Opções da impressora
-                                    </button>
-                                    <div class="collapse mt-3" id="printerAdvanced">
-                                        <div class="row g-3" id="advanced-options"></div>
-                                    </div>
                                 </div>
 
                                 <?php if ($_SESSION['role'] === 'admin'): ?>
@@ -516,7 +481,7 @@
                 });
         }
 
-        ['paper', 'orientation', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left'].forEach(name => {
+        ['paper', 'orientation'].forEach(name => {
             document.querySelector(`[name="${name}"]`).addEventListener('change', () => {
                 const file = input.files[0];
                 if (file) {
@@ -604,44 +569,6 @@
                 });
         });
 
-        fetch('/printer/options')
-            .then(r => r.json())
-            .then(data => {
-
-                const container = document.getElementById('advanced-options');
-                if (!container) return;
-
-                for (const key in data) {
-                    const item = data[key];
-
-                    const col = document.createElement('div');
-                    col.className = 'col-md-6';
-
-                    const label = document.createElement('label');
-                    label.className = 'form-label';
-                    label.textContent = item.label;
-
-                    const select = document.createElement('select');
-                    select.className = 'form-select';
-                    select.name = 'opt_' + key;
-
-                    item.options.forEach(opt => {
-                        const option = document.createElement('option');
-                        option.value = opt;
-                        option.textContent = opt;
-
-                        if (opt === item.default) {
-                            option.selected = true;
-                        }
-
-                        select.appendChild(option);
-                    });
-
-                    col.appendChild(label);
-                    col.appendChild(select);
-                    container.appendChild(col);
-                }
-            });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
