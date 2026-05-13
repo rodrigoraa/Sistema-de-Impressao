@@ -1,9 +1,38 @@
+<?php
+$statusLabels = [
+    'queued' => ['label' => 'Na fila', 'class' => 'text-bg-secondary', 'icon' => 'bi-hourglass-split'],
+    'processing' => ['label' => 'Enviando', 'class' => 'text-bg-info', 'icon' => 'bi-arrow-repeat'],
+    'completed' => ['label' => 'Impresso', 'class' => 'text-bg-success', 'icon' => 'bi-check-circle'],
+    'failed' => ['label' => 'Erro', 'class' => 'text-bg-danger', 'icon' => 'bi-exclamation-triangle'],
+];
+$statusFilters = [
+    '' => 'Todos',
+    'active' => 'Fila',
+    'queued' => 'Na fila',
+    'processing' => 'Enviando',
+    'completed' => 'Histórico',
+    'failed' => 'Erros',
+];
+$currentStatus = $_GET['status'] ?? '';
+$pageHeading = 'Impressões';
+$pageDescription = $isAdmin ? 'Todas as impressões' : 'Minhas impressões';
+if ($currentStatus === 'active') {
+    $pageHeading = 'Fila de impressão';
+    $pageDescription = 'Pendentes e em envio';
+} elseif ($currentStatus === 'completed') {
+    $pageHeading = 'Histórico de impressão';
+    $pageDescription = 'Arquivos já impressos';
+} elseif ($currentStatus === 'failed') {
+    $pageHeading = 'Impressões com erro';
+    $pageDescription = 'Jobs que precisam de atenção';
+}
+?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 
 <head>
     <meta charset="UTF-8">
-    <title>Histórico de Impressão</title>
+    <title><?= htmlspecialchars($pageHeading) ?></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
@@ -12,22 +41,12 @@
 </head>
 
 <body>
-    <?php
-    $statusLabels = [
-        'queued' => ['label' => 'Na fila', 'class' => 'text-bg-secondary', 'icon' => 'bi-hourglass-split'],
-        'processing' => ['label' => 'Enviando', 'class' => 'text-bg-info', 'icon' => 'bi-arrow-repeat'],
-        'completed' => ['label' => 'Impresso', 'class' => 'text-bg-success', 'icon' => 'bi-check-circle'],
-        'failed' => ['label' => 'Erro', 'class' => 'text-bg-danger', 'icon' => 'bi-exclamation-triangle'],
-    ];
-    $currentStatus = $_GET['status'] ?? '';
-    ?>
-
     <div class="app-shell">
         <header class="app-header">
             <div class="container d-flex justify-content-between align-items-center">
                 <div class="d-flex align-items-center gap-2">
                     <img src="/image/logo_escola.png" class="logo">
-                    <strong>Histórico de Impressão</strong>
+                    <strong><?= htmlspecialchars($pageHeading) ?></strong>
                 </div>
                 <div class="d-flex align-items-center gap-3">
                     <span class="user"><i class="bi bi-person-circle"></i> <?= htmlspecialchars($_SESSION['name'] ?? $_SESSION['user']) ?></span>
@@ -46,7 +65,8 @@
             <section class="page-title">
                 <div>
                     <p class="section-kicker mb-1"><?= $isAdmin ? 'Administração' : 'Professor' ?></p>
-                    <h1><?= $isAdmin ? 'Todas as impressões' : 'Minhas impressões' ?></h1>
+                    <h1><?= htmlspecialchars($pageHeading) ?></h1>
+                    <p class="text-muted mb-0"><?= htmlspecialchars($pageDescription) ?></p>
                 </div>
                 <div class="d-flex gap-2">
                     <?php if ($isAdmin): ?>
@@ -68,9 +88,8 @@
                     <div class="col-md-4">
                         <label class="form-label">Status</label>
                         <select name="status" class="form-select">
-                            <option value="">Todos</option>
-                            <?php foreach ($statusLabels as $value => $meta): ?>
-                                <option value="<?= $value ?>" <?= $currentStatus === $value ? 'selected' : '' ?>><?= $meta['label'] ?></option>
+                            <?php foreach ($statusFilters as $value => $label): ?>
+                                <option value="<?= $value ?>" <?= $currentStatus === $value ? 'selected' : '' ?>><?= $label ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>

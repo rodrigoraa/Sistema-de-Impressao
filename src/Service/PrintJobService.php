@@ -65,7 +65,9 @@ class PrintJobService
             $params[':user'] = [$user, SQLITE3_TEXT];
         }
 
-        if (in_array($status, ['queued', 'processing', 'completed', 'failed'], true)) {
+        if ($status === 'active') {
+            $where[] = "pj.status IN ('queued', 'processing')";
+        } elseif (in_array($status, ['queued', 'processing', 'completed', 'failed'], true)) {
             $where[] = 'pj.status = :status';
             $params[':status'] = [$status, SQLITE3_TEXT];
         }

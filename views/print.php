@@ -35,7 +35,7 @@
                         <?= htmlspecialchars($_SESSION['name']) ?>
                     </span>
 
-                    <a href="/prints" class="btn btn-outline-light btn-sm">
+                    <a href="/prints?status=active" class="btn btn-outline-light btn-sm">
                         <i class="bi bi-list-task"></i> Fila
                     </a>
 
@@ -55,7 +55,7 @@
                     <p>Envie o arquivo, revise as opções e acompanhe pela fila quando precisar.</p>
                 </div>
                 <div class="d-flex gap-2">
-                    <a href="/prints" class="btn btn-outline-secondary btn-sm">
+                    <a href="/prints?status=completed" class="btn btn-outline-secondary btn-sm">
                         <i class="bi bi-clock-history"></i> Histórico
                     </a>
                     <?php if ($_SESSION['role'] === 'admin'): ?>
@@ -246,8 +246,8 @@
                             </ul>
 
                             <div class="quick-actions mt-3">
-                                <a href="/prints">
-                                    <span><i class="bi bi-list-task"></i> Ver fila e histórico</span>
+                                <a href="/prints?status=active">
+                                    <span><i class="bi bi-list-task"></i> Ver fila de impressão</span>
                                     <i class="bi bi-chevron-right"></i>
                                 </a>
                                 <?php if ($_SESSION['role'] === 'admin'): ?>

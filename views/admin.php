@@ -33,7 +33,7 @@
                     <h1>Relatório de impressão</h1>
                 </div>
                 <div class="d-flex gap-2">
-                    <a href="/prints" class="btn btn-outline-secondary"><i class="bi bi-list-task"></i> Histórico</a>
+                    <a href="/prints?status=completed" class="btn btn-outline-secondary"><i class="bi bi-clock-history"></i> Histórico</a>
                     <a href="/" class="btn btn-primary"><i class="bi bi-printer"></i> Nova impressão</a>
                 </div>
             </section>
@@ -90,7 +90,7 @@
             <div class="action-strip">
                 <a href="/admin/users" class="btn btn-outline-secondary"><i class="bi bi-people"></i> Usuários</a>
                 <a href="/prints?status=failed" class="btn btn-outline-danger"><i class="bi bi-exclamation-triangle"></i> Ver erros</a>
-                <a href="/prints" class="btn btn-outline-primary"><i class="bi bi-folder2-open"></i> Arquivos impressos</a>
+                <a href="/prints?status=completed" class="btn btn-outline-primary"><i class="bi bi-folder2-open"></i> Arquivos impressos</a>
             </div>
         </main>
     </div>
