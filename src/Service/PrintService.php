@@ -300,9 +300,18 @@ class PrintService
 
     private function convertOfficeToPdf($filePath, $extraOptions = [])
     {
+        $sourceExt = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        if ($this->isWindows && in_array($sourceExt, ['doc', 'docx'], true)) {
+            $wordPdf = $this->convertOfficeToPdfWithWord($filePath);
+            if ($wordPdf !== null) {
+                $this->logConvertedPdfDiagnostics($wordPdf, $sourceExt);
+                return $wordPdf;
+            }
+        }
+
         $office = $this->findLibreOffice();
         if ($office === null) {
-            throw new RuntimeException('LibreOffice nao encontrado. Configure LIBREOFFICE_PATH no .env.');
+            throw new RuntimeException('Nao foi possivel converter DOC/DOCX. Instale o Microsoft Word no Windows ou configure LIBREOFFICE_PATH no .env.');
         }
 
         $outDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'print_' . uniqid('', true);
@@ -319,7 +328,6 @@ class PrintService
         }
         $this->writeOfficeFontConfig($homeDir . DIRECTORY_SEPARATOR . '.config');
 
-        $sourceExt = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         if (in_array($sourceExt, ['doc', 'docx'], true)) {
             $this->logOfficeFontDiagnostics($filePath, $sourceExt);
             $this->logOfficeLayoutDiagnostics($filePath, $sourceExt);
@@ -462,6 +470,48 @@ class PrintService
 
         $detail = trim(implode(' | ', $lastOutput));
         throw new RuntimeException('Falha ao converter DOC/DOCX para PDF' . ($detail !== '' ? ': ' . substr($detail, 0, 180) : ''));
+    }
+
+    private function convertOfficeToPdfWithWord($filePath)
+    {
+        $powershell = $this->findExecutable(['powershell', 'powershell.exe', 'pwsh', 'pwsh.exe']);
+        if ($powershell === null) {
+            $this->log('Word PDF: PowerShell nao encontrado; usando fallback LibreOffice.');
+            return null;
+        }
+
+        $pdfFile = tempnam(sys_get_temp_dir(), 'wordpdf_') . '.pdf';
+        @unlink($pdfFile);
+
+        $script = '$ErrorActionPreference = "Stop"; '
+            . '$word = $null; $doc = $null; '
+            . 'try { '
+            . '$word = New-Object -ComObject Word.Application; '
+            . '$word.Visible = $false; '
+            . '$word.DisplayAlerts = 0; '
+            . '$doc = $word.Documents.Open(' . $this->powershellSingleQuoted($filePath) . ', $false, $true); '
+            . '$doc.ExportAsFixedFormat(' . $this->powershellSingleQuoted($pdfFile) . ', 17); '
+            . '$doc.Close($false); $doc = $null; '
+            . '$word.Quit(); $word = $null; '
+            . 'if (-not (Test-Path -LiteralPath ' . $this->powershellSingleQuoted($pdfFile) . ')) { throw "PDF nao foi gerado pelo Word" } '
+            . '} catch { '
+            . 'if ($doc -ne $null) { try { $doc.Close($false) } catch {} } '
+            . 'if ($word -ne $null) { try { $word.Quit() } catch {} } '
+            . 'Write-Error $_.Exception.Message; exit 1 '
+            . '}';
+
+        $cmd = escapeshellarg($powershell) . ' -NoProfile -ExecutionPolicy Bypass -Command ' . escapeshellarg($script) . ' 2>&1';
+        exec($cmd, $output, $status);
+
+        if ($status === 0 && is_file($pdfFile) && filesize($pdfFile) > 0) {
+            $pages = $this->countPdfPages($pdfFile);
+            $this->log('Word PDF: conversao concluida paginas=' . $pages . ' arquivo=' . $pdfFile);
+            return $pdfFile;
+        }
+
+        @unlink($pdfFile);
+        $this->log('Word PDF: falhou; usando fallback LibreOffice. status=' . $status . ' | ' . implode(' | ', $output));
+        return null;
     }
 
     private function convertImageToPdf($filePath, $orientation, $paper)
@@ -1844,6 +1894,9 @@ class PrintService
         ];
 
         $xml = "<?xml version=\"1.0\"?>\n<!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">\n<fontconfig>\n";
+        foreach ($this->officeFontDirectories() as $fontDir) {
+            $xml .= "  <dir>" . htmlspecialchars($fontDir, ENT_XML1) . "</dir>\n";
+        }
         foreach ($aliases as $source => $targets) {
             $xml .= "  <alias binding=\"same\">\n";
             $xml .= "    <family>" . htmlspecialchars($source, ENT_XML1) . "</family>\n";
@@ -1859,6 +1912,32 @@ class PrintService
         if (@file_put_contents($fontConfigDir . DIRECTORY_SEPARATOR . 'fonts.conf', $xml) !== false) {
             $this->log('LibreOffice: fontconfig temporario criado para fontes Office metricamente compativeis');
         }
+    }
+
+    private function officeFontDirectories()
+    {
+        $paths = [];
+        $configured = $_ENV['OFFICE_FONT_PATHS'] ?? '';
+        if (is_string($configured) && trim($configured) !== '') {
+            foreach (preg_split('/[;:]/', $configured) as $path) {
+                $path = trim($path);
+                if ($path !== '') {
+                    $paths[] = $path;
+                }
+            }
+        }
+
+        $paths[] = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'fonts';
+
+        $valid = [];
+        foreach ($paths as $path) {
+            $real = realpath($path);
+            if ($real !== false && is_dir($real)) {
+                $valid[] = $real;
+            }
+        }
+
+        return array_values(array_unique($valid));
     }
 
     private function pathToFileUri($path)

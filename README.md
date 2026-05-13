@@ -55,6 +55,7 @@ post_max_size = 25M
 - Se texto, tabelas ou paginação mudarem, confira o log: ele registra fontes solicitadas no DOCX e a fonte que o Linux resolveu via `fc-match`. Fontes ausentes são a causa mais comum de quebra de formatação.
 - Na conversão, o sistema cria aliases temporários para fontes comuns do Word, como Aptos→Carlito/Liberation Sans, Calibri→Carlito e Cambria→Caladea. Mesmo assim, essas fontes precisam estar instaladas no servidor para o resultado ficar mais fiel.
 - Em Debian/Ubuntu, normalmente ajuda instalar pacotes como `fonts-liberation`, `fonts-crosextra-carlito`, `fonts-crosextra-caladea` e, quando licenciado/disponível, fontes Microsoft compatíveis.
+- Para documentos do Word muito cheios, a paginação só fica fiel se o LibreOffice encontrar as mesmas fontes do DOCX. Você pode criar `storage/fonts/` e colocar ali arquivos `.ttf/.otf` como Aptos, Aptos Display, Times New Roman e Calibri. Também é possível apontar outras pastas com `OFFICE_FONT_PATHS=/caminho/fontes1:/caminho/fontes2` no `.env`.
 
 ## PNG no Linux
 - Para imprimir PNG de forma confiável, instale ImageMagick (`imagemagick`) ou habilite a extensão PHP `gd`.
