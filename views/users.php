@@ -55,11 +55,11 @@
                     <a href="/admin" class="btn btn-outline-secondary">
                         <i class="bi bi-arrow-left"></i> Voltar ao painel
                     </a>
+                    <a href="/admin/users/create" class="btn btn-primary btn-sm">
+                        <i class="bi bi-person-plus"></i> Novo usuário
+                    </a>
                 </div>
 
-                <a href="/admin/users/create" class="btn btn-primary btn-sm">
-                    <i class="bi bi-person-plus"></i> Novo usuário
-                </a>
             </div>
 
             <div class="card shadow-sm border-0">
