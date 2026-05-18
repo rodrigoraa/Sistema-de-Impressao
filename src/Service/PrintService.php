@@ -52,7 +52,7 @@ class PrintService
         $this->lastPrintResult = [];
         $preparedExt = strtolower(pathinfo($preparedFile, PATHINFO_EXTENSION));
         $this->log('Arquivo preparado para impressao: ext_origem=' . $sourceExt . ' preparado=' . $preparedFile . ' ext_preparado=' . $preparedExt . ' tamanho=' . (@filesize($preparedFile) ?: 0));
-        if (in_array($sourceExt, ['doc', 'docx', 'png'], true)) {
+        if (in_array($sourceExt, ['doc', 'docx', 'jpg', 'jpeg', 'png'], true)) {
             $debugCopy = $this->copyDebugFile($preparedFile, $sourceExt . '-preparado');
             if ($debugCopy !== null) {
                 $this->log(strtoupper($sourceExt) . ' diagnostico: copia do arquivo preparado=' . $debugCopy);
@@ -124,7 +124,8 @@ class PrintService
             throw new RuntimeException($preflight['reason']);
         }
 
-        $send = $cups->runLp($filePath, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
+        $cupsOrientation = in_array($sourceExt, ['jpg', 'jpeg', 'png'], true) ? '' : $orientation;
+        $send = $cups->runLp($filePath, $copies, $sides, $cupsOrientation, $quality, $numberUp, $extraOptions);
         $send['diagnostics'] = $preflight['diagnostics'] ?? [];
         $this->lastPrintResult = $send;
 
@@ -560,7 +561,23 @@ class PrintService
             throw new RuntimeException('Formato de imagem nao suportado');
         }
 
+        if (function_exists('imagecreatefromjpeg')) {
+            $pdfFile = tempnam(sys_get_temp_dir(), 'jpgpdf_') . '.pdf';
+            if ($this->writeJpegPdfWithGd($filePath, $pdfFile, $orientation, $paper)) {
+                $this->log('JPEG convertido para PDF via GD: ' . $pdfFile);
+                return $pdfFile;
+            }
+            @unlink($pdfFile);
+        }
+
+        $channels = (int) ($info['channels'] ?? 3);
+        if ($channels !== 3) {
+            $this->log('JPEG sem conversor confiavel: canais=' . $channels . ' ImageMagick indisponivel/falhou e GD nao converteu.');
+            throw new RuntimeException('JPEG em formato de cor nao suportado neste servidor. Instale ImageMagick ou habilite PHP GD para normalizar imagens.');
+        }
+
         $pdfFile = tempnam(sys_get_temp_dir(), 'imgpdf_') . '.pdf';
+        $this->log('JPEG usando fallback direto sem normalizacao EXIF/RGB. Recomenda-se ImageMagick ou PHP GD no servidor.');
         $this->writeImagePdf(
             file_get_contents($filePath),
             $pdfFile,
@@ -598,6 +615,10 @@ class PrintService
             '-background white',
             '-alpha remove',
             '-alpha off',
+            '-colorspace sRGB',
+            '-type TrueColor',
+            '-strip',
+            '-interlace none',
             '-resize ' . escapeshellarg($maxPixels),
             '-quality 92',
             escapeshellarg('jpg:' . $jpegFile),
@@ -627,6 +648,11 @@ class PrintService
                     $jpegDebug = $this->copyDebugFile($jpegFile, 'png-intermediario');
                     if ($jpegDebug !== null) {
                         $this->log('PNG diagnostico: JPG intermediario=' . $jpegDebug . ' tamanho=' . (@filesize($jpegDebug) ?: 0));
+                    }
+                } elseif (in_array(strtolower(pathinfo($filePath, PATHINFO_EXTENSION)), ['jpg', 'jpeg'], true)) {
+                    $jpegDebug = $this->copyDebugFile($jpegFile, 'jpg-normalizado');
+                    if ($jpegDebug !== null) {
+                        $this->log('JPEG diagnostico: JPG normalizado=' . $jpegDebug . ' tamanho=' . (@filesize($jpegDebug) ?: 0));
                     }
                 }
                 @unlink($jpegFile);
@@ -701,6 +727,88 @@ class PrintService
         );
 
         return true;
+    }
+
+    private function writeJpegPdfWithGd($imagePath, $pdfPath, $orientation, $paper)
+    {
+        if (!function_exists('imagecreatefromjpeg')) {
+            return false;
+        }
+
+        $image = @imagecreatefromjpeg($imagePath);
+        if (!$image) {
+            return false;
+        }
+
+        $image = $this->applyJpegExifOrientation($image, $imagePath);
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $canvas = imagecreatetruecolor($width, $height);
+        if (!$canvas) {
+            imagedestroy($image);
+            return false;
+        }
+
+        $white = imagecolorallocate($canvas, 255, 255, 255);
+        imagefilledrectangle($canvas, 0, 0, $width, $height, $white);
+        imagecopy($canvas, $image, 0, 0, 0, 0, $width, $height);
+
+        ob_start();
+        $ok = imagejpeg($canvas, null, 92);
+        $jpegData = ob_get_clean();
+
+        imagedestroy($canvas);
+        imagedestroy($image);
+
+        if (!$ok || $jpegData === false || $jpegData === '') {
+            return false;
+        }
+
+        $this->writeImagePdf(
+            $jpegData,
+            $pdfPath,
+            $width,
+            $height,
+            '/DCTDecode',
+            $orientation,
+            $paper
+        );
+
+        return true;
+    }
+
+    private function applyJpegExifOrientation($image, $imagePath)
+    {
+        if (!function_exists('exif_read_data')) {
+            return $image;
+        }
+
+        $exif = @exif_read_data($imagePath);
+        $orientation = (int) ($exif['Orientation'] ?? 1);
+        if ($orientation < 2 || $orientation > 8) {
+            return $image;
+        }
+
+        if (function_exists('imageflip') && in_array($orientation, [2, 4, 5, 7], true)) {
+            imageflip($image, in_array($orientation, [2, 5], true) ? IMG_FLIP_HORIZONTAL : IMG_FLIP_VERTICAL);
+        }
+
+        if (in_array($orientation, [3, 4], true)) {
+            $rotated = imagerotate($image, 180, 0);
+        } elseif (in_array($orientation, [5, 6], true)) {
+            $rotated = imagerotate($image, -90, 0);
+        } elseif (in_array($orientation, [7, 8], true)) {
+            $rotated = imagerotate($image, 90, 0);
+        } else {
+            $rotated = false;
+        }
+
+        if ($rotated !== false) {
+            imagedestroy($image);
+            return $rotated;
+        }
+
+        return $image;
     }
 
     private function writeImagePdf($imageData, $pdfPath, $imageWidth, $imageHeight, $filter, $orientation, $paper)

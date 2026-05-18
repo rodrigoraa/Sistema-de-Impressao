@@ -149,13 +149,14 @@ class PrintJobService
         if (!empty($where)) {
             $sql .= ' WHERE ' . implode(' AND ', $where);
         }
-        $sql .= ' ORDER BY pj.created_at DESC, pj.id DESC LIMIT :limit';
+        $sql .= ' ORDER BY pj.id DESC LIMIT :query_limit';
 
         $stmt = $this->db->prepare($sql);
         foreach ($params as $key => [$value, $type]) {
             $stmt->bindValue($key, $value, $type);
         }
-        $stmt->bindValue(':limit', max(1, min(500, (int) $limit)), SQLITE3_INTEGER);
+        $limit = max(1, min(500, (int) $limit));
+        $stmt->bindValue(':query_limit', $limit, SQLITE3_INTEGER);
 
         $result = $stmt->execute();
         $jobs = [];
@@ -165,11 +166,11 @@ class PrintJobService
 
         if ($status === '' || $status === 'completed') {
             $jobs = array_merge($jobs, $this->legacyUsageJobs($user, $isAdmin, $filters));
-            usort($jobs, fn($a, $b) => strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? '')));
-            $jobs = array_slice($jobs, 0, max(1, min(500, (int) $limit)));
         }
 
-        return $jobs;
+        $this->sortJobsNewestFirst($jobs);
+
+        return array_slice($jobs, 0, $limit);
     }
 
     public function findVisible($id, $user, $isAdmin = false)
@@ -398,7 +399,7 @@ class PrintJobService
         if (!empty($where)) {
             $sql .= ' WHERE ' . implode(' AND ', $where);
         }
-        $sql .= ' ORDER BY us.created_at DESC LIMIT 500';
+        $sql .= ' ORDER BY us.id DESC LIMIT 500';
 
         $stmt = $this->db->prepare($sql);
         foreach ($params as $key => [$value, $type]) {
@@ -442,6 +443,40 @@ class PrintJobService
         }
 
         return $rows;
+    }
+
+    private function sortJobsNewestFirst(array &$jobs)
+    {
+        usort($jobs, function ($a, $b) {
+            $dateCompare = $this->jobTimestamp($b) <=> $this->jobTimestamp($a);
+            if ($dateCompare !== 0) {
+                return $dateCompare;
+            }
+
+            return $this->jobNumericId($b) <=> $this->jobNumericId($a);
+        });
+    }
+
+    private function jobTimestamp($job)
+    {
+        foreach (['created_at', 'completed_at', 'updated_at'] as $field) {
+            $value = trim((string) ($job[$field] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+
+            $timestamp = strtotime($value);
+            if ($timestamp !== false) {
+                return $timestamp;
+            }
+        }
+
+        return 0;
+    }
+
+    private function jobNumericId($job)
+    {
+        return (int) preg_replace('/\D+/', '', (string) ($job['id'] ?? '0'));
     }
 
     private function updateStatus($id, $status, $preparedFile, $pages, $chargedPages, $errorMessage, $finished, $enteredAccumulator = null)

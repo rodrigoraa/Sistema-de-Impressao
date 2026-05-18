@@ -168,7 +168,9 @@ class CupsService
         if ((int) $copies > 1) {
             $args[] = '-n ' . (int) $copies;
         }
-        $args[] = '-o orientation-requested=' . ($orientation === 'landscape' ? '4' : '3');
+        if (in_array($orientation, ['portrait', 'landscape'], true)) {
+            $args[] = '-o orientation-requested=' . ($orientation === 'landscape' ? '4' : '3');
+        }
         $args[] = '-o print-quality=' . (int) $quality;
         $args[] = '-o sides=' . escapeshellarg($this->cupsSides($sides));
         if ((int) $numberUp > 1) {
