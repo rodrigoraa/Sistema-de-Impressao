@@ -116,6 +116,8 @@ $config = is_file($projectRoot . '/config/config.php')
 $_ENV['PRINTER_NAME'] = $_ENV['PRINTER_NAME'] ?? ($config['printer_name'] ?? '');
 $_ENV['UPLOAD_PATH'] = $_ENV['UPLOAD_PATH'] ?? ($config['upload_path'] ?? ($projectRoot . '/storage/uploads/'));
 $_ENV['LOG_PATH'] = $_ENV['LOG_PATH'] ?? ($config['log_path'] ?? ($projectRoot . '/storage/logs/app.log'));
+$_ENV['APP_TIMEZONE'] = $_ENV['APP_TIMEZONE'] ?? ($config['app_timezone'] ?? 'America/Cuiaba');
+@date_default_timezone_set($_ENV['APP_TIMEZONE']);
 
 $sessionPath = (string) ($_ENV['SESSION_PATH'] ?? ($config['session_path'] ?? ($projectRoot . '/storage/sessions')));
 if ($sessionPath && !is_dir($sessionPath)) {
@@ -220,6 +222,11 @@ if ($uri === '/logout') {
 
 if ($uri === '/admin') {
     (new AdminController())->index();
+    exit;
+}
+
+if ($uri === '/admin/report/pdf') {
+    (new AdminController())->monthlyPdf();
     exit;
 }
 

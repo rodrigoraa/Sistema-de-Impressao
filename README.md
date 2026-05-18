@@ -21,9 +21,36 @@ Você pode configurar via `config/config.php` ou criando um arquivo `.env` na ra
 PRINTER_NAME=kyocera-escola
 UPLOAD_PATH=/var/www/impressao/storage/uploads
 LOG_PATH=/var/www/impressao/storage/logs/app.log
+APP_TIMEZONE=America/Cuiaba
 LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
 SUMATRA_PATH=C:\Program Files\SumatraPDF\SumatraPDF.exe
 IMAGEMAGICK_PATH=/usr/bin/convert
+PRINT_JOB_WAIT_SECONDS=120
+```
+
+## Auditoria e diagnóstico de impressão
+- Cada tentativa fica registrada em `print_jobs`, inclusive falhas de pré-validação, upload inválido, erro no CUPS, timeout e falha no `lp`.
+- O painel `/admin` mostra `enabled/disabled`, `accepting/rejecting`, `printer-state`, mensagem atual, jobs pendentes/concluídos/cancelados/falhos e o último diagnóstico conhecido.
+- O acumulado mensal considera somente jobs `completed` com `entered_accumulator=1`; falhas não entram no total.
+- O relatório PDF mensal fica em `/admin/report/pdf` e aceita filtros por mês, CPF e inclusão/ocultação de falhas.
+
+## Comandos Linux úteis
+```bash
+lpstat -p kyocera-escola
+lpstat -a kyocera-escola
+lpstat -l -p kyocera-escola
+lpstat -o kyocera-escola
+lpstat -W completed -o kyocera-escola
+sudo cupsenable kyocera-escola
+sudo cupsaccept kyocera-escola
+sudo cupsdisable kyocera-escola
+sudo cupsreject kyocera-escola
+sudo systemctl status cups
+```
+
+## Simulações locais
+```bash
+php tests/print_diagnostics_simulation.php
 ```
 
 ## Limite de upload no nginx/PHP

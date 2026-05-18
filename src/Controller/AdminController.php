@@ -3,6 +3,8 @@
 require_once __DIR__ . '/../Service/AuthService.php';
 require_once __DIR__ . '/../Service/Database.php';
 require_once __DIR__ . '/../Service/PrintJobService.php';
+require_once __DIR__ . '/../Service/CupsService.php';
+require_once __DIR__ . '/../Service/PdfReportService.php';
 
 class AdminController
 {
@@ -20,37 +22,60 @@ class AdminController
             exit('Acesso negado');
         }
 
-        $db = Database::connect();
-
         $month = $_GET['month'] ?? date('Y-m');
-
-        $stmt = $db->prepare("
-                SELECT 
-                    u.name,
-                    u.cpf,
-                    SUM(us.pages) as total
-                FROM usage us
-                JOIN users u ON u.cpf = us.user
-                WHERE strftime('%Y-%m', us.created_at) = :month
-                GROUP BY us.user
-                ORDER BY total DESC
-        ");
-
-        $stmt->bindValue(':month', $month);
-        $result = $stmt->execute();
-
-        $data = [];
-        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
-            $data[] = $row;
+        if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $month = date('Y-m');
         }
+        $cpf = preg_replace('/\D/', '', $_GET['cpf'] ?? '');
+        $includeFailures = !empty($_GET['include_failures']);
+
+        $jobService = new PrintJobService();
+        $data = $jobService->monthlySummary($month, $cpf, $includeFailures);
 
         $totalMonth = 0;
         foreach ($data as $row) {
-            $totalMonth += (int) ($row['total'] ?? 0);
+            $totalMonth += (int) ($row['charged_pages'] ?? 0);
         }
-        $jobStats = (new PrintJobService())->statsForUser($_SESSION['user'], true);
+        $jobStats = $jobService->statsForUser($_SESSION['user'], true);
+        $printerStatus = (new CupsService())->diagnostics();
+        $recentJobs = $jobService->listForUser($_SESSION['user'], true, $_GET['status'] ?? '', 50, [
+            'cpf' => $cpf,
+            'month' => $month,
+            'error' => $_GET['error'] ?? '',
+        ]);
 
         require __DIR__ . '/../../views/admin.php';
+    }
+
+    public function monthlyPdf()
+    {
+        if (!isset($_SESSION['user'])) {
+            header('Location: /login');
+            exit;
+        }
+        if (!AuthService::isAdmin()) {
+            http_response_code(403);
+            exit('Acesso negado');
+        }
+
+        $month = $_GET['month'] ?? date('Y-m');
+        if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $month = date('Y-m');
+        }
+        $cpf = preg_replace('/\D/', '', $_GET['cpf'] ?? '');
+        $includeFailures = !empty($_GET['include_failures']);
+        $rows = (new PrintJobService())->monthlySummary($month, $cpf, $includeFailures);
+        $pdf = (new PdfReportService())->monthlyReport('Relatorio mensal de impressoes', [
+            'month' => $month,
+            'cpf' => $cpf,
+            'include_failures' => $includeFailures,
+        ], $rows);
+
+        header('Content-Type: application/pdf');
+        header('Content-Length: ' . strlen($pdf));
+        header('Content-Disposition: attachment; filename="relatorio-impressoes-' . $month . '.pdf"');
+        echo $pdf;
+        exit;
     }
 }
 

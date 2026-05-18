@@ -1,10 +1,13 @@
 <?php
 
+require_once __DIR__ . '/CupsService.php';
+
 class PrintService
 {
     private $printerName;
     private $isWindows;
     private $lastPrintCompleted = null;
+    private $lastPrintResult = [];
 
     public function __construct()
     {
@@ -46,6 +49,7 @@ class PrintService
         }
 
         $this->lastPrintCompleted = null;
+        $this->lastPrintResult = [];
         $preparedExt = strtolower(pathinfo($preparedFile, PATHINFO_EXTENSION));
         $this->log('Arquivo preparado para impressao: ext_origem=' . $sourceExt . ' preparado=' . $preparedFile . ' ext_preparado=' . $preparedExt . ' tamanho=' . (@filesize($preparedFile) ?: 0));
         if (in_array($sourceExt, ['doc', 'docx', 'png'], true)) {
@@ -67,6 +71,11 @@ class PrintService
     public function lastPrintCompleted()
     {
         return $this->lastPrintCompleted;
+    }
+
+    public function lastPrintResult()
+    {
+        return $this->lastPrintResult;
     }
 
     public function prepareFile($filePath, $orientation = 'portrait', $paper = 'A4', $extraOptions = [])
@@ -93,49 +102,51 @@ class PrintService
 
     private function printCups($filePath, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions, $sourceExt = '')
     {
-        $lp = $this->findExecutable(['/usr/bin/lp', '/bin/lp', 'lp']);
-        if ($lp === null) {
-            throw new RuntimeException('Comando lp/CUPS nao encontrado no servidor');
-        }
-
-        $cmd = escapeshellarg($lp);
-        $cmd .= ' -d ' . escapeshellarg($this->printerName);
-        if (intval($copies) > 1) {
-            $cmd .= ' -n ' . intval($copies);
-        }
-
         if (in_array($sourceExt, ['jpg', 'jpeg', 'png'], true)) {
             $this->log('CUPS imagem: enviando PDF preparado com opcoes de papel/orientacao.');
         }
 
-        $cmd .= ' -o orientation-requested=' . ($orientation === 'landscape' ? 4 : 3);
-        $cmd .= ' -o print-quality=' . intval($quality);
-        $cmd .= ' -o sides=' . $this->cupsSides($sides);
-
-        if ($numberUp > 1) {
-            $cmd .= ' -o number-up=' . intval($numberUp);
-            $cmd .= ' -o number-up-layout=lrtb';
+        $cups = new CupsService($this->printerName);
+        $preflight = $cups->preflight($filePath);
+        if (!$preflight['ok']) {
+            $diag = $preflight['diagnostics'] ?? [];
+            $this->lastPrintResult = [
+                'success' => false,
+                'job_id' => null,
+                'stdout' => '',
+                'stderr' => $preflight['reason'],
+                'return_code' => null,
+                'status_cups' => 'preflight_failed',
+                'error_category' => $preflight['reason'],
+                'error_message' => $preflight['reason'],
+                'diagnostics' => $diag,
+            ];
+            throw new RuntimeException($preflight['reason']);
         }
 
-        foreach ($this->cupsExtraOptions($extraOptions) as $key => $val) {
-            $cmd .= ' -o ' . escapeshellarg($key . '=' . $val);
+        $send = $cups->runLp($filePath, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
+        $send['diagnostics'] = $preflight['diagnostics'] ?? [];
+        $this->lastPrintResult = $send;
+
+        if (!$send['success']) {
+            throw new RuntimeException($send['error_message'] ?: 'Falha ao enviar arquivo para a impressora');
         }
 
-        $cmd .= ' ' . escapeshellarg($filePath) . ' 2>&1';
-        exec($cmd, $output, $status);
-        $this->log('CUPS: ' . $cmd . ' | status=' . $status . ' | ' . implode(' | ', $output));
-
-        if ($status !== 0) {
-            throw new RuntimeException('Falha ao enviar arquivo para a impressora');
-        }
-
-        $jobId = $this->extractCupsJobId(implode(' ', $output));
+        $jobId = $send['job_id'] ?? null;
         if ($jobId === null) {
             $this->log('CUPS: nao foi possivel identificar job; contabilizacao permitida pelo aceite do lp');
+            $this->lastPrintResult['status_cups'] = 'accepted_unidentified';
             return true;
         }
 
-        return $this->waitForCupsJob($jobId);
+        $wait = $cups->waitForJob($jobId);
+        $this->lastPrintResult['status_cups'] = $wait['status_cups'] ?? $this->lastPrintResult['status_cups'];
+        if (!empty($wait['error_message'])) {
+            $this->lastPrintResult['error_message'] = $wait['error_message'];
+            $this->lastPrintResult['error_category'] = $wait['error_message'];
+        }
+
+        return (bool) ($wait['completed'] ?? false);
     }
 
     private function extractCupsJobId($output)

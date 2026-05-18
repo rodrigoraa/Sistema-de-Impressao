@@ -85,13 +85,27 @@ if ($currentStatus === 'active') {
 
             <section class="panel">
                 <form method="get" class="row g-3 align-items-end">
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label">Status</label>
                         <select name="status" class="form-select">
                             <?php foreach ($statusFilters as $value => $label): ?>
                                 <option value="<?= $value ?>" <?= $currentStatus === $value ? 'selected' : '' ?>><?= $label ?></option>
                             <?php endforeach; ?>
                         </select>
+                    </div>
+                    <?php if ($isAdmin): ?>
+                        <div class="col-md-3">
+                            <label class="form-label">CPF</label>
+                            <input name="cpf" class="form-control" value="<?= htmlspecialchars($_GET['cpf'] ?? '') ?>" placeholder="Todos">
+                        </div>
+                    <?php endif; ?>
+                    <div class="col-md-3">
+                        <label class="form-label">Mês</label>
+                        <input type="month" name="month" class="form-control" value="<?= htmlspecialchars($_GET['month'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Erro</label>
+                        <input name="error" class="form-control" value="<?= htmlspecialchars($_GET['error'] ?? '') ?>" placeholder="papel, toner, timeout...">
                     </div>
                     <div class="col-md-2">
                         <button class="btn btn-primary w-100"><i class="bi bi-search"></i> Filtrar</button>
@@ -127,6 +141,7 @@ if ($currentStatus === 'active') {
                                             <?php else: ?>
                                                 <small class="text-muted"><?= strtoupper(htmlspecialchars($job['source_ext'] ?? '')) ?> · <?= (int) $job['pages'] ?> pág.</small>
                                             <?php endif; ?>
+                                            <small class="d-block text-muted">CUPS: <?= htmlspecialchars($job['cups_job_id'] ?: '-') ?> · <?= htmlspecialchars($job['status_cups'] ?: '-') ?></small>
                                         </td>
                                         <?php if ($isAdmin): ?>
                                             <td><?= htmlspecialchars($job['user_name'] ?: $job['user']) ?><br><small class="text-muted"><?= htmlspecialchars($job['user']) ?></small></td>

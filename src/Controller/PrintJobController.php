@@ -18,7 +18,11 @@ class PrintJobController
         $status = $_GET['status'] ?? '';
         $isAdmin = AuthService::isAdmin();
         $service = new PrintJobService();
-        $jobs = $service->listForUser($_SESSION['user'], $isAdmin, $status, 150);
+        $jobs = $service->listForUser($_SESSION['user'], $isAdmin, $status, 150, [
+            'cpf' => $_GET['cpf'] ?? '',
+            'month' => $_GET['month'] ?? '',
+            'error' => $_GET['error'] ?? '',
+        ]);
         $stats = $service->statsForUser($_SESSION['user'], $isAdmin);
 
         require __DIR__ . '/../../views/print_jobs.php';
@@ -92,6 +96,7 @@ class PrintJobController
             $chargedPages = (int) ceil($pages / $numberUp) * $copies;
             $service->markProcessing($newJobId, $preparedFile, $pages, $chargedPages);
             $completed = $printer->printPrepared($preparedFile, $sourceExt, $copies, $sides, $orientation, 3, $numberUp, ['media' => $paper]);
+            $service->updateCupsResult($newJobId, $printer->lastPrintResult());
 
             if ($completed === true) {
                 $service->markCompleted($newJobId, $preparedFile, $pages, $chargedPages);
@@ -102,6 +107,7 @@ class PrintJobController
             $service->markFailed($newJobId, $preparedFile, $pages, $chargedPages, 'Reimpressão não concluída');
             $this->finish('Reimpressão não concluída', false);
         } catch (Throwable $e) {
+            $service->updateCupsResult($newJobId, $printer->lastPrintResult());
             $service->markFailed($newJobId, $preparedFile, $pages, $chargedPages, $e->getMessage());
             $this->finish('Erro ao reimprimir: ' . $e->getMessage(), false);
         }

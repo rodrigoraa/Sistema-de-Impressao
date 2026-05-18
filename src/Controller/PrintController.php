@@ -4,6 +4,7 @@ require_once __DIR__ . '/../Service/PageCounter.php';
 require_once __DIR__ . '/../Service/QuotaService.php';
 require_once __DIR__ . '/../Service/Database.php';
 require_once __DIR__ . '/../Service/PrintJobService.php';
+require_once __DIR__ . '/../Service/CupsService.php';
 
 class PrintController
 {
@@ -117,54 +118,65 @@ class PrintController
         // ============================
         $this->validateCsrfOrFail();
 
+        // Determina usuário final da impressão
+        $cpfList = array_column($userList, 'cpf');
+        if ($isAdmin && !empty($_POST['target_user']) && in_array($_POST['target_user'], $cpfList, true)) {
+            $user = $_POST['target_user'];
+        } else {
+            $user = $_SESSION['user'];
+        }
+        $jobService = new PrintJobService();
+
         // Validação inicial
         if (!isset($_FILES['arquivo'])) {
             $this->logUploadFailure('Arquivo ausente em $_FILES');
+            $this->registerFailedAttempt($jobService, $user, 'arquivo_ausente', 'Arquivo não enviado');
             $this->fail("Arquivo não enviado. Verifique upload_max_filesize e post_max_size no servidor.");
         }
         $file = $_FILES['arquivo'];
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             $this->logUploadFailure('Erro de upload codigo=' . ($file['error'] ?? UPLOAD_ERR_NO_FILE));
-            $this->fail($this->uploadErrorMessage($file['error'] ?? UPLOAD_ERR_NO_FILE));
+            $message = $this->uploadErrorMessage($file['error'] ?? UPLOAD_ERR_NO_FILE);
+            $this->registerFailedAttempt($jobService, $user, 'falha_upload', $message, $file['name'] ?? 'arquivo');
+            $this->fail($message);
         }
 
-        $origName = $file['name'];
+        $origName = (string) $file['name'];
         $tmpPath = $file['tmp_name'];
         $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
         $size = intval($file['size'] ?? 0);
         if ($size < 1 || $size > $this->maxUploadBytes) {
+            $this->registerFailedAttempt($jobService, $user, 'arquivo_invalido', 'Arquivo inválido ou acima de 20MB', $origName, null, $ext, $size);
             $this->fail('Arquivo inválido ou acima de 20MB');
         }
         $this->logUploadFailure("Upload recebido: nome={$origName} ext={$ext} size={$size}");
 
         // Extensões permitidas
         if (!in_array($ext, $this->allowedExtensions, true)) {
+            $this->registerFailedAttempt($jobService, $user, 'formato_nao_suportado', 'Tipo de arquivo não permitido', $origName, null, $ext, $size);
             $this->fail("Tipo de arquivo não permitido");
         }
+        $mimeType = $this->detectMimeType($tmpPath);
         if (!$this->hasAllowedMimeType($tmpPath, $ext)) {
-            $this->logUploadFailure("Aviso de MIME incompatível: nome={$origName} ext={$ext}");
+            $this->logUploadFailure("MIME incompatível: nome={$origName} ext={$ext} mime={$mimeType}");
+            $this->registerFailedAttempt($jobService, $user, 'formato_nao_suportado', 'MIME type não permitido: ' . ($mimeType ?: 'desconhecido'), $origName, null, $ext, $size);
+            $this->fail('Formato de arquivo não suportado');
         }
 
         // Configura caminhos via env (ou config carregada)
         $uploadPath = $_ENV['UPLOAD_PATH'] ?? '';
         if (!$uploadPath) {
+            $this->registerFailedAttempt($jobService, $user, 'falha_configuracao', 'UPLOAD_PATH não configurado', $origName, null, $ext, $size);
             $this->fail("UPLOAD_PATH não configurado");
         }
         if (!is_dir($uploadPath)) {
             mkdir($uploadPath, 0775, true);
         }
-        $newFilename = uniqid() . '_' . basename($origName);
+        $newFilename = uniqid('', true) . '_' . $this->sanitizeFilename($origName);
         $dest = rtrim($uploadPath, '/') . '/' . $newFilename;
         if (!move_uploaded_file($tmpPath, $dest)) {
+            $this->registerFailedAttempt($jobService, $user, 'falha_armazenamento', 'Erro ao salvar arquivo', $origName, null, $ext, $size);
             $this->fail("Erro ao salvar arquivo");
-        }
-
-        // Determina usuário final da impressão
-        $cpfList = array_column($userList, 'cpf');
-        if ($isAdmin && !empty($_POST['target_user']) && in_array($_POST['target_user'], $cpfList)) {
-            $user = $_POST['target_user'];
-        } else {
-            $user = $_SESSION['user'];
         }
 
         // Parâmetros de impressão vindos do formulário
@@ -220,10 +232,13 @@ class PrintController
 
         // Prepara, conta paginas e envia para impressao usando o mesmo arquivo convertido.
         $printer = new PrintService();
-        $jobService = new PrintJobService();
         $sourceExt = strtolower(pathinfo($dest, PATHINFO_EXTENSION));
         $paper = $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4';
-        $jobId = $jobService->create($user, $origName, $dest, $sourceExt, $copies, $numberUp, $sides, $orientation, $paper);
+        $jobId = $jobService->create($user, $origName, $dest, $sourceExt, $copies, $numberUp, $sides, $orientation, $paper, [
+            'mime_type' => $mimeType,
+            'file_size' => $size,
+            'printer' => $_ENV['PRINTER_NAME'] ?? '',
+        ]);
         $printedFile = $dest;
         $pages = 0;
         $chargedPages = 0;
@@ -245,10 +260,12 @@ class PrintController
             $jobService->markProcessing($jobId, $printedFile, $pages, $chargedPages);
 
             $completed = $printer->printPrepared($printedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
+            $jobService->updateCupsResult($jobId, $printer->lastPrintResult());
             $success = $completed === true;
         } catch (Throwable $e) {
             $printer->log("Erro interno ao imprimir: " . $e->getMessage());
             $errorMessage = $e->getMessage();
+            $jobService->updateCupsResult($jobId, $printer->lastPrintResult());
             $success = false;
         }
 
@@ -578,6 +595,49 @@ class PrintController
         ];
 
         return $messages[$code] ?? "Erro no upload do arquivo";
+    }
+
+    private function detectMimeType($filePath)
+    {
+        if (!is_file($filePath) || !function_exists('finfo_open')) {
+            return '';
+        }
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo === false) {
+            return '';
+        }
+        $mime = finfo_file($finfo, $filePath) ?: '';
+        finfo_close($finfo);
+
+        return $mime;
+    }
+
+    private function sanitizeFilename($name)
+    {
+        $base = basename((string) $name);
+        $base = preg_replace('/[^A-Za-z0-9._-]+/', '_', $base);
+        $base = trim((string) $base, '._-');
+
+        return $base !== '' ? $base : 'arquivo';
+    }
+
+    private function registerFailedAttempt($jobService, $user, $category, $message, $originalName = 'arquivo', $storedFile = null, $ext = '', $size = 0)
+    {
+        try {
+            $jobId = $jobService->create($user, $originalName ?: 'arquivo', $storedFile, strtolower((string) $ext), 1, 1, 'one-sided', 'portrait', 'A4', [
+                'file_size' => (int) $size,
+                'mime_type' => $storedFile ? $this->detectMimeType($storedFile) : '',
+                'printer' => $_ENV['PRINTER_NAME'] ?? '',
+            ]);
+            $jobService->markPreValidationFailed($jobId, $message, [
+                'status_cups' => 'falha_pre_validacao',
+                'error_category' => $category,
+                'error_message' => $message,
+            ]);
+        } catch (Throwable $e) {
+            $this->logUploadFailure('Falha ao registrar tentativa invalida: ' . $e->getMessage());
+        }
     }
 
     private function logUploadFailure($msg)

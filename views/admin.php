@@ -41,6 +41,34 @@
                 </div>
             </section>
 
+            <section class="panel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="panel-title">Status atual da impressora</h2>
+                    <a href="/admin?month=<?= htmlspecialchars($month) ?>&cpf=<?= htmlspecialchars($cpf ?? '') ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise"></i> Atualizar</a>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="metric"><span>Impressora</span><strong><?= htmlspecialchars($printerStatus['printer'] ?: 'não configurada') ?></strong></div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="metric"><span>Enabled</span><strong><?= $printerStatus['enabled'] === null ? 'N/D' : ($printerStatus['enabled'] ? 'Sim' : 'Não') ?></strong></div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="metric"><span>Accepting</span><strong><?= $printerStatus['accepting'] === null ? 'N/D' : ($printerStatus['accepting'] ? 'Sim' : 'Não') ?></strong></div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="metric"><span>Fila</span><strong><?= (int) $printerStatus['pending_jobs'] ?></strong></div>
+                    </div>
+                </div>
+                <div class="small text-muted mt-2">
+                    Estado: <?= htmlspecialchars($printerStatus['printer_state'] ?: 'não informado') ?>.
+                    Mensagem: <?= htmlspecialchars($printerStatus['printer_state_message'] ?: ($printerStatus['last_error'] ?: 'sem erro atual')) ?>.
+                    Concluídos: <?= (int) $printerStatus['completed_jobs'] ?>,
+                    cancelados: <?= (int) $printerStatus['canceled_jobs'] ?>,
+                    falhas: <?= (int) $printerStatus['failed_jobs'] ?>.
+                </div>
+            </section>
+
             <section class="metric-grid">
                 <div class="metric"><span>Total de jobs</span><strong><?= (int) $jobStats['total'] ?></strong></div>
                 <div class="metric"><span>Impressas</span><strong><?= (int) $jobStats['completed'] ?></strong></div>
@@ -50,12 +78,37 @@
 
             <section class="panel">
                 <form method="get" class="row g-3 align-items-end">
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label">Selecionar mês</label>
-                        <input type="month" name="month" class="form-control" value="<?= htmlspecialchars($_GET['month'] ?? date('Y-m')) ?>">
+                        <input type="month" name="month" class="form-control" value="<?= htmlspecialchars($month) ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">CPF</label>
+                        <input name="cpf" class="form-control" value="<?= htmlspecialchars($cpf ?? '') ?>" placeholder="Todos">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Erro</label>
+                        <input name="error" class="form-control" value="<?= htmlspecialchars($_GET['error'] ?? '') ?>" placeholder="papel, toner, timeout...">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Status</label>
+                        <select name="status" class="form-select">
+                            <?php foreach (['' => 'Todos', 'active' => 'Fila', 'completed' => 'Concluídos', 'failed' => 'Falhas'] as $value => $label): ?>
+                                <option value="<?= $value ?>" <?= ($_GET['status'] ?? '') === $value ? 'selected' : '' ?>><?= $label ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="include_failures" value="1" id="include_failures" <?= $includeFailures ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="include_failures">Incluir falhas no relatório</label>
+                        </div>
                     </div>
                     <div class="col-md-2">
                         <button class="btn btn-primary w-100"><i class="bi bi-search"></i> Filtrar</button>
+                    </div>
+                    <div class="col-md-3">
+                        <a class="btn btn-outline-secondary w-100" href="/admin/report/pdf?month=<?= urlencode($month) ?>&cpf=<?= urlencode($cpf ?? '') ?>&include_failures=<?= $includeFailures ? '1' : '0' ?>"><i class="bi bi-filetype-pdf"></i> Gerar PDF</a>
                     </div>
                 </form>
             </section>
@@ -63,7 +116,7 @@
             <section class="panel">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2 class="panel-title">Uso por professor</h2>
-                    <span class="text-muted small">Mês: <?= htmlspecialchars($_GET['month'] ?? date('Y-m')) ?></span>
+                    <span class="text-muted small">Mês: <?= htmlspecialchars($month) ?></span>
                 </div>
 
                 <div class="table-responsive">
@@ -71,17 +124,65 @@
                         <thead>
                             <tr>
                                 <th>Professor</th>
+                                <th class="text-end">Jobs</th>
+                                <th class="text-end">Páginas</th>
+                                <th class="text-end">Cópias</th>
                                 <th class="text-end">Total contabilizado</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (empty($data)): ?>
-                                <tr><td colspan="2" class="text-center text-muted py-4">Nenhuma impressão neste mês</td></tr>
+                                <tr><td colspan="5" class="text-center text-muted py-4">Nenhuma impressão neste mês</td></tr>
                             <?php else: ?>
                                 <?php foreach ($data as $row): ?>
                                     <tr>
                                         <td><?= htmlspecialchars($row['name']) ?><br><small class="text-muted"><?= htmlspecialchars($row['cpf']) ?></small></td>
-                                        <td class="text-end"><span class="badge text-bg-primary"><?= (int) $row['total'] ?> contabilizadas</span></td>
+                                        <td class="text-end"><?= (int) $row['jobs'] ?></td>
+                                        <td class="text-end"><?= (int) $row['pages'] ?></td>
+                                        <td class="text-end"><?= (int) $row['copies'] ?></td>
+                                        <td class="text-end"><span class="badge text-bg-primary"><?= (int) $row['charged_pages'] ?> contabilizadas</span></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="panel-title">Histórico de tentativas</h2>
+                    <span class="text-muted small">Mostrando até 50 registros</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle data-table">
+                        <thead>
+                            <tr>
+                                <th>Arquivo</th>
+                                <th>Professor</th>
+                                <th>Status</th>
+                                <th>CUPS</th>
+                                <th>Diagnóstico</th>
+                                <th>Data</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($recentJobs)): ?>
+                                <tr><td colspan="6" class="text-center text-muted py-4">Nenhuma tentativa encontrada</td></tr>
+                            <?php else: ?>
+                                <?php foreach ($recentJobs as $job): ?>
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold text-truncate file-name"><?= htmlspecialchars($job['original_name']) ?></div>
+                                            <small class="text-muted"><?= htmlspecialchars($job['mime_type'] ?: strtoupper($job['source_ext'] ?? '')) ?> · <?= (int) ($job['file_size'] ?? 0) ?> bytes</small>
+                                        </td>
+                                        <td><?= htmlspecialchars($job['user_name'] ?: ($job['nome_professor'] ?: $job['user'])) ?><br><small class="text-muted"><?= htmlspecialchars($job['user']) ?></small></td>
+                                        <td><span class="badge <?= $job['status'] === 'completed' ? 'text-bg-success' : ($job['status'] === 'failed' ? 'text-bg-danger' : 'text-bg-secondary') ?>"><?= htmlspecialchars($job['status']) ?></span></td>
+                                        <td>
+                                            <small>Job: <?= htmlspecialchars($job['cups_job_id'] ?: '-') ?><br>Status: <?= htmlspecialchars($job['status_cups'] ?: '-') ?><br>Retorno: <?= htmlspecialchars((string) ($job['return_code'] ?? '-')) ?></small>
+                                        </td>
+                                        <td><small class="<?= !empty($job['error_message']) ? 'text-danger' : 'text-muted' ?>"><?= htmlspecialchars($job['error_category'] ?: ($job['error_message'] ?: 'sem erro registrado')) ?></small></td>
+                                        <td><small><?= htmlspecialchars($job['created_at']) ?></small></td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>

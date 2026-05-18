@@ -6,6 +6,12 @@ class PrinterController
     {
         header('Content-Type: application/json');
 
+        if (!isset($_SESSION['user'])) {
+            http_response_code(401);
+            echo json_encode([]);
+            return;
+        }
+
         $printer = $_ENV['PRINTER_NAME'] ?? '';
         if (!$printer) {
             echo json_encode([]);
@@ -24,7 +30,8 @@ class PrinterController
             return;
         }
 
-        exec("lpoptions -p " . escapeshellarg($printer) . " -l 2>/dev/null", $out);
+        $lpoptions = $check[0] ?? 'lpoptions';
+        exec(escapeshellarg($lpoptions) . " -p " . escapeshellarg($printer) . " -l 2>/dev/null", $out);
 
         $result = [];
 
