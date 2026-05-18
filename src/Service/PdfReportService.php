@@ -46,7 +46,7 @@ class PdfReportService
     private function buildPdf($context, $rows)
     {
         $pages = [];
-        $pageRows = array_chunk($rows, 10);
+        $pageRows = array_chunk($rows, 32);
         if (empty($pageRows)) {
             $pageRows = [[]];
         }
@@ -69,53 +69,23 @@ class PdfReportService
         $c .= $this->textRight(806, 545, 'Gerado em ' . $context['generated_at'], 9, false, 219, 234, 254);
         $c .= $this->textRight(806, 520, 'Página ' . $pageNumber . ' de ' . $pageCount, 9, false, 219, 234, 254);
 
-        $c .= $this->summaryBox(36, 470, 170, 'Mês de referência', $context['month']);
-        $c .= $this->summaryBox(216, 470, 210, 'Professor', $context['cpf']);
-        $c .= $this->summaryBox(436, 470, 220, 'Escopo', $context['failures']);
-        $c .= $this->summaryBox(666, 470, 140, 'Total geral', $context['totals']['Contabilizadas'] . ' páginas');
+        $c .= $this->summaryBox(36, 468, 250, 'Mês de referência', $context['month']);
+        $c .= $this->summaryBox(306, 468, 300, 'Total geral de impressões no mês', $context['totals']['Contabilizadas'] . ' páginas');
 
-        $x = 36;
-        foreach ($context['totals'] as $label => $value) {
-            $c .= $this->metricBox($x, 410, 145, $label, (string) $value);
-            $x += 154;
-        }
-
-        $tableY = 366;
-        $columns = [
-            ['label' => 'CPF', 'w' => 82, 'align' => 'left'],
-            ['label' => 'Professor', 'w' => 238, 'align' => 'left'],
-            ['label' => 'Trabalhos', 'w' => 66, 'align' => 'right'],
-            ['label' => 'Páginas', 'w' => 64, 'align' => 'right'],
-            ['label' => 'Cópias', 'w' => 60, 'align' => 'right'],
-            ['label' => 'Total', 'w' => 72, 'align' => 'right'],
-            ['label' => 'Situação', 'w' => 188, 'align' => 'left'],
-        ];
-        $c .= $this->tableHeader(self::MARGIN, $tableY, $columns);
-        $y = $tableY - 30;
+        $c .= $this->explanationBox(
+            36,
+            430,
+            770,
+            'Como o Total é calculado',
+            'Total = soma de cada trabalho concluído: páginas ajustadas por páginas por folha x cópias. Ex.: 4 páginas em 2 por folha x 3 cópias = 6 contabilizadas.'
+        );
 
         if (empty($rows)) {
-            $c .= $this->fillColor(255, 255, 255) . $this->rect(self::MARGIN, $y - 4, 770, 32, 'f');
-            $c .= $this->strokeColor(226, 232, 240) . $this->rect(self::MARGIN, $y - 4, 770, 32, 'S');
-            $c .= $this->text(self::MARGIN + 14, $y + 7, 'Nenhuma impressão encontrada para os filtros selecionados.', 10, false, 71, 85, 105);
+            $c .= $this->fillColor(255, 255, 255) . $this->rect(self::MARGIN, 370, 770, 32, 'f');
+            $c .= $this->strokeColor(226, 232, 240) . $this->rect(self::MARGIN, 370, 770, 32, 'S');
+            $c .= $this->text(self::MARGIN + 14, 382, 'Nenhuma impressão encontrada para os filtros selecionados.', 10, false, 71, 85, 105);
         } else {
-            foreach ($rows as $i => $row) {
-                $status = $this->statusText($row['statuses'] ?? '', $row['failed_jobs'] ?? 0);
-                $error = trim((string) ($row['errors'] ?? ''));
-                if ($error !== '') {
-                    $status .= ' - ' . $this->normalizeStatusList($error);
-                }
-
-                $c .= $this->tableRow(self::MARGIN, $y, $columns, [
-                    $row['cpf'] ?? '',
-                    $row['name'] ?? '',
-                    (string) ((int) ($row['jobs'] ?? 0)),
-                    (string) ((int) ($row['pages'] ?? 0)),
-                    (string) ((int) ($row['copies'] ?? 0)),
-                    (string) ((int) ($row['charged_pages'] ?? 0)),
-                    $status,
-                ], $i % 2 === 1);
-                $y -= 28;
-            }
+            $c .= $this->teacherTotalsTable(36, 400, $rows);
         }
 
         $c .= $this->strokeColor(203, 213, 225) . $this->line(36, 36, 806, 36);
@@ -141,6 +111,67 @@ class PdfReportService
         $c .= $this->strokeColor(226, 232, 240) . $this->rect($x, $y, $w, 44, 'S');
         $c .= $this->text($x + 12, $y + 27, $label, 8, false, 100, 116, 139);
         $c .= $this->text($x + 12, $y + 8, $value, 16, true, 15, 118, 110);
+
+        return $c;
+    }
+
+    private function explanationBox($x, $y, $w, $label, $value)
+    {
+        $c = $this->fillColor(236, 253, 245) . $this->rect($x, $y, $w, 24, 'f');
+        $c .= $this->strokeColor(167, 243, 208) . $this->rect($x, $y, $w, 24, 'S');
+        $c .= $this->text($x + 10, $y + 9, $label . ':', 8.5, true, 6, 95, 70);
+        $c .= $this->text($x + 136, $y + 9, $this->fitText($value, $w - 146, 8.2, false), 8.2, false, 15, 81, 50);
+
+        return $c;
+    }
+
+    private function teacherTotalsTable($x, $y, $rows)
+    {
+        $c = '';
+        $leftX = $x;
+        $rightX = $x + 397;
+        $groupWidth = 373;
+        $nameWidth = 288;
+        $totalWidth = 85;
+        $rowHeight = 22;
+        $rowsPerColumn = 16;
+
+        $c .= $this->teacherTotalsHeader($leftX, $y, $nameWidth, $totalWidth);
+        $c .= $this->teacherTotalsHeader($rightX, $y, $nameWidth, $totalWidth);
+
+        for ($i = 0; $i < $rowsPerColumn; $i++) {
+            $rowY = $y - 24 - ($i * $rowHeight);
+            $leftRow = $rows[$i] ?? null;
+            $rightRow = $rows[$i + $rowsPerColumn] ?? null;
+
+            if ($leftRow !== null) {
+                $c .= $this->teacherTotalsRow($leftX, $rowY, $groupWidth, $nameWidth, $totalWidth, $leftRow, $i % 2 === 1);
+            }
+            if ($rightRow !== null) {
+                $c .= $this->teacherTotalsRow($rightX, $rowY, $groupWidth, $nameWidth, $totalWidth, $rightRow, $i % 2 === 1);
+            }
+        }
+
+        return $c;
+    }
+
+    private function teacherTotalsHeader($x, $y, $nameWidth, $totalWidth)
+    {
+        $c = $this->fillColor(15, 23, 42) . $this->rect($x, $y, $nameWidth + $totalWidth, 22, 'f');
+        $c .= $this->text($x + 8, $y + 7, 'Professor', 8.5, true, 255, 255, 255);
+        $c .= $this->textRight($x + $nameWidth + $totalWidth - 8, $y + 7, 'Total', 8.5, true, 255, 255, 255);
+
+        return $c;
+    }
+
+    private function teacherTotalsRow($x, $y, $groupWidth, $nameWidth, $totalWidth, $row, $alt)
+    {
+        $c = $this->fillColor($alt ? 241 : 255, $alt ? 245 : 255, $alt ? 249 : 255) . $this->rect($x, $y - 4, $groupWidth, 22, 'f');
+        $c .= $this->strokeColor(226, 232, 240) . $this->line($x, $y - 4, $x + $groupWidth, $y - 4);
+        $name = $this->fitText((string) ($row['name'] ?? ''), $nameWidth - 16, 8.5, false);
+        $total = (string) ((int) ($row['charged_pages'] ?? 0));
+        $c .= $this->text($x + 8, $y + 4, $name, 8.5, false, 30, 41, 59);
+        $c .= $this->textRight($x + $nameWidth + $totalWidth - 8, $y + 4, $total, 8.5, true, 15, 118, 110);
 
         return $c;
     }
