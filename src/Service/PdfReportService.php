@@ -2,8 +2,8 @@
 
 class PdfReportService
 {
-    private const PAGE_WIDTH = 842;
-    private const PAGE_HEIGHT = 595;
+    private const PAGE_WIDTH = 595;
+    private const PAGE_HEIGHT = 842;
     private const MARGIN = 36;
 
     public function monthlyReport($title, $filters, $rows)
@@ -46,7 +46,7 @@ class PdfReportService
     private function buildPdf($context, $rows)
     {
         $pages = [];
-        $pageRows = array_chunk($rows, 32);
+        $pageRows = array_chunk($rows, 24);
         if (empty($pageRows)) {
             $pageRows = [[]];
         }
@@ -64,25 +64,25 @@ class PdfReportService
         $c = '';
         $c .= $this->fillColor(248, 250, 252) . $this->rect(0, 0, self::PAGE_WIDTH, self::PAGE_HEIGHT, 'f');
         $c .= $this->fillColor(22, 78, 99) . $this->rect(0, self::PAGE_HEIGHT - 86, self::PAGE_WIDTH, 86, 'f');
-        $c .= $this->text(36, 545, $context['title'], 20, true, 255, 255, 255);
-        $c .= $this->text(36, 520, 'Relatório mensal de impressões por professor', 10, false, 219, 234, 254);
-        $c .= $this->textRight(806, 545, 'Gerado em ' . $context['generated_at'], 9, false, 219, 234, 254);
-        $c .= $this->textRight(806, 520, 'Página ' . $pageNumber . ' de ' . $pageCount, 9, false, 219, 234, 254);
+        $c .= $this->text(36, 792, $context['title'], 20, true, 255, 255, 255);
+        $c .= $this->text(36, 767, 'Relatório mensal de impressões por professor', 10, false, 219, 234, 254);
+        $c .= $this->textRight(559, 792, 'Gerado em ' . $context['generated_at'], 9, false, 219, 234, 254);
+        $c .= $this->textRight(559, 767, 'Página ' . $pageNumber . ' de ' . $pageCount, 9, false, 219, 234, 254);
 
-        $c .= $this->summaryBox(36, 468, 250, 'Mês de referência', $context['month']);
-        $c .= $this->summaryBox(306, 468, 300, 'Total geral de impressões no mês', $context['totals']['Contabilizadas'] . ' páginas');
+        $c .= $this->summaryBox(36, 700, 250, 'Mês de referência', $context['month']);
+        $c .= $this->summaryBox(306, 700, 253, 'Total geral de impressões no mês', $context['totals']['Contabilizadas'] . ' páginas');
 
         if (empty($rows)) {
-            $c .= $this->fillColor(255, 255, 255) . $this->rect(self::MARGIN, 400, 770, 32, 'f');
-            $c .= $this->strokeColor(226, 232, 240) . $this->rect(self::MARGIN, 400, 770, 32, 'S');
-            $c .= $this->text(self::MARGIN + 14, 412, 'Nenhuma impressão encontrada para os filtros selecionados.', 10, false, 71, 85, 105);
+            $c .= $this->fillColor(255, 255, 255) . $this->rect(self::MARGIN, 632, 523, 32, 'f');
+            $c .= $this->strokeColor(226, 232, 240) . $this->rect(self::MARGIN, 632, 523, 32, 'S');
+            $c .= $this->text(self::MARGIN + 14, 644, 'Nenhuma impressão encontrada para os filtros selecionados.', 10, false, 71, 85, 105);
         } else {
-            $c .= $this->teacherTotalsTable(36, 430, $rows);
+            $c .= $this->teacherTotalsTable(36, 662, $rows);
         }
 
-        $c .= $this->strokeColor(203, 213, 225) . $this->line(36, 36, 806, 36);
-        $c .= $this->text(36, 20, 'Sistema de Impressão Escolar - relatório gerado automaticamente a partir das tentativas registradas.', 8, false, 100, 116, 139);
-        $c .= $this->text(698, 20, 'Falhas não entram no acumulado.', 8, false, 100, 116, 139);
+        $c .= $this->strokeColor(203, 213, 225) . $this->line(36, 50, 559, 50);
+        $c .= $this->text(36, 34, 'Sistema de Impressão Escolar - relatório gerado automaticamente a partir das tentativas registradas.', 8, false, 100, 116, 139);
+        $c .= $this->text(36, 20, 'Falhas não entram no acumulado.', 8, false, 100, 116, 139);
 
         return $c;
     }
@@ -110,27 +110,20 @@ class PdfReportService
     private function teacherTotalsTable($x, $y, $rows)
     {
         $c = '';
-        $leftX = $x;
-        $rightX = $x + 397;
-        $groupWidth = 373;
-        $nameWidth = 288;
+        $groupWidth = 523;
+        $nameWidth = 438;
         $totalWidth = 85;
         $rowHeight = 22;
-        $rowsPerColumn = 16;
+        $rowsPerPage = 24;
 
-        $c .= $this->teacherTotalsHeader($leftX, $y, $nameWidth, $totalWidth);
-        $c .= $this->teacherTotalsHeader($rightX, $y, $nameWidth, $totalWidth);
+        $c .= $this->teacherTotalsHeader($x, $y, $nameWidth, $totalWidth);
 
-        for ($i = 0; $i < $rowsPerColumn; $i++) {
+        for ($i = 0; $i < $rowsPerPage; $i++) {
             $rowY = $y - 24 - ($i * $rowHeight);
-            $leftRow = $rows[$i] ?? null;
-            $rightRow = $rows[$i + $rowsPerColumn] ?? null;
+            $row = $rows[$i] ?? null;
 
-            if ($leftRow !== null) {
-                $c .= $this->teacherTotalsRow($leftX, $rowY, $groupWidth, $nameWidth, $totalWidth, $leftRow, $i % 2 === 1);
-            }
-            if ($rightRow !== null) {
-                $c .= $this->teacherTotalsRow($rightX, $rowY, $groupWidth, $nameWidth, $totalWidth, $rightRow, $i % 2 === 1);
+            if ($row !== null) {
+                $c .= $this->teacherTotalsRow($x, $rowY, $groupWidth, $nameWidth, $totalWidth, $row, $i % 2 === 1);
             }
         }
 

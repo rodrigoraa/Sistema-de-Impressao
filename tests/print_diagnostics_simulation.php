@@ -46,4 +46,9 @@ if (substr($pdf, 0, 5) !== '%PDF-') {
     exit(1);
 }
 
+if (strpos($pdf, '/MediaBox [0 0 595 842]') === false) {
+    fwrite(STDERR, "PDF mensal nao esta em modo retrato\n");
+    exit(1);
+}
+
 echo "PDF mensal: OK (" . strlen($pdf) . " bytes)\n";
