@@ -46,7 +46,7 @@ class PdfReportService
     private function buildPdf($context, $rows)
     {
         $pages = [];
-        $pageRows = array_chunk($rows, 12);
+        $pageRows = array_chunk($rows, 10);
         if (empty($pageRows)) {
             $pageRows = [[]];
         }
@@ -66,8 +66,8 @@ class PdfReportService
         $c .= $this->fillColor(22, 78, 99) . $this->rect(0, self::PAGE_HEIGHT - 86, self::PAGE_WIDTH, 86, 'f');
         $c .= $this->text(36, 545, $context['title'], 20, true, 255, 255, 255);
         $c .= $this->text(36, 520, 'Relatório mensal de impressões por professor', 10, false, 219, 234, 254);
-        $c .= $this->text(650, 545, 'Gerado em ' . $context['generated_at'], 9, false, 219, 234, 254);
-        $c .= $this->text(735, 520, 'Página ' . $pageNumber . ' de ' . $pageCount, 9, false, 219, 234, 254);
+        $c .= $this->textRight(806, 545, 'Gerado em ' . $context['generated_at'], 9, false, 219, 234, 254);
+        $c .= $this->textRight(806, 520, 'Página ' . $pageNumber . ' de ' . $pageCount, 9, false, 219, 234, 254);
 
         $c .= $this->summaryBox(36, 470, 170, 'Mês de referência', $context['month']);
         $c .= $this->summaryBox(216, 470, 210, 'Professor', $context['cpf']);
@@ -82,13 +82,13 @@ class PdfReportService
 
         $tableY = 366;
         $columns = [
-            ['label' => 'CPF', 'w' => 88, 'align' => 'left'],
-            ['label' => 'Professor', 'w' => 230, 'align' => 'left'],
-            ['label' => 'Trabalhos', 'w' => 72, 'align' => 'right'],
-            ['label' => 'Páginas', 'w' => 70, 'align' => 'right'],
-            ['label' => 'Cópias', 'w' => 70, 'align' => 'right'],
-            ['label' => 'Total', 'w' => 90, 'align' => 'right'],
-            ['label' => 'Situação', 'w' => 150, 'align' => 'left'],
+            ['label' => 'CPF', 'w' => 82, 'align' => 'left'],
+            ['label' => 'Professor', 'w' => 238, 'align' => 'left'],
+            ['label' => 'Trabalhos', 'w' => 66, 'align' => 'right'],
+            ['label' => 'Páginas', 'w' => 64, 'align' => 'right'],
+            ['label' => 'Cópias', 'w' => 60, 'align' => 'right'],
+            ['label' => 'Total', 'w' => 72, 'align' => 'right'],
+            ['label' => 'Situação', 'w' => 188, 'align' => 'left'],
         ];
         $c .= $this->tableHeader(self::MARGIN, $tableY, $columns);
         $y = $tableY - 30;
@@ -99,6 +99,12 @@ class PdfReportService
             $c .= $this->text(self::MARGIN + 14, $y + 7, 'Nenhuma impressão encontrada para os filtros selecionados.', 10, false, 71, 85, 105);
         } else {
             foreach ($rows as $i => $row) {
+                $status = $this->statusText($row['statuses'] ?? '', $row['failed_jobs'] ?? 0);
+                $error = trim((string) ($row['errors'] ?? ''));
+                if ($error !== '') {
+                    $status .= ' - ' . $this->normalizeStatusList($error);
+                }
+
                 $c .= $this->tableRow(self::MARGIN, $y, $columns, [
                     $row['cpf'] ?? '',
                     $row['name'] ?? '',
@@ -106,13 +112,8 @@ class PdfReportService
                     (string) ((int) ($row['pages'] ?? 0)),
                     (string) ((int) ($row['copies'] ?? 0)),
                     (string) ((int) ($row['charged_pages'] ?? 0)),
-                    $this->statusText($row['statuses'] ?? '', $row['failed_jobs'] ?? 0),
+                    $status,
                 ], $i % 2 === 1);
-
-                $error = trim((string) ($row['errors'] ?? ''));
-                if ($error !== '') {
-                    $c .= $this->text(686, $y - 8, $this->shortText($this->normalizeStatusList($error), 38), 7.5, false, 185, 28, 28);
-                }
                 $y -= 28;
             }
         }
@@ -129,7 +130,7 @@ class PdfReportService
         $c = $this->fillColor(255, 255, 255) . $this->rect($x, $y, $w, 48, 'f');
         $c .= $this->strokeColor(226, 232, 240) . $this->rect($x, $y, $w, 48, 'S');
         $c .= $this->text($x + 12, $y + 30, $label, 8, true, 100, 116, 139);
-        $c .= $this->text($x + 12, $y + 13, $this->shortText($value, (int) floor($w / 5.5)), 10, true, 15, 23, 42);
+        $c .= $this->text($x + 12, $y + 13, $this->fitText($value, $w - 24, 10, true), 10, true, 15, 23, 42);
 
         return $c;
     }
@@ -149,7 +150,7 @@ class PdfReportService
         $c = $this->fillColor(15, 23, 42) . $this->rect($x, $y, 770, 24, 'f');
         $cursor = $x;
         foreach ($columns as $column) {
-            $c .= $this->text($cursor + 8, $y + 8, $column['label'], 8.5, true, 255, 255, 255);
+            $c .= $this->text($cursor + 8, $y + 8, $this->fitText($column['label'], $column['w'] - 16, 8.5, true), 8.5, true, 255, 255, 255);
             $cursor += $column['w'];
         }
 
@@ -162,10 +163,10 @@ class PdfReportService
         $c .= $this->strokeColor(226, 232, 240) . $this->line($x, $y - 4, $x + 770, $y - 4);
         $cursor = $x;
         foreach ($columns as $i => $column) {
-            $value = $this->shortText((string) ($values[$i] ?? ''), (int) floor($column['w'] / 5.2));
+            $value = $this->fitText((string) ($values[$i] ?? ''), $column['w'] - 16, 8.5, false);
             $textX = $cursor + 8;
             if (($column['align'] ?? 'left') === 'right') {
-                $textX = $cursor + $column['w'] - 8 - min(strlen($this->pdfText($value)) * 4.6, $column['w'] - 16);
+                $textX = $cursor + $column['w'] - 8 - $this->textWidth($value, 8.5, false);
             }
             $c .= $this->text($textX, $y + 6, $value, 8.5, false, 30, 41, 59);
             $cursor += $column['w'];
@@ -228,6 +229,11 @@ class PdfReportService
             $y,
             $this->escape($this->pdfText($text))
         );
+    }
+
+    private function textRight($rightX, $y, $text, $size = 10, $bold = false, $r = 0, $g = 0, $b = 0)
+    {
+        return $this->text($rightX - $this->textWidth($text, $size, $bold), $y, $text, $size, $bold, $r, $g, $b);
     }
 
     private function rect($x, $y, $w, $h, $mode)
@@ -334,6 +340,51 @@ class PdfReportService
         }
 
         return rtrim(substr($text, 0, max(1, $limit - 3))) . '...';
+    }
+
+    private function fitText($text, $maxWidth, $size, $bold = false)
+    {
+        $text = trim(preg_replace('/\s+/', ' ', (string) $text));
+        if ($this->textWidth($text, $size, $bold) <= $maxWidth) {
+            return $text;
+        }
+
+        $ellipsis = '...';
+        $available = max(1, $maxWidth - $this->textWidth($ellipsis, $size, $bold));
+        $out = '';
+        $chars = preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY);
+        foreach ($chars as $char) {
+            if ($this->textWidth($out . $char, $size, $bold) > $available) {
+                break;
+            }
+            $out .= $char;
+        }
+
+        return rtrim($out) . $ellipsis;
+    }
+
+    private function textWidth($text, $size, $bold = false)
+    {
+        $width = 0;
+        $bytes = str_split($this->pdfText($text));
+        foreach ($bytes as $char) {
+            $ord = ord($char);
+            if ($char === ' ') {
+                $width += 0.28;
+            } elseif ($ord >= 48 && $ord <= 57) {
+                $width += 0.56;
+            } elseif ($ord >= 65 && $ord <= 90) {
+                $width += 0.66;
+            } elseif ($ord >= 97 && $ord <= 122) {
+                $width += 0.50;
+            } elseif (str_contains('.,:;!-_/\\()[]', $char)) {
+                $width += 0.30;
+            } else {
+                $width += 0.54;
+            }
+        }
+
+        return $width * $size * ($bold ? 1.05 : 1);
     }
 
     private function pdfText($text)

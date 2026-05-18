@@ -198,18 +198,17 @@
                                             <i class="bi bi-person-gear"></i> Imprimir para
                                         </label>
 
-                                        <input list="users" name="target_user" class="form-control">
+                                        <input list="users" name="target_user_search" id="targetUserSearch" class="form-control" autocomplete="off">
+                                        <input type="hidden" name="target_user" id="targetUserCpf">
 
                                         <datalist id="users">
                                             <?php foreach ($userList as $u): ?>
-                                                <option value="<?= $u['cpf'] ?>">
-                                                    <?= $u['name'] ?>
-                                                </option>
+                                                <option value="<?= htmlspecialchars($u['name'] . ' - ' . $u['cpf']) ?>"></option>
                                             <?php endforeach; ?>
                                         </datalist>
 
                                         <small class="text-muted">
-                                            Você está imprimindo em nome de outro usuário
+                                            Selecione o professor pelo nome para contabilizar no CPF correto
                                         </small>
 
                                     </div>
@@ -298,15 +297,70 @@
         const btnPrint = document.getElementById('btnPrint');
         const resultBox = document.getElementById('printResult');
         const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
+        const adminUsers = <?= json_encode($userList ?? [], JSON_UNESCAPED_UNICODE) ?>;
         let pageCountToken = 0;
         let previewToken = 0;
         let previewObjectUrl = '';
         const scaleSelect = document.querySelector('[name="scale"]');
         const scaleCustomBox = document.getElementById('scaleCustomBox');
+        const targetUserSearch = document.getElementById('targetUserSearch');
+        const targetUserCpf = document.getElementById('targetUserCpf');
 
         scaleSelect.addEventListener('change', () => {
             scaleCustomBox.classList.toggle('d-none', scaleSelect.value !== 'custom');
         });
+
+        function normalizePersonSearch(value) {
+            return String(value || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .toLowerCase();
+        }
+
+        function selectedAdminUser(value) {
+            const text = String(value || '').trim();
+            const digits = text.replace(/\D/g, '');
+            const normalized = normalizePersonSearch(text);
+
+            return adminUsers.find(user => {
+                const name = String(user.name || '');
+                const cpf = String(user.cpf || '');
+                const label = `${name} - ${cpf}`;
+
+                return text === cpf
+                    || digits === cpf
+                    || normalizePersonSearch(name) === normalized
+                    || normalizePersonSearch(label) === normalized;
+            }) || null;
+        }
+
+        function syncTargetUserCpf() {
+            if (!targetUserSearch || !targetUserCpf) return true;
+            const value = targetUserSearch.value.trim();
+            if (value === '') {
+                targetUserCpf.value = '';
+                targetUserSearch.setCustomValidity('');
+                return true;
+            }
+
+            const user = selectedAdminUser(value);
+            if (user) {
+                targetUserCpf.value = user.cpf;
+                targetUserSearch.setCustomValidity('');
+                return true;
+            }
+
+            targetUserCpf.value = '';
+            targetUserSearch.setCustomValidity('Selecione um professor da lista.');
+            return false;
+        }
+
+        if (targetUserSearch) {
+            targetUserSearch.addEventListener('input', syncTargetUserCpf);
+            targetUserSearch.addEventListener('change', syncTargetUserCpf);
+        }
 
         // clique
         dropArea.onclick = () => input.click();
@@ -518,6 +572,10 @@
         // envio AJAX para exibir erros sem deixar a pagina presa carregando
         printForm.addEventListener('submit', (event) => {
             event.preventDefault();
+            if (!syncTargetUserCpf()) {
+                printForm.reportValidity();
+                return;
+            }
             resultBox.classList.add('d-none');
             progress.classList.remove('d-none');
             setPrintingState(true);

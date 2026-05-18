@@ -59,7 +59,7 @@ $traduzDiagnostico = function ($valor) {
                     <h1>Relatório de impressão</h1>
                 </div>
                 <div class="action-strip">
-                    <a href="/prints" class="btn btn-outline-secondary"><i class="bi bi-clock-history"></i> Histórico completo</a>
+                    <a href="/prints" class="btn btn-outline-secondary"><i class="bi bi-clock-history"></i> Histórico</a>
                     <a href="/prints?status=active" class="btn btn-outline-primary"><i class="bi bi-list-task"></i> Fila de impressão</a>
                     <a href="/prints?status=failed" class="btn btn-outline-danger"><i class="bi bi-exclamation-triangle"></i> Impressões com erro</a>
                     <a href="/" class="btn btn-primary"><i class="bi bi-printer"></i> Nova impressão</a>

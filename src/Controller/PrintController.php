@@ -119,12 +119,7 @@ class PrintController
         $this->validateCsrfOrFail();
 
         // Determina usuário final da impressão
-        $cpfList = array_column($userList, 'cpf');
-        if ($isAdmin && !empty($_POST['target_user']) && in_array($_POST['target_user'], $cpfList, true)) {
-            $user = $_POST['target_user'];
-        } else {
-            $user = $_SESSION['user'];
-        }
+        $user = $this->resolvePrintUser($isAdmin, $userList);
         $jobService = new PrintJobService();
 
         // Validação inicial
@@ -545,6 +540,60 @@ class PrintController
         }
 
         return max(1, count($selected));
+    }
+
+    private function resolvePrintUser($isAdmin, $userList)
+    {
+        if (!$isAdmin) {
+            return $_SESSION['user'];
+        }
+
+        $target = preg_replace('/\D/', '', (string) ($_POST['target_user'] ?? ''));
+        $search = trim((string) ($_POST['target_user_search'] ?? ''));
+
+        if ($target === '' && $search === '') {
+            return $_SESSION['user'];
+        }
+
+        foreach ($userList as $user) {
+            $cpf = (string) ($user['cpf'] ?? '');
+            $name = (string) ($user['name'] ?? '');
+            if ($target !== '' && $target === $cpf) {
+                return $cpf;
+            }
+
+            if ($search !== '' && $this->sameTeacherSearch($search, $name, $cpf)) {
+                return $cpf;
+            }
+        }
+
+        $this->fail('Selecione um professor válido da lista antes de imprimir.');
+    }
+
+    private function sameTeacherSearch($search, $name, $cpf)
+    {
+        $digits = preg_replace('/\D/', '', $search);
+        if ($digits !== '' && $digits === $cpf) {
+            return true;
+        }
+
+        $normalizedSearch = $this->normalizeTeacherSearch($search);
+        if ($normalizedSearch === '') {
+            return false;
+        }
+
+        return $normalizedSearch === $this->normalizeTeacherSearch($name)
+            || $normalizedSearch === $this->normalizeTeacherSearch($name . ' - ' . $cpf);
+    }
+
+    private function normalizeTeacherSearch($value)
+    {
+        $value = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', (string) $value);
+        $value = $value === false ? '' : $value;
+        $value = strtolower($value);
+        $value = preg_replace('/\s+/', ' ', $value);
+
+        return trim($value);
     }
 
     private function previewPdfName($name)
