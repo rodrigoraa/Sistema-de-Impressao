@@ -230,6 +230,11 @@ if ($uri === '/admin/report/pdf') {
     exit;
 }
 
+if ($uri === '/admin/storage/cleanup') {
+    (new AdminController())->cleanupStorage();
+    exit;
+}
+
 if ($uri === '/admin/users') {
     (new UserController())->index();
     exit;

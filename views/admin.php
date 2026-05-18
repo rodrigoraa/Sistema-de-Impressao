@@ -53,6 +53,12 @@ $traduzDiagnostico = function ($valor) {
         </header>
 
         <main class="container py-4">
+            <?php if (!empty($_SESSION['flash'])): ?>
+                <div class="alert alert-<?= ($_SESSION['flash_type'] ?? '') === 'error' ? 'danger' : 'success' ?>">
+                    <?= htmlspecialchars($_SESSION['flash']); unset($_SESSION['flash'], $_SESSION['flash_type']); ?>
+                </div>
+            <?php endif; ?>
+
             <section class="page-title">
                 <div>
                     <p class="section-kicker mb-1">Visão geral</p>
@@ -100,6 +106,65 @@ $traduzDiagnostico = function ($valor) {
                 <div class="metric"><span>Impressas</span><strong><?= (int) $jobStats['completed'] ?></strong></div>
                 <div class="metric"><span>Com erro</span><strong><?= (int) $jobStats['failed'] ?></strong></div>
                 <div class="metric"><span>Mês filtrado</span><strong><?= (int) $totalMonth ?></strong></div>
+            </section>
+
+            <section class="panel">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h2 class="panel-title">Arquivos salvos no sistema</h2>
+                        <p class="text-muted mb-0">Apaga arquivos enviados e cópias de diagnóstico, mantendo usuários, histórico e relatórios no banco.</p>
+                    </div>
+                </div>
+                <?php
+                    $formatBytes = fn($bytes) => (new StorageCleanupService())->formatBytes($bytes);
+                    $uploads = $storageStats['uploads'] ?? ['files' => 0, 'bytes' => 0, 'path' => '', 'exists' => false];
+                    $debug = $storageStats['debug'] ?? ['files' => 0, 'bytes' => 0, 'path' => '', 'exists' => false];
+                ?>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <div class="metric">
+                            <span>Uploads</span>
+                            <strong><?= (int) $uploads['files'] ?> arquivo(s)</strong>
+                            <small class="text-muted"><?= htmlspecialchars($formatBytes($uploads['bytes'])) ?></small>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="metric">
+                            <span>Diagnósticos</span>
+                            <strong><?= (int) $debug['files'] ?> arquivo(s)</strong>
+                            <small class="text-muted"><?= htmlspecialchars($formatBytes($debug['bytes'])) ?></small>
+                        </div>
+                    </div>
+                </div>
+
+                <form method="post" action="/admin/storage/cleanup" class="row g-3 align-items-end" onsubmit="return confirm('Apagar os arquivos selecionados? O histórico continuará no sistema, mas download/reimpressão desses arquivos pode deixar de funcionar.');">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                    <div class="col-md-3">
+                        <label class="form-label">Apagar arquivos</label>
+                        <select name="older_than_days" class="form-select">
+                            <option value="30">Com mais de 30 dias</option>
+                            <option value="15">Com mais de 15 dias</option>
+                            <option value="7">Com mais de 7 dias</option>
+                            <option value="0">Todos</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Pastas</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="areas[]" value="uploads" id="clean_uploads" checked>
+                                <label class="form-check-label" for="clean_uploads">Uploads</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="areas[]" value="debug" id="clean_debug" checked>
+                                <label class="form-check-label" for="clean_debug">Diagnósticos</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-outline-danger w-100"><i class="bi bi-trash"></i> Apagar arquivos</button>
+                    </div>
+                </form>
             </section>
 
             <section class="panel">
