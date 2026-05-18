@@ -6,13 +6,13 @@ require_once __DIR__ . '/../src/Service/PdfReportService.php';
 $cups = new CupsService('kyocera-escola');
 
 $cases = [
-    'impressora disabled' => 'printer kyocera-escola disabled since Mon printer-state-message="Paused"',
-    'rejecting jobs' => 'kyocera-escola not accepting requests since Mon',
+    'impressora desativada' => 'printer kyocera-escola disabled since Mon printer-state-message="Paused"',
+    'impressora recusando trabalhos' => 'kyocera-escola not accepting requests since Mon',
     'CUPS fora do ar' => 'lpstat: Scheduler is not running',
     'arquivo invalido' => 'lp: Error - cannot open file',
     'erro no lp' => 'lp: Permission denied',
-    'job aceito' => 'request id is kyocera-escola-123 (1 file(s))',
-    'job cancelado' => 'kyocera-escola-123 user 1024 Mon canceled',
+    'trabalho aceito' => 'request id is kyocera-escola-123 (1 file(s))',
+    'trabalho cancelado' => 'kyocera-escola-123 user 1024 Mon canceled',
     'falha filtro' => 'stopped "Filter failed"',
     'falta papel' => 'printer-state-reasons=media-empty-warning',
     'toner' => 'marker-supply-low-warning toner low',
@@ -24,7 +24,7 @@ foreach ($cases as $name => $text) {
     echo "- {$name}: " . ($reason !== '' ? $reason : 'sem erro classificado') . "\n";
 }
 
-$pdf = (new PdfReportService())->monthlyReport('Relatorio mensal de impressoes', [
+$pdf = (new PdfReportService())->monthlyReport('Relatório mensal de impressões', [
     'month' => '2026-05',
     'cpf' => '',
     'include_failures' => true,

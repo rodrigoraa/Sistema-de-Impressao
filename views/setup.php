@@ -22,7 +22,7 @@
         <section class="login-panel">
 
             <div class="panel-copy">
-                <h2>Admin inicial</h2>
+                <h2>Administrador inicial</h2>
                 <p>Esse passo é necessário na primeira execução.</p>
             </div>
 
@@ -50,7 +50,7 @@
                     <input type="password" name="password" class="form-control" required autocomplete="new-password">
                 </div>
 
-                <button class="btn btn-primary w-100">Criar admin</button>
+                <button class="btn btn-primary w-100">Criar administrador</button>
 
             </form>
 

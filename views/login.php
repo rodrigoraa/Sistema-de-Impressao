@@ -96,7 +96,7 @@
                 </div>
                 <div>
                     <i class="bi bi-shield-lock"></i>
-                    <span>Admin usa CPF + senha</span>
+                    <span>Administrador usa CPF + senha</span>
                 </div>
             </div>
 

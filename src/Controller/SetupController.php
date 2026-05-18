@@ -36,12 +36,12 @@ class SetupController
 
             $res = $stmt->execute();
             if (!$res) {
-                $_SESSION['flash'] = 'Erro ao criar admin: ' . $db->lastErrorMsg();
+                $_SESSION['flash'] = 'Erro ao criar administrador: ' . $db->lastErrorMsg();
                 header('Location: /setup');
                 exit;
             }
 
-            $_SESSION['flash'] = 'Admin criado. Faça login.';
+                $_SESSION['flash'] = 'Administrador criado. Faça login.';
             header('Location: /login');
             exit;
         }

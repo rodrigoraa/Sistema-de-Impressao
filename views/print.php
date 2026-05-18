@@ -55,7 +55,7 @@
                     <p>Envie o arquivo, revise as opções e acompanhe pela fila quando precisar.</p>
                 </div>
                 <div class="d-flex gap-2">
-                    <a href="/prints?status=completed" class="btn btn-outline-secondary btn-sm">
+                    <a href="/prints" class="btn btn-outline-secondary btn-sm">
                         <i class="bi bi-clock-history"></i> Histórico
                     </a>
                     <?php if ($_SESSION['role'] === 'admin'): ?>
@@ -252,7 +252,7 @@
                                 </a>
                                 <?php if ($_SESSION['role'] === 'admin'): ?>
                                     <a href="/admin">
-                                        <span><i class="bi bi-speedometer2"></i> Abrir painel admin</span>
+                                        <span><i class="bi bi-speedometer2"></i> Abrir painel administrativo</span>
                                         <i class="bi bi-chevron-right"></i>
                                     </a>
                                 <?php endif; ?>

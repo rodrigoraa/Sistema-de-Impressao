@@ -122,7 +122,7 @@ class CupsService
         ];
 
         if (!is_file($filePath)) {
-            return $this->failedPreflight($checks, 'Arquivo nao encontrado');
+            return $this->failedPreflight($checks, 'Arquivo não encontrado');
         }
         if (@filesize($filePath) < 1) {
             return $this->failedPreflight($checks, 'Arquivo vazio');
@@ -130,16 +130,16 @@ class CupsService
 
         $diag = $checks['diagnostics'];
         if ($diag['cups_active'] === false) {
-            return $this->failedPreflight($checks, 'CUPS parado ou inacessivel');
+            return $this->failedPreflight($checks, 'CUPS parado ou inacessível');
         }
         if (!$diag['printer_exists']) {
-            return $this->failedPreflight($checks, 'Impressora nao encontrada no CUPS');
+            return $this->failedPreflight($checks, 'Impressora não encontrada no CUPS');
         }
         if ($diag['enabled'] === false) {
             return $this->failedPreflight($checks, 'Impressora desativada');
         }
         if ($diag['accepting'] === false) {
-            return $this->failedPreflight($checks, 'Impressora nao esta aceitando jobs');
+            return $this->failedPreflight($checks, 'Impressora não está aceitando impressões');
         }
 
         return $checks;
@@ -242,7 +242,7 @@ class CupsService
         return [
             'completed' => false,
             'status_cups' => 'timeout',
-            'error_message' => 'Timeout aguardando conclusao do job no CUPS',
+            'error_message' => 'Tempo esgotado aguardando conclusão do trabalho no CUPS',
         ];
     }
 
@@ -250,20 +250,20 @@ class CupsService
     {
         $text = strtolower((string) $text);
         $map = [
-            'cups parado ou erro de comunicacao' => ['connection refused', 'bad file descriptor', 'scheduler is not running', 'failed to connect', 'cups server', 'not running'],
-            'permissao negada' => ['permission denied', 'forbidden', 'not authorized', 'unauthorized'],
+            'CUPS parado ou erro de comunicação' => ['connection refused', 'bad file descriptor', 'scheduler is not running', 'failed to connect', 'cups server', 'not running'],
+            'permissão negada' => ['permission denied', 'forbidden', 'not authorized', 'unauthorized'],
             'falha no filtro do CUPS' => ['filter failed', 'filter error', 'unsupported document-format'],
-            'job cancelado' => ['canceled', 'cancelled', 'aborted'],
+            'trabalho cancelado' => ['canceled', 'cancelled', 'aborted'],
             'impressora desativada' => ['disabled', 'paused', 'stopped'],
-            'impressora nao aceita jobs' => ['not accepting', 'rejecting'],
+            'impressora não aceita impressões' => ['not accepting', 'rejecting'],
             'falta de papel' => ['media-empty', 'paper-empty', 'out of paper', 'no paper', 'paper out'],
             'atolamento de papel' => ['paper-jam', 'jammed', 'paper jam'],
             'toner ou suprimento' => ['toner', 'marker-supply', 'marker-waste', 'ink-empty', 'ink-low'],
             'offline' => ['offline', 'not connected', 'unreachable'],
-            'formato nao suportado' => ['unsupported format', 'unsupported document', 'unsupported document-format'],
-            'arquivo invalido' => ['empty file', 'no file', 'cannot open file', 'not a pdf'],
-            'timeout' => ['timeout', 'timed out'],
-            'erro de comunicacao' => ['backend failed', 'communication', 'network host', 'broken pipe'],
+            'formato não suportado' => ['unsupported format', 'unsupported document', 'unsupported document-format'],
+            'arquivo inválido' => ['empty file', 'no file', 'cannot open file', 'not a pdf'],
+            'tempo esgotado' => ['timeout', 'timed out'],
+            'erro de comunicação' => ['backend failed', 'communication', 'network host', 'broken pipe'],
         ];
 
         foreach ($map as $label => $needles) {

@@ -96,7 +96,7 @@
 
                                             <td>
                                                 <?php if ($u['role'] === 'admin'): ?>
-                                                    <span class="badge role-badge-admin">Admin</span>
+                                                    <span class="badge role-badge-admin">Administrador</span>
                                                 <?php else: ?>
                                                     <span class="badge role-badge-user">Professor</span>
                                                 <?php endif; ?>

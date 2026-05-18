@@ -81,7 +81,7 @@
                         </div>
 
                         <div class="col-md-6" id="password-wrap" style="display:none;">
-                            <label class="form-label">Senha (somente admin)</label>
+                            <label class="form-label">Senha (somente administrador)</label>
                             <input type="password" name="password" class="form-control">
                         </div>
 

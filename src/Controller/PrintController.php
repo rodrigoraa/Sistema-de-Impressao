@@ -587,14 +587,14 @@ class PrintController
         $messages = [
             UPLOAD_ERR_INI_SIZE => "Arquivo maior que o limite permitido pelo servidor",
             UPLOAD_ERR_FORM_SIZE => "Arquivo maior que o limite permitido pelo formulário",
-            UPLOAD_ERR_PARTIAL => "Upload incompleto",
+            UPLOAD_ERR_PARTIAL => "Envio incompleto",
             UPLOAD_ERR_NO_FILE => "Arquivo não enviado",
             UPLOAD_ERR_NO_TMP_DIR => "Pasta temporária do servidor não configurada",
             UPLOAD_ERR_CANT_WRITE => "Servidor não conseguiu salvar o arquivo enviado",
-            UPLOAD_ERR_EXTENSION => "Upload bloqueado por extensão do PHP",
+            UPLOAD_ERR_EXTENSION => "Envio bloqueado por extensão do PHP",
         ];
 
-        return $messages[$code] ?? "Erro no upload do arquivo";
+        return $messages[$code] ?? "Erro no envio do arquivo";
     }
 
     private function detectMimeType($filePath)

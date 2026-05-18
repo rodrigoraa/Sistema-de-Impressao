@@ -163,6 +163,12 @@ class PrintJobService
             $jobs[] = $row;
         }
 
+        if ($status === '' || $status === 'completed') {
+            $jobs = array_merge($jobs, $this->legacyUsageJobs($user, $isAdmin, $filters));
+            usort($jobs, fn($a, $b) => strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? '')));
+            $jobs = array_slice($jobs, 0, max(1, min(500, (int) $limit)));
+        }
+
         return $jobs;
     }
 
@@ -210,13 +216,36 @@ class PrintJobService
 
         $result = $stmt->execute();
         $row = $result ? $result->fetchArray(SQLITE3_ASSOC) : [];
+        $legacyWhere = [];
+        if (!$isAdmin) {
+            $legacyWhere[] = 'us.user = :user';
+        }
+        $legacyWhere[] = "NOT EXISTS (
+            SELECT 1
+            FROM print_jobs pj
+            WHERE pj.user = us.user
+              AND pj.stored_file = us.file
+        )";
+        $legacySqlWhere = 'WHERE ' . implode(' AND ', $legacyWhere);
+        $legacyStmt = $this->db->prepare("
+            SELECT
+                COUNT(*) AS total,
+                COALESCE(SUM(pages), 0) AS charged
+            FROM usage us
+            {$legacySqlWhere}
+        ");
+        if (!$isAdmin) {
+            $legacyStmt->bindValue(':user', $user, SQLITE3_TEXT);
+        }
+        $legacyResult = $legacyStmt->execute();
+        $legacy = $legacyResult ? $legacyResult->fetchArray(SQLITE3_ASSOC) : [];
 
         return [
-            'total' => (int) ($row['total'] ?? 0),
-            'completed' => (int) ($row['completed'] ?? 0),
+            'total' => (int) ($row['total'] ?? 0) + (int) ($legacy['total'] ?? 0),
+            'completed' => (int) ($row['completed'] ?? 0) + (int) ($legacy['total'] ?? 0),
             'failed' => (int) ($row['failed'] ?? 0),
             'active' => (int) ($row['active'] ?? 0),
-            'charged' => (int) ($row['charged'] ?? 0),
+            'charged' => (int) ($row['charged'] ?? 0) + (int) ($legacy['charged'] ?? 0),
         ];
     }
 
@@ -265,7 +294,7 @@ class PrintJobService
                 $rows[$key] = [
                     'cpf' => $legacy['cpf'],
                     'name' => $legacy['name'],
-                    'jobs' => 0,
+                    'jobs' => (int) $legacy['jobs'],
                     'pages' => (int) $legacy['charged_pages'],
                     'copies' => 0,
                     'charged_pages' => (int) $legacy['charged_pages'],
@@ -276,9 +305,10 @@ class PrintJobService
                 continue;
             }
 
-            if ((int) $legacy['charged_pages'] > (int) $rows[$key]['charged_pages']) {
-                $rows[$key]['charged_pages'] = (int) $legacy['charged_pages'];
-                $rows[$key]['pages'] = max((int) $rows[$key]['pages'], (int) $legacy['charged_pages']);
+            if ((int) $legacy['jobs'] > 0) {
+                $rows[$key]['jobs'] = (int) $rows[$key]['jobs'] + (int) $legacy['jobs'];
+                $rows[$key]['charged_pages'] = (int) $rows[$key]['charged_pages'] + (int) $legacy['charged_pages'];
+                $rows[$key]['pages'] = (int) $rows[$key]['pages'] + (int) $legacy['charged_pages'];
                 $rows[$key]['statuses'] = trim(($rows[$key]['statuses'] ?? '') . ',usage_legacy', ',');
             }
         }
@@ -296,11 +326,18 @@ class PrintJobService
             $where[] = 'us.user = :cpf';
             $params[':cpf'] = [preg_replace('/\D/', '', $cpf), SQLITE3_TEXT];
         }
+        $where[] = "NOT EXISTS (
+            SELECT 1
+            FROM print_jobs pj
+            WHERE pj.user = us.user
+              AND pj.stored_file = us.file
+        )";
 
         $stmt = $this->db->prepare("
             SELECT
                 us.user AS cpf,
                 COALESCE(u.name, us.user) AS name,
+                COUNT(*) AS jobs,
                 COALESCE(SUM(us.pages), 0) AS charged_pages
             FROM usage us
             LEFT JOIN users u ON u.cpf = us.user
@@ -315,6 +352,93 @@ class PrintJobService
         $rows = [];
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    private function legacyUsageJobs($user, $isAdmin, $filters = [])
+    {
+        $where = [];
+        $params = [];
+
+        if (!$isAdmin) {
+            $where[] = 'us.user = :user';
+            $params[':user'] = [$user, SQLITE3_TEXT];
+        }
+
+        if (!empty($filters['cpf'])) {
+            $where[] = 'us.user LIKE :cpf';
+            $params[':cpf'] = ['%' . preg_replace('/\D/', '', (string) $filters['cpf']) . '%', SQLITE3_TEXT];
+        }
+
+        if (!empty($filters['month'])) {
+            $where[] = "strftime('%Y-%m', us.created_at) = :month";
+            $params[':month'] = [(string) $filters['month'], SQLITE3_TEXT];
+        }
+
+        $where[] = "NOT EXISTS (
+            SELECT 1
+            FROM print_jobs pj
+            WHERE pj.user = us.user
+              AND pj.stored_file = us.file
+        )";
+
+        $sql = "
+            SELECT
+                us.id,
+                us.user,
+                u.name AS user_name,
+                us.file,
+                us.pages,
+                us.created_at
+            FROM usage us
+            LEFT JOIN users u ON u.cpf = us.user
+        ";
+        if (!empty($where)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY us.created_at DESC LIMIT 500';
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => [$value, $type]) {
+            $stmt->bindValue($key, $value, $type);
+        }
+
+        $result = $stmt->execute();
+        $rows = [];
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $file = (string) ($row['file'] ?? '');
+            $rows[] = [
+                'id' => 'u' . (int) ($row['id'] ?? 0),
+                'user' => $row['user'] ?? '',
+                'user_name' => $row['user_name'] ?? '',
+                'nome_professor' => $row['user_name'] ?? '',
+                'original_name' => $file !== '' ? basename($file) : 'Registro antigo',
+                'stored_file' => $file,
+                'prepared_file' => null,
+                'source_ext' => $file !== '' ? strtolower(pathinfo($file, PATHINFO_EXTENSION)) : '',
+                'mime_type' => '',
+                'file_size' => ($file !== '' && is_file($file)) ? (int) filesize($file) : 0,
+                'pages' => (int) ($row['pages'] ?? 0),
+                'confirmed_pages' => (int) ($row['pages'] ?? 0),
+                'copies' => 1,
+                'number_up' => 1,
+                'charged_pages' => (int) ($row['pages'] ?? 0),
+                'sides' => '',
+                'orientation' => '',
+                'paper' => '',
+                'status' => 'completed',
+                'cups_job_id' => '',
+                'status_cups' => 'usage_legacy',
+                'error_message' => '',
+                'error_category' => '',
+                'return_code' => null,
+                'created_at' => $row['created_at'] ?? '',
+                'updated_at' => $row['created_at'] ?? '',
+                'completed_at' => $row['created_at'] ?? '',
+                'legacy_usage' => 1,
+            ];
         }
 
         return $rows;

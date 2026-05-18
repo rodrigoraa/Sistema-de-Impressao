@@ -38,11 +38,6 @@ class AdminController
         }
         $jobStats = $jobService->statsForUser($_SESSION['user'], true);
         $printerStatus = (new CupsService())->diagnostics();
-        $recentJobs = $jobService->listForUser($_SESSION['user'], true, $_GET['status'] ?? '', 50, [
-            'cpf' => $cpf,
-            'month' => $month,
-            'error' => $_GET['error'] ?? '',
-        ]);
 
         require __DIR__ . '/../../views/admin.php';
     }
@@ -65,7 +60,7 @@ class AdminController
         $cpf = preg_replace('/\D/', '', $_GET['cpf'] ?? '');
         $includeFailures = !empty($_GET['include_failures']);
         $rows = (new PrintJobService())->monthlySummary($month, $cpf, $includeFailures);
-        $pdf = (new PdfReportService())->monthlyReport('Relatorio mensal de impressoes', [
+        $pdf = (new PdfReportService())->monthlyReport('Relatório mensal de impressões', [
             'month' => $month,
             'cpf' => $cpf,
             'include_failures' => $includeFailures,

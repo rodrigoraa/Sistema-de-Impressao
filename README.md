@@ -11,7 +11,7 @@
 2. Garanta que `mod_rewrite` esteja habilitado.
 
 ## Primeira execução
-- Acesse `/setup` para criar o primeiro usuário `admin`.
+- Acesse `/setup` para criar o primeiro usuário administrador.
 - Depois faça login em `/login` e crie os demais usuários em `/admin/users`.
 
 ## Configuração
@@ -29,9 +29,9 @@ PRINT_JOB_WAIT_SECONDS=120
 ```
 
 ## Auditoria e diagnóstico de impressão
-- Cada tentativa fica registrada em `print_jobs`, inclusive falhas de pré-validação, upload inválido, erro no CUPS, timeout e falha no `lp`.
-- O painel `/admin` mostra `enabled/disabled`, `accepting/rejecting`, `printer-state`, mensagem atual, jobs pendentes/concluídos/cancelados/falhos e o último diagnóstico conhecido.
-- O acumulado mensal considera somente jobs `completed` com `entered_accumulator=1`; falhas não entram no total.
+- Cada tentativa fica registrada em `print_jobs`, inclusive falhas de pré-validação, envio inválido, erro no CUPS, tempo esgotado e falha no `lp`.
+- O painel administrativo mostra impressora ativada/desativada, aceitando/recusando impressões, estado da impressora, mensagem atual, trabalhos pendentes/concluídos/cancelados/falhos e o último diagnóstico conhecido.
+- O acumulado mensal considera somente trabalhos concluídos marcados para entrar no acumulado; falhas não entram no total.
 - O relatório PDF mensal fica em `/admin/report/pdf` e aceita filtros por mês, CPF e inclusão/ocultação de falhas.
 
 ## Comandos Linux úteis
@@ -53,7 +53,7 @@ sudo systemctl status cups
 php tests/print_diagnostics_simulation.php
 ```
 
-## Limite de upload no nginx/PHP
+## Limite de envio no nginx/PHP
 Se aparecer `413 Request Entity Too Large`, o nginx bloqueou o arquivo antes de chegar ao PHP. Ajuste o site do nginx:
 
 ```nginx

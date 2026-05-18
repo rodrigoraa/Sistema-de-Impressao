@@ -60,14 +60,14 @@ class UserController
             }
 
             if (!in_array($role, ['user', 'admin'])) {
-                exit('Role inválida');
+                exit('Tipo de usuário inválido');
             }
 
             $password = null;
             if ($role === 'admin') {
                 $plainPassword = (string) ($_POST['password'] ?? '');
                 if ($plainPassword === '') {
-                    exit('Senha é obrigatória para admin');
+                    exit('Senha é obrigatória para administrador');
                 }
                 $password = password_hash($plainPassword, PASSWORD_DEFAULT);
             }
@@ -142,7 +142,7 @@ class UserController
         }
 
         if (!in_array($role, ['user', 'admin'])) {
-            exit('Role inválida');
+            exit('Tipo de usuário inválido');
         }
 
         // senha opcional

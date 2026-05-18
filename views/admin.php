@@ -1,3 +1,29 @@
+<?php
+$traduzDiagnostico = function ($valor) {
+    $mapa = [
+        'timeout' => 'Tempo esgotado',
+        'job cancelado' => 'Trabalho cancelado',
+        'impressora nao aceita jobs' => 'Impressora não aceita impressões',
+        'impressora nao aceita impressoes' => 'Impressora não aceita impressões',
+        'lp_failed' => 'Falha no comando de impressão',
+        'preflight_failed' => 'Falha antes do envio',
+        'accepted_unverified' => 'Aceito, sem confirmação',
+        'accepted_unidentified' => 'Aceito, ID não identificado',
+        'failed_or_canceled' => 'Falhou ou foi cancelado',
+        'left_queue' => 'Saiu da fila',
+    ];
+    $valor = trim((string) $valor);
+    if (isset($mapa[$valor])) {
+        return $mapa[$valor];
+    }
+
+    return str_ireplace(
+        ['paused', 'disabled', 'enabled', 'accepting requests', 'not accepting requests', 'idle', 'printing', 'stopped', 'filter failed', 'paper jam', 'out of paper', 'toner low', 'offline', 'timeout'],
+        ['pausada', 'desativada', 'ativada', 'aceitando impressões', 'recusando impressões', 'ociosa', 'imprimindo', 'parada', 'falha no filtro', 'atolamento de papel', 'sem papel', 'toner baixo', 'offline', 'tempo esgotado'],
+        $valor
+    );
+};
+?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -33,17 +59,17 @@
                     <h1>Relatório de impressão</h1>
                 </div>
                 <div class="action-strip">
-                    <a href="/prints?status=completed" class="btn btn-outline-secondary"><i class="bi bi-clock-history"></i> Histórico</a>
+                    <a href="/prints" class="btn btn-outline-secondary"><i class="bi bi-clock-history"></i> Histórico completo</a>
+                    <a href="/prints?status=active" class="btn btn-outline-primary"><i class="bi bi-list-task"></i> Fila de impressão</a>
+                    <a href="/prints?status=failed" class="btn btn-outline-danger"><i class="bi bi-exclamation-triangle"></i> Impressões com erro</a>
                     <a href="/" class="btn btn-primary"><i class="bi bi-printer"></i> Nova impressão</a>
                     <a href="/admin/users" class="btn btn-outline-secondary"><i class="bi bi-people"></i> Usuários</a>
-                    <a href="/prints?status=failed" class="btn btn-outline-danger"><i class="bi bi-exclamation-triangle"></i> Ver erros</a>
-                <a href="/prints?status=active" class="btn btn-outline-primary"><i class="bi bi-list-task"></i> Fila de impressão</a>
                 </div>
             </section>
 
             <section class="panel">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2 class="panel-title">Status atual da impressora</h2>
+                    <h2 class="panel-title">Situação atual da impressora</h2>
                     <a href="/admin?month=<?= htmlspecialchars($month) ?>&cpf=<?= htmlspecialchars($cpf ?? '') ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise"></i> Atualizar</a>
                 </div>
                 <div class="row g-3">
@@ -51,18 +77,18 @@
                         <div class="metric"><span>Impressora</span><strong><?= htmlspecialchars($printerStatus['printer'] ?: 'não configurada') ?></strong></div>
                     </div>
                     <div class="col-md-3">
-                        <div class="metric"><span>Enabled</span><strong><?= $printerStatus['enabled'] === null ? 'N/D' : ($printerStatus['enabled'] ? 'Sim' : 'Não') ?></strong></div>
+                        <div class="metric"><span>Impressora ativada</span><strong><?= $printerStatus['enabled'] === null ? 'N/D' : ($printerStatus['enabled'] ? 'Sim' : 'Não') ?></strong></div>
                     </div>
                     <div class="col-md-3">
-                        <div class="metric"><span>Accepting</span><strong><?= $printerStatus['accepting'] === null ? 'N/D' : ($printerStatus['accepting'] ? 'Sim' : 'Não') ?></strong></div>
+                        <div class="metric"><span>Aceitando impressões</span><strong><?= $printerStatus['accepting'] === null ? 'N/D' : ($printerStatus['accepting'] ? 'Sim' : 'Não') ?></strong></div>
                     </div>
                     <div class="col-md-3">
                         <div class="metric"><span>Fila</span><strong><?= (int) $printerStatus['pending_jobs'] ?></strong></div>
                     </div>
                 </div>
                 <div class="small text-muted mt-2">
-                    Estado: <?= htmlspecialchars($printerStatus['printer_state'] ?: 'não informado') ?>.
-                    Mensagem: <?= htmlspecialchars($printerStatus['printer_state_message'] ?: ($printerStatus['last_error'] ?: 'sem erro atual')) ?>.
+                    Estado: <?= htmlspecialchars($traduzDiagnostico($printerStatus['printer_state'] ?: 'não informado')) ?>.
+                    Mensagem: <?= htmlspecialchars($traduzDiagnostico($printerStatus['printer_state_message'] ?: ($printerStatus['last_error'] ?: 'sem erro atual'))) ?>.
                     Concluídos: <?= (int) $printerStatus['completed_jobs'] ?>,
                     cancelados: <?= (int) $printerStatus['canceled_jobs'] ?>,
                     falhas: <?= (int) $printerStatus['failed_jobs'] ?>.
@@ -70,7 +96,7 @@
             </section>
 
             <section class="metric-grid">
-                <div class="metric"><span>Total de jobs</span><strong><?= (int) $jobStats['total'] ?></strong></div>
+                <div class="metric"><span>Total de trabalhos</span><strong><?= (int) $jobStats['total'] ?></strong></div>
                 <div class="metric"><span>Impressas</span><strong><?= (int) $jobStats['completed'] ?></strong></div>
                 <div class="metric"><span>Com erro</span><strong><?= (int) $jobStats['failed'] ?></strong></div>
                 <div class="metric"><span>Mês filtrado</span><strong><?= (int) $totalMonth ?></strong></div>
@@ -85,18 +111,6 @@
                     <div class="col-md-3">
                         <label class="form-label">CPF</label>
                         <input name="cpf" class="form-control" value="<?= htmlspecialchars($cpf ?? '') ?>" placeholder="Todos">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Erro</label>
-                        <input name="error" class="form-control" value="<?= htmlspecialchars($_GET['error'] ?? '') ?>" placeholder="papel, toner, timeout...">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Status</label>
-                        <select name="status" class="form-select">
-                            <?php foreach (['' => 'Todos', 'active' => 'Fila', 'completed' => 'Concluídos', 'failed' => 'Falhas'] as $value => $label): ?>
-                                <option value="<?= $value ?>" <?= ($_GET['status'] ?? '') === $value ? 'selected' : '' ?>><?= $label ?></option>
-                            <?php endforeach; ?>
-                        </select>
                     </div>
                     <div class="col-md-3">
                         <div class="form-check">
@@ -124,7 +138,7 @@
                         <thead>
                             <tr>
                                 <th>Professor</th>
-                                <th class="text-end">Jobs</th>
+                                <th class="text-end">Trabalhos</th>
                                 <th class="text-end">Páginas</th>
                                 <th class="text-end">Cópias</th>
                                 <th class="text-end">Total contabilizado</th>
@@ -149,49 +163,6 @@
                 </div>
             </section>
 
-            <section class="panel">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2 class="panel-title">Histórico de tentativas</h2>
-                    <span class="text-muted small">Mostrando até 50 registros</span>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle data-table">
-                        <thead>
-                            <tr>
-                                <th>Arquivo</th>
-                                <th>Professor</th>
-                                <th>Status</th>
-                                <th>CUPS</th>
-                                <th>Diagnóstico</th>
-                                <th>Data</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($recentJobs)): ?>
-                                <tr><td colspan="6" class="text-center text-muted py-4">Nenhuma tentativa encontrada</td></tr>
-                            <?php else: ?>
-                                <?php foreach ($recentJobs as $job): ?>
-                                    <tr>
-                                        <td>
-                                            <div class="fw-semibold text-truncate file-name"><?= htmlspecialchars($job['original_name']) ?></div>
-                                            <small class="text-muted"><?= htmlspecialchars($job['mime_type'] ?: strtoupper($job['source_ext'] ?? '')) ?> · <?= (int) ($job['file_size'] ?? 0) ?> bytes</small>
-                                        </td>
-                                        <td><?= htmlspecialchars($job['user_name'] ?: ($job['nome_professor'] ?: $job['user'])) ?><br><small class="text-muted"><?= htmlspecialchars($job['user']) ?></small></td>
-                                        <td><span class="badge <?= $job['status'] === 'completed' ? 'text-bg-success' : ($job['status'] === 'failed' ? 'text-bg-danger' : 'text-bg-secondary') ?>"><?= htmlspecialchars($job['status']) ?></span></td>
-                                        <td>
-                                            <small>Job: <?= htmlspecialchars($job['cups_job_id'] ?: '-') ?><br>Status: <?= htmlspecialchars($job['status_cups'] ?: '-') ?><br>Retorno: <?= htmlspecialchars((string) ($job['return_code'] ?? '-')) ?></small>
-                                        </td>
-                                        <td><small class="<?= !empty($job['error_message']) ? 'text-danger' : 'text-muted' ?>"><?= htmlspecialchars($job['error_category'] ?: ($job['error_message'] ?: 'sem erro registrado')) ?></small></td>
-                                        <td><small><?= htmlspecialchars($job['created_at']) ?></small></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            
         </main>
     </div>
 </body>
