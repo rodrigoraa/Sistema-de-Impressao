@@ -448,6 +448,16 @@ class PrintJobService
     private function sortJobsNewestFirst(array &$jobs)
     {
         usort($jobs, function ($a, $b) {
+            $aIsLegacy = !empty($a['legacy_usage']);
+            $bIsLegacy = !empty($b['legacy_usage']);
+
+            if ($aIsLegacy === $bIsLegacy) {
+                $idCompare = $this->jobNumericId($b) <=> $this->jobNumericId($a);
+                if ($idCompare !== 0) {
+                    return $idCompare;
+                }
+            }
+
             $dateCompare = $this->jobTimestamp($b) <=> $this->jobTimestamp($a);
             if ($dateCompare !== 0) {
                 return $dateCompare;
