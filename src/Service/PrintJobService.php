@@ -133,7 +133,7 @@ class PrintJobService
             $params[':cpf'] = ['%' . preg_replace('/\D/', '', (string) $filters['cpf']) . '%', SQLITE3_TEXT];
         }
         if (!empty($filters['month'])) {
-            $where[] = 'pj.month_ref = :month';
+            $where[] = "COALESCE(NULLIF(pj.month_ref, ''), strftime('%Y-%m', pj.created_at)) = :month";
             $params[':month'] = [(string) $filters['month'], SQLITE3_TEXT];
         }
         if (!empty($filters['error'])) {
@@ -222,7 +222,7 @@ class PrintJobService
 
     public function monthlySummary($month, $cpf = '', $includeFailures = false)
     {
-        $where = ['pj.month_ref = :month'];
+        $where = ["COALESCE(NULLIF(pj.month_ref, ''), strftime('%Y-%m', pj.created_at)) = :month"];
         $params = [':month' => [$month, SQLITE3_TEXT]];
         if ($cpf !== '') {
             $where[] = 'pj.user = :cpf';
@@ -248,6 +248,64 @@ class PrintJobService
             WHERE " . implode(' AND ', $where) . "
             GROUP BY pj.user
             ORDER BY name
+        ");
+        foreach ($params as $key => [$value, $type]) {
+            $stmt->bindValue($key, $value, $type);
+        }
+
+        $result = $stmt->execute();
+        $rows = [];
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $rows[$row['cpf']] = $row;
+        }
+
+        foreach ($this->monthlyUsageSummary($month, $cpf) as $legacy) {
+            $key = $legacy['cpf'];
+            if (!isset($rows[$key])) {
+                $rows[$key] = [
+                    'cpf' => $legacy['cpf'],
+                    'name' => $legacy['name'],
+                    'jobs' => 0,
+                    'pages' => (int) $legacy['charged_pages'],
+                    'copies' => 0,
+                    'charged_pages' => (int) $legacy['charged_pages'],
+                    'failed_jobs' => 0,
+                    'statuses' => 'usage_legacy',
+                    'errors' => '',
+                ];
+                continue;
+            }
+
+            if ((int) $legacy['charged_pages'] > (int) $rows[$key]['charged_pages']) {
+                $rows[$key]['charged_pages'] = (int) $legacy['charged_pages'];
+                $rows[$key]['pages'] = max((int) $rows[$key]['pages'], (int) $legacy['charged_pages']);
+                $rows[$key]['statuses'] = trim(($rows[$key]['statuses'] ?? '') . ',usage_legacy', ',');
+            }
+        }
+
+        usort($rows, fn($a, $b) => strcasecmp((string) $a['name'], (string) $b['name']));
+
+        return array_values($rows);
+    }
+
+    private function monthlyUsageSummary($month, $cpf = '')
+    {
+        $where = ["strftime('%Y-%m', us.created_at) = :month"];
+        $params = [':month' => [$month, SQLITE3_TEXT]];
+        if ($cpf !== '') {
+            $where[] = 'us.user = :cpf';
+            $params[':cpf'] = [preg_replace('/\D/', '', $cpf), SQLITE3_TEXT];
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT
+                us.user AS cpf,
+                COALESCE(u.name, us.user) AS name,
+                COALESCE(SUM(us.pages), 0) AS charged_pages
+            FROM usage us
+            LEFT JOIN users u ON u.cpf = us.user
+            WHERE " . implode(' AND ', $where) . "
+            GROUP BY us.user
         ");
         foreach ($params as $key => [$value, $type]) {
             $stmt->bindValue($key, $value, $type);

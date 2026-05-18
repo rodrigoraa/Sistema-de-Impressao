@@ -126,6 +126,8 @@ class Database
         $db->exec("CREATE INDEX IF NOT EXISTS idx_print_jobs_created_at ON print_jobs(created_at)");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_print_jobs_month_ref ON print_jobs(month_ref)");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_print_jobs_cups_job_id ON print_jobs(cups_job_id)");
+
+        self::backfillPrintJobAuditFields($db);
     }
 
     private static function addColumnIfMissing(SQLite3 $db, $table, $column, $definition)
@@ -141,6 +143,42 @@ class Database
         }
 
         $db->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+    }
+
+    private static function backfillPrintJobAuditFields(SQLite3 $db)
+    {
+        $db->exec("
+            UPDATE print_jobs
+            SET month_ref = strftime('%Y-%m', created_at)
+            WHERE (month_ref IS NULL OR month_ref = '')
+              AND created_at IS NOT NULL
+              AND created_at <> ''
+        ");
+
+        $db->exec("
+            UPDATE print_jobs
+            SET entered_accumulator = 1
+            WHERE status = 'completed'
+              AND charged_pages > 0
+              AND entered_accumulator = 0
+        ");
+
+        $db->exec("
+            UPDATE print_jobs
+            SET confirmed_pages = pages
+            WHERE status = 'completed'
+              AND pages > 0
+              AND (confirmed_pages IS NULL OR confirmed_pages = 0)
+        ");
+
+        $db->exec("
+            UPDATE print_jobs
+            SET nome_professor = (
+                SELECT users.name FROM users WHERE users.cpf = print_jobs.user LIMIT 1
+            )
+            WHERE (nome_professor IS NULL OR nome_professor = '')
+              AND EXISTS (SELECT 1 FROM users WHERE users.cpf = print_jobs.user)
+        ");
     }
 
     public static function hasAnyUsers(SQLite3 $db)
