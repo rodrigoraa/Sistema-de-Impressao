@@ -72,20 +72,12 @@ class PdfReportService
         $c .= $this->summaryBox(36, 468, 250, 'Mês de referência', $context['month']);
         $c .= $this->summaryBox(306, 468, 300, 'Total geral de impressões no mês', $context['totals']['Contabilizadas'] . ' páginas');
 
-        $c .= $this->explanationBox(
-            36,
-            430,
-            770,
-            'Como o Total é calculado',
-            'Total = soma de cada trabalho concluído: páginas ajustadas por páginas por folha x cópias. Ex.: 4 páginas em 2 por folha x 3 cópias = 6 contabilizadas.'
-        );
-
         if (empty($rows)) {
-            $c .= $this->fillColor(255, 255, 255) . $this->rect(self::MARGIN, 370, 770, 32, 'f');
-            $c .= $this->strokeColor(226, 232, 240) . $this->rect(self::MARGIN, 370, 770, 32, 'S');
-            $c .= $this->text(self::MARGIN + 14, 382, 'Nenhuma impressão encontrada para os filtros selecionados.', 10, false, 71, 85, 105);
+            $c .= $this->fillColor(255, 255, 255) . $this->rect(self::MARGIN, 400, 770, 32, 'f');
+            $c .= $this->strokeColor(226, 232, 240) . $this->rect(self::MARGIN, 400, 770, 32, 'S');
+            $c .= $this->text(self::MARGIN + 14, 412, 'Nenhuma impressão encontrada para os filtros selecionados.', 10, false, 71, 85, 105);
         } else {
-            $c .= $this->teacherTotalsTable(36, 400, $rows);
+            $c .= $this->teacherTotalsTable(36, 430, $rows);
         }
 
         $c .= $this->strokeColor(203, 213, 225) . $this->line(36, 36, 806, 36);
@@ -111,16 +103,6 @@ class PdfReportService
         $c .= $this->strokeColor(226, 232, 240) . $this->rect($x, $y, $w, 44, 'S');
         $c .= $this->text($x + 12, $y + 27, $label, 8, false, 100, 116, 139);
         $c .= $this->text($x + 12, $y + 8, $value, 16, true, 15, 118, 110);
-
-        return $c;
-    }
-
-    private function explanationBox($x, $y, $w, $label, $value)
-    {
-        $c = $this->fillColor(236, 253, 245) . $this->rect($x, $y, $w, 24, 'f');
-        $c .= $this->strokeColor(167, 243, 208) . $this->rect($x, $y, $w, 24, 'S');
-        $c .= $this->text($x + 10, $y + 9, $label . ':', 8.5, true, 6, 95, 70);
-        $c .= $this->text($x + 136, $y + 9, $this->fitText($value, $w - 146, 8.2, false), 8.2, false, 15, 81, 50);
 
         return $c;
     }
