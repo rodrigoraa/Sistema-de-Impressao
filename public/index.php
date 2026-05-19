@@ -60,6 +60,20 @@ function servePublicAssetIfRequested($projectRoot)
         $uri = substr($uri, strlen($basePath));
     }
 
+    if ($uri === '/favicon.ico') {
+        $file = realpath($projectRoot . '/public/image/logo_escola.png');
+        if ($file === false || !is_file($file)) {
+            http_response_code(404);
+            exit;
+        }
+
+        header('Content-Type: image/png');
+        header('Content-Length: ' . filesize($file));
+        header('Cache-Control: public, max-age=3600');
+        readfile($file);
+        exit;
+    }
+
     if (!preg_match('#^/(css|image|js)/[A-Za-z0-9._/\- ]+$#', $uri)) {
         return;
     }
