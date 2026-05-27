@@ -100,6 +100,92 @@ class PrintService
         throw new RuntimeException('Tipo de arquivo nao suportado para impressao');
     }
 
+    public function selectPdfPages($pdfFile, $totalPages, $extraOptions = [])
+    {
+        if (!is_file($pdfFile) || strtolower(pathinfo($pdfFile, PATHINFO_EXTENSION)) !== 'pdf') {
+            return null;
+        }
+
+        $pages = $this->selectedPdfPages($totalPages, $extraOptions);
+        if (empty($pages) || count($pages) >= max(1, (int) $totalPages)) {
+            return null;
+        }
+
+        $ranges = $this->compactPageRanges($pages);
+        $target = tempnam(sys_get_temp_dir(), 'print_pages_') . '.pdf';
+
+        $qpdf = $this->findExecutable([$_ENV['QPDF_PATH'] ?? null, '/usr/bin/qpdf', 'qpdf']);
+        if ($qpdf !== null) {
+            $cmd = escapeshellarg($qpdf)
+                . ' --empty --pages ' . escapeshellarg($pdfFile) . ' ' . escapeshellarg($ranges)
+                . ' -- ' . escapeshellarg($target) . ' 2>&1';
+            exec($cmd, $output, $status);
+            if ($status === 0 && is_file($target) && $this->countPdfPages($target) === count($pages)) {
+                $this->log('PDF selecionado via qpdf: paginas=' . $ranges . ' destino=' . $target);
+                return $target;
+            }
+            $this->log('qpdf falhou ao selecionar paginas: status=' . $status . ' | ' . implode(' | ', $output));
+            @unlink($target);
+            $target = tempnam(sys_get_temp_dir(), 'print_pages_') . '.pdf';
+        }
+
+        $gs = $this->findExecutable([$_ENV['GHOSTSCRIPT_PATH'] ?? null, '/usr/bin/gs', 'gs']);
+        if ($gs !== null) {
+            $cmd = escapeshellarg($gs)
+                . ' -q -dNOPAUSE -dBATCH -dSAFER -sDEVICE=pdfwrite'
+                . ' -sPageList=' . escapeshellarg($ranges)
+                . ' -sOutputFile=' . escapeshellarg($target)
+                . ' ' . escapeshellarg($pdfFile) . ' 2>&1';
+            exec($cmd, $output, $status);
+            if ($status === 0 && is_file($target) && $this->countPdfPages($target) === count($pages)) {
+                $this->log('PDF selecionado via Ghostscript: paginas=' . $ranges . ' destino=' . $target);
+                return $target;
+            }
+            $this->log('Ghostscript falhou ao selecionar paginas: status=' . $status . ' | ' . implode(' | ', $output));
+            @unlink($target);
+            $target = tempnam(sys_get_temp_dir(), 'print_pages_') . '.pdf';
+        }
+
+        $pdfseparate = $this->findExecutable([$_ENV['PDFSEPARATE_PATH'] ?? null, '/usr/bin/pdfseparate', 'pdfseparate']);
+        $pdfunite = $this->findExecutable([$_ENV['PDFUNITE_PATH'] ?? null, '/usr/bin/pdfunite', 'pdfunite']);
+        if ($pdfseparate !== null && $pdfunite !== null) {
+            $dir = dirname($target) . DIRECTORY_SEPARATOR . 'print_pages_' . uniqid('', true);
+            if (is_dir($dir) || mkdir($dir, 0775, true)) {
+                $pattern = $dir . DIRECTORY_SEPARATOR . 'page-%d.pdf';
+                $cmd = escapeshellarg($pdfseparate)
+                    . ' ' . escapeshellarg($pdfFile)
+                    . ' ' . escapeshellarg($pattern) . ' 2>&1';
+                exec($cmd, $sepOutput, $sepStatus);
+
+                $parts = [];
+                foreach ($pages as $page) {
+                    $part = $dir . DIRECTORY_SEPARATOR . 'page-' . $page . '.pdf';
+                    if (is_file($part)) {
+                        $parts[] = $part;
+                    }
+                }
+
+                if ($sepStatus === 0 && count($parts) === count($pages)) {
+                    $cmd = escapeshellarg($pdfunite) . ' '
+                        . implode(' ', array_map('escapeshellarg', $parts))
+                        . ' ' . escapeshellarg($target) . ' 2>&1';
+                    exec($cmd, $uniteOutput, $uniteStatus);
+                    if ($uniteStatus === 0 && is_file($target) && $this->countPdfPages($target) === count($pages)) {
+                        $this->log('PDF selecionado via Poppler: paginas=' . $ranges . ' destino=' . $target);
+                        return $target;
+                    }
+                    $this->log('pdfunite falhou ao selecionar paginas: status=' . $uniteStatus . ' | ' . implode(' | ', $uniteOutput));
+                } else {
+                    $this->log('pdfseparate falhou ao selecionar paginas: status=' . $sepStatus . ' | ' . implode(' | ', $sepOutput));
+                }
+            }
+            @unlink($target);
+        }
+
+        $this->log('PDF nao teve paginas selecionadas antes da impressao: instale qpdf, Ghostscript ou poppler-utils.');
+        return null;
+    }
+
     private function printCups($filePath, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions, $sourceExt = '')
     {
         if (in_array($sourceExt, ['jpg', 'jpeg', 'png'], true)) {
@@ -1629,6 +1715,74 @@ class PrintService
 
         $this->log(strtoupper($sourceExt) . ' PDF grafico nao foi ajustado: instale qpdf, ghostscript ou poppler-utils.');
         return null;
+    }
+
+    private function selectedPdfPages($totalPages, $extraOptions)
+    {
+        $totalPages = max(1, (int) $totalPages);
+        $selected = [];
+
+        if (!empty($extraOptions['page-ranges'])) {
+            foreach (explode(',', preg_replace('/\s+/', '', (string) $extraOptions['page-ranges'])) as $part) {
+                if ($part === '') {
+                    continue;
+                }
+                if (str_contains($part, '-')) {
+                    [$start, $end] = array_map('intval', explode('-', $part, 2));
+                } else {
+                    $start = $end = (int) $part;
+                }
+
+                for ($page = max(1, $start); $page <= min($totalPages, $end); $page++) {
+                    $selected[$page] = true;
+                }
+            }
+        } else {
+            for ($page = 1; $page <= $totalPages; $page++) {
+                $selected[$page] = true;
+            }
+        }
+
+        if (($extraOptions['page-set'] ?? '') === 'odd') {
+            $selected = array_filter($selected, fn($on, $page) => ((int) $page) % 2 === 1, ARRAY_FILTER_USE_BOTH);
+        } elseif (($extraOptions['page-set'] ?? '') === 'even') {
+            $selected = array_filter($selected, fn($on, $page) => ((int) $page) % 2 === 0, ARRAY_FILTER_USE_BOTH);
+        }
+
+        $pages = array_map('intval', array_keys($selected));
+        sort($pages, SORT_NUMERIC);
+
+        return $pages;
+    }
+
+    private function compactPageRanges($pages)
+    {
+        $pages = array_values(array_unique(array_map('intval', (array) $pages)));
+        sort($pages, SORT_NUMERIC);
+
+        $ranges = [];
+        $start = null;
+        $prev = null;
+        foreach ($pages as $page) {
+            if ($start === null) {
+                $start = $prev = $page;
+                continue;
+            }
+
+            if ($page === $prev + 1) {
+                $prev = $page;
+                continue;
+            }
+
+            $ranges[] = $start === $prev ? (string) $start : $start . '-' . $prev;
+            $start = $prev = $page;
+        }
+
+        if ($start !== null) {
+            $ranges[] = $start === $prev ? (string) $start : $start . '-' . $prev;
+        }
+
+        return implode(',', $ranges);
     }
 
     private function trimTrailingBlankPdfPages($pdfFile, $declaredPages, $actualPages, $sourceExt)

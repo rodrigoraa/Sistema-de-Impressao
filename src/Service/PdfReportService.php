@@ -34,7 +34,7 @@ class PdfReportService
             'totals' => [
                 'Trabalhos' => $totalJobs,
                 'Páginas' => $totalPages,
-                'Cópias' => $totalCopies,
+                'Cópias solicitadas' => $totalCopies,
                 'Contabilizadas' => $totalCharged,
                 'Falhas' => $totalFailures,
             ],
@@ -70,7 +70,7 @@ class PdfReportService
         $c .= $this->textRight(559, 767, 'Página ' . $pageNumber . ' de ' . $pageCount, 9, false, 219, 234, 254);
 
         $c .= $this->summaryBox(36, 700, 250, 'Mês de referência', $context['month']);
-        $c .= $this->summaryBox(306, 700, 253, 'Total geral de impressões no mês', $context['totals']['Contabilizadas'] . ' páginas');
+        $c .= $this->summaryBox(306, 700, 253, 'Total geral de impressões no mês', $context['totals']['Contabilizadas'] . ' folhas contabilizadas');
 
         if (empty($rows)) {
             $c .= $this->fillColor(255, 255, 255) . $this->rect(self::MARGIN, 632, 523, 32, 'f');

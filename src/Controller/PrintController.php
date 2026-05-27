@@ -251,10 +251,21 @@ class PrintController
                 $printer->log("DOCX metadado de paginas diverge do PDF convertido: metadado={$originalPages} convertido={$convertedPages} arquivo={$dest}");
             }
             $billableSourcePages = $this->selectedPageCount($pages, $extraOptions);
+            $printOptions = $extraOptions;
+            if ($this->hasPageSelection($extraOptions)) {
+                $selectedFile = $printer->selectPdfPages($printedFile, $pages, $extraOptions);
+                if ($selectedFile !== null) {
+                    $printedFile = $selectedFile;
+                    unset($printOptions['page-ranges'], $printOptions['page-set']);
+                    $printer->log('Selecao de paginas aplicada antes do number-up: selecionadas=' . $billableSourcePages . ' arquivo=' . $printedFile);
+                } elseif ($numberUp > 1) {
+                    throw new RuntimeException('Nao foi possivel preparar o intervalo de paginas antes do modo ' . $numberUp . ' por folha. Instale qpdf, Ghostscript ou poppler-utils no servidor.');
+                }
+            }
             $chargedPages = $this->billablePages($billableSourcePages, $copies, $numberUp);
             $jobService->markProcessing($jobId, $printedFile, $pages, $chargedPages);
 
-            $completed = $printer->printPrepared($printedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions);
+            $completed = $printer->printPrepared($printedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $printOptions);
             $jobService->updateCupsResult($jobId, $printer->lastPrintResult());
             $success = $completed === true;
         } catch (Throwable $e) {
@@ -540,6 +551,12 @@ class PrintController
         }
 
         return max(1, count($selected));
+    }
+
+    private function hasPageSelection($extraOptions)
+    {
+        return !empty($extraOptions['page-ranges'])
+            || in_array($extraOptions['page-set'] ?? '', ['odd', 'even'], true);
     }
 
     private function resolvePrintUser($isAdmin, $userList)

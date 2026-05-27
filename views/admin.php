@@ -205,9 +205,9 @@ $traduzDiagnostico = function ($valor) {
                             <tr>
                                 <th>Professor</th>
                                 <th class="text-end">Trabalhos</th>
-                                <th class="text-end">Páginas</th>
-                                <th class="text-end">Cópias</th>
-                                <th class="text-end">Total contabilizado</th>
+                                <th class="text-end">Páginas do documento</th>
+                                <th class="text-end">Cópias solicitadas</th>
+                                <th class="text-end">Folhas contabilizadas</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -220,7 +220,7 @@ $traduzDiagnostico = function ($valor) {
                                         <td class="text-end"><?= (int) $row['jobs'] ?></td>
                                         <td class="text-end"><?= (int) $row['pages'] ?></td>
                                         <td class="text-end"><?= (int) $row['copies'] ?></td>
-                                        <td class="text-end"><span class="badge text-bg-primary"><?= (int) $row['charged_pages'] ?> contabilizadas</span></td>
+                                        <td class="text-end"><span class="badge text-bg-primary"><?= (int) $row['charged_pages'] ?> folhas</span></td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
