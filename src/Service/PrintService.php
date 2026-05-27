@@ -100,6 +100,77 @@ class PrintService
         throw new RuntimeException('Tipo de arquivo nao suportado para impressao');
     }
 
+    public function detectImageOrientation($filePath)
+    {
+        $info = @getimagesize($filePath);
+        if ($info === false) {
+            return null;
+        }
+
+        $width = (int) ($info[0] ?? 0);
+        $height = (int) ($info[1] ?? 0);
+        if ($width < 1 || $height < 1) {
+            return null;
+        }
+
+        $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        if (in_array($ext, ['jpg', 'jpeg'], true) && function_exists('exif_read_data')) {
+            $exif = @exif_read_data($filePath);
+            $exifOrientation = (int) ($exif['Orientation'] ?? 1);
+            if (in_array($exifOrientation, [5, 6, 7, 8], true)) {
+                [$width, $height] = [$height, $width];
+            }
+        }
+
+        return $width > $height ? 'landscape' : 'portrait';
+    }
+
+    public function detectPdfOrientation($pdfFile)
+    {
+        if (!is_file($pdfFile) || strtolower(pathinfo($pdfFile, PATHINFO_EXTENSION)) !== 'pdf') {
+            return null;
+        }
+
+        $pdfinfo = $this->findExecutable([$_ENV['PDFINFO_PATH'] ?? null, 'pdfinfo', '/usr/bin/pdfinfo']);
+        if ($pdfinfo !== null) {
+            exec(escapeshellarg($pdfinfo) . ' -f 1 -l 1 ' . escapeshellarg($pdfFile) . ' 2>&1', $output, $status);
+            if ($status === 0) {
+                $text = implode("\n", $output);
+                if (preg_match('/Page\s+1\s+size:\s*([0-9.]+)\s+x\s+([0-9.]+)/i', $text, $size)
+                    || preg_match('/Page\s+size:\s*([0-9.]+)\s+x\s+([0-9.]+)/i', $text, $size)) {
+                    return ((float) $size[1]) > ((float) $size[2]) ? 'landscape' : 'portrait';
+                }
+            }
+        }
+
+        $content = @file_get_contents($pdfFile, false, null, 0, 1048576);
+        if ($content === false || $content === '') {
+            return null;
+        }
+
+        if (!preg_match('/\/MediaBox\s*\[\s*(-?[0-9.]+)\s+(-?[0-9.]+)\s+(-?[0-9.]+)\s+(-?[0-9.]+)\s*\]/s', $content, $box)) {
+            return null;
+        }
+
+        $width = abs((float) $box[3] - (float) $box[1]);
+        $height = abs((float) $box[4] - (float) $box[2]);
+        if ($width <= 0 || $height <= 0) {
+            return null;
+        }
+
+        if (preg_match('/\/Rotate\s+(-?\d+)/', $content, $rotate)) {
+            $degrees = ((int) $rotate[1]) % 360;
+            if ($degrees < 0) {
+                $degrees += 360;
+            }
+            if (in_array($degrees, [90, 270], true)) {
+                [$width, $height] = [$height, $width];
+            }
+        }
+
+        return $width > $height ? 'landscape' : 'portrait';
+    }
+
     public function selectPdfPages($pdfFile, $totalPages, $extraOptions = [])
     {
         if (!is_file($pdfFile) || strtolower(pathinfo($pdfFile, PATHINFO_EXTENSION)) !== 'pdf') {
@@ -617,6 +688,16 @@ class PrintService
         $info = @getimagesize($filePath);
         if ($info === false) {
             throw new RuntimeException('Imagem invalida ou corrompida');
+        }
+
+        if ($orientation === 'auto') {
+            $detectedOrientation = $this->detectImageOrientation($filePath);
+            if ($detectedOrientation !== null) {
+                $this->log('Imagem: orientacao automatica ' . $detectedOrientation . ' aplicada no lugar de auto arquivo=' . $filePath);
+                $orientation = $detectedOrientation;
+            } else {
+                $orientation = 'portrait';
+            }
         }
 
         $converted = $this->convertImageWithTool($filePath, $orientation, $paper);

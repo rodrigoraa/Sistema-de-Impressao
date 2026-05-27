@@ -111,6 +111,24 @@ class PrintJobService
         $stmt->execute();
     }
 
+    public function updateOrientation($id, $orientation)
+    {
+        if (!in_array($orientation, ['portrait', 'landscape'], true)) {
+            return;
+        }
+
+        $stmt = $this->db->prepare("
+            UPDATE print_jobs
+            SET orientation = :orientation,
+                updated_at = :updated_at
+            WHERE id = :id
+        ");
+        $stmt->bindValue(':orientation', $orientation, SQLITE3_TEXT);
+        $stmt->bindValue(':updated_at', date('Y-m-d H:i:s'), SQLITE3_TEXT);
+        $stmt->bindValue(':id', (int) $id, SQLITE3_INTEGER);
+        $stmt->execute();
+    }
+
     public function listForUser($user, $isAdmin = false, $status = '', $limit = 100, $filters = [])
     {
         $where = [];

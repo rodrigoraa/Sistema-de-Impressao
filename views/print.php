@@ -136,6 +136,7 @@
                                     <div>
                                         <label class="form-label">Orientação</label>
                                         <select class="form-select" name="orientation">
+                                            <option value="auto" selected>Automática</option>
                                             <option value="portrait">Retrato</option>
                                             <option value="landscape">Paisagem</option>
                                         </select>

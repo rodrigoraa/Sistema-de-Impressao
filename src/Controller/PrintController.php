@@ -177,7 +177,7 @@ class PrintController
         // Parâmetros de impressão vindos do formulário
         $copies = max(1, intval($_POST['copies'] ?? 1));
         $sides = ($_POST['sides'] ?? 'one-sided'); // "one-sided" ou "two-sided-short-edge"/"long-edge"
-        $orientation = ($_POST['orientation'] ?? 'portrait'); // "portrait" ou "landscape"
+        $orientation = $this->normalizeOrientation($_POST['orientation'] ?? 'auto');
         $quality = intval($_POST['quality'] ?? 3);
         $allowedNumberUp = [1, 2, 4, 8];
         $numberUp = intval($_POST['number_up'] ?? 1);
@@ -226,8 +226,19 @@ class PrintController
         }
 
         // Prepara, conta paginas e envia para impressao usando o mesmo arquivo convertido.
-        $printer = new PrintService();
         $sourceExt = strtolower(pathinfo($dest, PATHINFO_EXTENSION));
+        $printer = new PrintService();
+        if ($orientation === 'auto' && in_array($sourceExt, ['jpg', 'jpeg', 'png'], true)) {
+            $detectedOrientation = $printer->detectImageOrientation($dest);
+            if ($detectedOrientation !== null) {
+                $orientation = $detectedOrientation;
+            }
+        } elseif ($orientation === 'auto' && $sourceExt === 'pdf') {
+            $detectedOrientation = $printer->detectPdfOrientation($dest);
+            if ($detectedOrientation !== null) {
+                $orientation = $detectedOrientation;
+            }
+        }
         $paper = $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4';
         $jobId = $jobService->create($user, $origName, $dest, $sourceExt, $copies, $numberUp, $sides, $orientation, $paper, [
             'mime_type' => $mimeType,
@@ -249,6 +260,14 @@ class PrintController
             }
             if ($sourceExt === 'docx' && $originalPages > 0 && $convertedPages > 0 && $convertedPages !== $originalPages) {
                 $printer->log("DOCX metadado de paginas diverge do PDF convertido: metadado={$originalPages} convertido={$convertedPages} arquivo={$dest}");
+            }
+            if ($orientation === 'auto' && in_array($sourceExt, ['pdf', 'doc', 'docx'], true)) {
+                $detectedOrientation = $printer->detectPdfOrientation($printedFile);
+                if ($detectedOrientation !== null) {
+                    $printer->log('Documento: orientacao automatica ' . $detectedOrientation . ' aplicada no lugar de ' . $orientation . ' arquivo=' . $printedFile);
+                    $orientation = $detectedOrientation;
+                    $jobService->updateOrientation($jobId, $orientation);
+                }
             }
             $billableSourcePages = $this->selectedPageCount($pages, $extraOptions);
             $printOptions = $extraOptions;
@@ -359,7 +378,7 @@ class PrintController
         try {
             $printer = new PrintService();
             $paper = $_POST['paper'] ?? 'A4';
-            $orientation = $_POST['orientation'] ?? 'portrait';
+            $orientation = $this->normalizeOrientation($_POST['orientation'] ?? 'auto');
             $extraOptions = [];
             foreach (['top', 'right', 'bottom', 'left'] as $side) {
                 $field = 'margin_' . $side;
@@ -450,7 +469,7 @@ class PrintController
             if (in_array($ext, ['doc', 'docx'], true)) {
                 $printer = new PrintService();
                 $paper = $_POST['paper'] ?? 'A4';
-                $orientation = $_POST['orientation'] ?? 'portrait';
+                $orientation = $this->normalizeOrientation($_POST['orientation'] ?? 'auto');
                 $extraOptions = [];
                 foreach (['top', 'right', 'bottom', 'left'] as $side) {
                     $field = 'margin_' . $side;
@@ -557,6 +576,12 @@ class PrintController
     {
         return !empty($extraOptions['page-ranges'])
             || in_array($extraOptions['page-set'] ?? '', ['odd', 'even'], true);
+    }
+
+    private function normalizeOrientation($orientation)
+    {
+        $orientation = (string) $orientation;
+        return in_array($orientation, ['auto', 'portrait', 'landscape'], true) ? $orientation : 'auto';
     }
 
     private function resolvePrintUser($isAdmin, $userList)

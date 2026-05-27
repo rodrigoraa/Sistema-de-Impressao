@@ -195,6 +195,7 @@ if ($currentStatus === 'active') {
                                         <td><span class="badge <?= $meta['class'] ?>"><i class="bi <?= $meta['icon'] ?>"></i> <?= $meta['label'] ?></span></td>
                                         <?php
                                             $orientationPt = [
+                                                'auto' => 'Automática',
                                                 'portrait' => 'Retrato',
                                                 'landscape' => 'Paisagem',
                                             ][$job['orientation']] ?? ($job['orientation'] ?: 'Retrato');
