@@ -554,7 +554,7 @@ class PrintService
         $lastStatus = 1;
         $lastOutput = [];
         $bestPdf = null;
-        $bestPages = PHP_INT_MAX;
+        $bestPages = 0;
         foreach ($attempts as $index => $attempt) {
             $attemptDir = $outDir . DIRECTORY_SEPARATOR . 'attempt-' . ($index + 1);
             if (!is_dir($attemptDir) && !mkdir($attemptDir, 0775, true)) {
@@ -584,17 +584,12 @@ class PrintService
                 $candidatePages = $this->countPdfPages($candidate);
                 $this->log('LibreOffice tentativa ' . ($index + 1) . ' ' . $attempt['label'] . ': ' . $cmd . ' | OK paginas=' . $candidatePages . ' | ' . implode(' | ', $output));
 
-                if ($candidatePages > 0 && $candidatePages < $bestPages) {
+                if ($candidatePages > $bestPages) {
                     $bestPdf = $candidate;
-                    $bestPages = $candidatePages;
+                    $bestPages = $candidatePages > 0 ? $candidatePages : 0;
                 } elseif ($bestPdf === null) {
                     $bestPdf = $candidate;
-                    $bestPages = $candidatePages > 0 ? $candidatePages : PHP_INT_MAX;
-                }
-
-                if ($declaredPages > 0 && $candidatePages > 0 && $candidatePages <= $declaredPages) {
-                    $this->logConvertedPdfDiagnostics($candidate, $sourceExt);
-                    return $candidate;
+                    $bestPages = $candidatePages > 0 ? $candidatePages : 0;
                 }
 
                 continue;
@@ -605,15 +600,7 @@ class PrintService
 
         if ($bestPdf !== null) {
             if ($declaredPages > 0 && $bestPages > $declaredPages) {
-                $this->log('LibreOffice: metadado DOCX declara menos paginas que o PDF convertido; usando PDF completo. declarado=' . $declaredPages . ' convertido=' . $bestPages . ' pdf=' . $bestPdf);
-                if ($sourceExt === 'docx') {
-                    $tightPdf = $this->tryFitDocxToDeclaredPages($sourceForPdf, $declaredPages, $office, $outDir, $envPrefix, $profileDir);
-                    if ($tightPdf !== null) {
-                        $this->log('DOCX ajustado por perfil compacto para respeitar paginas declaradas=' . $declaredPages);
-                        $this->logConvertedPdfDiagnostics($tightPdf, $sourceExt);
-                        return $tightPdf;
-                    }
-                }
+                $this->log('LibreOffice: metadado DOCX declara menos paginas que o PDF convertido; preservando PDF convertido salvo paginas finais em branco. declarado=' . $declaredPages . ' convertido=' . $bestPages . ' pdf=' . $bestPdf);
 
                 $blankTrimmed = $this->trimTrailingBlankPdfPages($bestPdf, $declaredPages, $bestPages, $sourceExt);
                 if ($blankTrimmed !== null) {
@@ -622,16 +609,7 @@ class PrintService
                     return $blankTrimmed;
                 }
 
-                if ($sourceExt === 'docx' && $declaredPages === 1 && $this->isSinglePageGraphicDocx($filePath)) {
-                    $trimmed = $this->trimPdfToPageCount($bestPdf, 1, $sourceExt);
-                    if ($trimmed !== null) {
-                        $this->log('DOCX grafico de 1 pagina: removendo pagina excedente gerada pelo LibreOffice.');
-                        $this->logConvertedPdfDiagnostics($trimmed, $sourceExt);
-                        return $trimmed;
-                    }
-                }
-
-                $this->log('DOCX: nao foi possivel reduzir paginas sem cortar conteudo; usando melhor PDF gerado pelo conversor. declarado=' . $declaredPages . ' convertido=' . $bestPages);
+                $this->log('DOCX: paginas excedentes possuem conteudo ou nao puderam ser verificadas; usando PDF completo para evitar corte/compactacao. declarado=' . $declaredPages . ' convertido=' . $bestPages);
             }
             $this->logConvertedPdfDiagnostics($bestPdf, $sourceExt);
             return $bestPdf;
