@@ -133,24 +133,24 @@ $enableAttemptLabel = function ($attempt) {
                 <?php endif; ?>
                 <div class="health-grid mb-3">
                     <div class="health-item">
-                        <span>Estado geral</span>
+                        <span>Pode imprimir agora?</span>
                         <strong><span class="badge <?= htmlspecialchars($healthBadge($printerStatus['notice_type'] ?? 'info')) ?>"><?= !empty($printerStatus['can_print']) ? 'Pronta' : 'Bloqueada' ?></span></strong>
-                        <small><?= htmlspecialchars($traduzDiagnostico($printerStatus['reason'] ?: 'sem erro atual')) ?></small>
+                        <small><?= htmlspecialchars($traduzDiagnostico($printerStatus['reason'] ?: 'sem problema detectado')) ?></small>
                     </div>
                     <div class="health-item">
-                        <span>Serviço de impressão</span>
+                        <span>CUPS / servidor</span>
                         <strong><?= ($printerStatus['cups_active'] ?? null) === null ? 'N/D' : (($printerStatus['cups_active'] ?? false) ? 'Ativo' : 'Inacessível') ?></strong>
-                        <small>Impressora <?= !empty($printerStatus['printer_exists']) ? 'encontrada' : 'não encontrada' ?></small>
+                        <small><?= !empty($printerStatus['printer_exists']) ? 'Servidor encontrou a impressora' : 'Servidor não encontrou a impressora' ?></small>
                     </div>
                     <div class="health-item">
-                        <span>Servidor</span>
+                        <span>Última reativação</span>
                         <strong><?= htmlspecialchars($enableAttemptLabel($lastEnableAttempt)) ?></strong>
-                        <small><?= is_array($lastEnableAttempt) ? htmlspecialchars(($lastEnableAttempt['created_at'] ?? '') . ' · ' . (($lastEnableAttempt['source'] ?? '') === 'auto' ? 'automático' : 'manual')) : 'sem tentativa registrada' ?></small>
+                        <small><?= is_array($lastEnableAttempt) ? htmlspecialchars(($lastEnableAttempt['created_at'] ?? '') . ' · ' . (($lastEnableAttempt['source'] ?? '') === 'auto' ? 'automática' : 'manual')) : 'nenhum comando enviado ainda' ?></small>
                     </div>
                     <div class="health-item">
-                        <span>Fila atual</span>
+                        <span>Trabalhos aguardando</span>
                         <strong><?= (int) $printerStatus['pending_jobs'] ?></strong>
-                        <small><?= (int) $printerStatus['completed_jobs'] ?> concluídos · <?= (int) $printerStatus['failed_jobs'] ?> falhas</small>
+                        <small><?= (int) $printerStatus['completed_jobs'] ?> já concluídos · <?= (int) $printerStatus['failed_jobs'] ?> com falha</small>
                     </div>
                 </div>
                 <?php if (is_array($cupsEnableResult)): ?>
@@ -203,16 +203,16 @@ $enableAttemptLabel = function ($attempt) {
                 <?php endif; ?>
                 <div class="row g-3">
                     <div class="col-md-3">
-                        <div class="metric"><span>Impressora</span><strong><?= htmlspecialchars($printerStatus['printer'] ?: 'não configurada') ?></strong></div>
+                        <div class="metric"><span>Nome no CUPS</span><strong><?= htmlspecialchars($printerStatus['printer'] ?: 'não configurada') ?></strong></div>
                     </div>
                     <div class="col-md-3">
-                        <div class="metric"><span>Impressora ativada</span><strong><?= htmlspecialchars($simNao($printerStatus['enabled'])) ?></strong></div>
+                        <div class="metric"><span>Habilitada no CUPS</span><strong><?= htmlspecialchars($simNao($printerStatus['enabled'])) ?></strong></div>
                     </div>
                     <div class="col-md-3">
-                        <div class="metric"><span>Aceitando impressões</span><strong><?= htmlspecialchars($simNao($printerStatus['accepting'])) ?></strong></div>
+                        <div class="metric"><span>Aceita novos trabalhos</span><strong><?= htmlspecialchars($simNao($printerStatus['accepting'])) ?></strong></div>
                     </div>
                     <div class="col-md-3">
-                        <div class="metric"><span>Fila</span><strong><?= (int) $printerStatus['pending_jobs'] ?></strong></div>
+                        <div class="metric"><span>Pendentes na fila</span><strong><?= (int) $printerStatus['pending_jobs'] ?></strong></div>
                     </div>
                 </div>
                 <div class="small text-muted mt-2">
@@ -239,7 +239,18 @@ $enableAttemptLabel = function ($attempt) {
                     </div>
                 </div>
                 <?php
-                    $formatBytes = fn($bytes) => (new StorageCleanupService())->formatBytes($bytes);
+                    $formatBytes = function ($bytes) {
+                        $bytes = max(0, (int) $bytes);
+                        $units = ['B', 'KB', 'MB', 'GB'];
+                        $value = (float) $bytes;
+                        $unit = 0;
+                        while ($value >= 1024 && $unit < count($units) - 1) {
+                            $value /= 1024;
+                            $unit++;
+                        }
+
+                        return number_format($value, $unit === 0 ? 0 : 2, ',', '.') . ' ' . $units[$unit];
+                    };
                     $uploads = $storageStats['uploads'] ?? ['files' => 0, 'bytes' => 0, 'path' => '', 'exists' => false];
                     $debug = $storageStats['debug'] ?? ['files' => 0, 'bytes' => 0, 'path' => '', 'exists' => false];
                 ?>
