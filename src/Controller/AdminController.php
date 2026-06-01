@@ -106,6 +106,7 @@ class AdminController
         $result = (new CupsService())->enablePrinter();
         $_SESSION['flash'] = $result['message'] ?? 'Comando executado.';
         $_SESSION['flash_type'] = !empty($result['success']) ? 'success' : 'error';
+        $_SESSION['cups_enable_result'] = $result;
         header('Location: /admin');
         exit;
     }

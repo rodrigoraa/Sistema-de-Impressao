@@ -23,6 +23,8 @@ $traduzDiagnostico = function ($valor) {
         $valor
     );
 };
+$cupsEnableResult = $_SESSION['cups_enable_result'] ?? null;
+unset($_SESSION['cups_enable_result']);
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -89,6 +91,53 @@ $traduzDiagnostico = function ($valor) {
                     <div class="alert alert-<?= htmlspecialchars($printerStatus['notice_type'] ?? 'info') ?> d-flex gap-2 align-items-start">
                         <i class="bi bi-printer"></i>
                         <span><?= htmlspecialchars($printerStatus['notice']) ?></span>
+                    </div>
+                <?php endif; ?>
+                <?php if (is_array($cupsEnableResult)): ?>
+                    <div class="alert alert-light border">
+                        <div class="d-flex justify-content-between gap-2 flex-wrap">
+                            <strong>Último comando CUPS</strong>
+                            <span class="badge text-bg-<?= !empty($cupsEnableResult['success']) ? 'success' : 'warning' ?>">
+                                <?= !empty($cupsEnableResult['success']) ? 'Reativado' : 'Não reativado' ?>
+                            </span>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            O servidor recebeu a solicitação e executou os comandos abaixo.
+                        </div>
+                        <div class="table-responsive mt-2">
+                            <table class="table table-sm mb-2">
+                                <thead>
+                                    <tr>
+                                        <th>Comando</th>
+                                        <th>Código</th>
+                                        <th>Retorno</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach (($cupsEnableResult['commands'] ?? []) as $commandName => $commandResult): ?>
+                                        <?php
+                                            $stdout = trim((string) ($commandResult['stdout'] ?? ''));
+                                            $stderr = trim((string) ($commandResult['stderr'] ?? ''));
+                                            $output = trim($stdout . ($stdout !== '' && $stderr !== '' ? ' | ' : '') . $stderr);
+                                        ?>
+                                        <tr>
+                                            <td><?= htmlspecialchars($commandName) ?></td>
+                                            <td><?= (int) ($commandResult['return_code'] ?? 0) ?></td>
+                                            <td><?= htmlspecialchars($output !== '' ? $output : 'sem saída') ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php $after = $cupsEnableResult['diagnostics'] ?? []; ?>
+                        <?php if (is_array($after)): ?>
+                            <div class="small">
+                                Depois do comando:
+                                ativada <?= ($after['enabled'] ?? null) === null ? 'N/D' : (($after['enabled'] ?? false) ? 'Sim' : 'Não') ?>,
+                                aceitando <?= ($after['accepting'] ?? null) === null ? 'N/D' : (($after['accepting'] ?? false) ? 'Sim' : 'Não') ?>,
+                                mensagem <?= htmlspecialchars($traduzDiagnostico($after['notice'] ?? ($after['last_error'] ?? 'sem erro atual'))) ?>.
+                            </div>
+                        <?php endif; ?>
                     </div>
                 <?php endif; ?>
                 <div class="row g-3">

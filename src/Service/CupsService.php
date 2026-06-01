@@ -80,7 +80,15 @@ class CupsService
         $acceptText = trim($acceptStatus['stdout'] . "\n" . $acceptStatus['stderr']);
         $stateText = trim($stateStatus['stdout'] . "\n" . $stateStatus['stderr']);
 
-        $status['printer_exists'] = $printerStatus['return_code'] === 0 && stripos($printerText, 'unknown') === false;
+        $printerKnownByAnyCommand = stripos($printerText . "\n" . $acceptText . "\n" . $stateText, 'unknown') === false
+            && (
+                preg_match('/printer\s+' . preg_quote($this->printerName, '/') . '\b/i', $printerText . "\n" . $stateText)
+                || preg_match('/\b' . preg_quote($this->printerName, '/') . '\s+(accepting|not accepting)\b/i', $acceptText)
+                || $stateStatus['return_code'] === 0
+            );
+        $status['printer_exists'] = $printerStatus['return_code'] === 0
+            ? stripos($printerText, 'unknown') === false
+            : $printerKnownByAnyCommand;
         if (preg_match('/\bis\s+disabled\b/i', $printerText)) {
             $status['enabled'] = false;
         } elseif (preg_match('/\bis\s+idle\b|\bis\s+printing\b|\bis\s+enabled\b/i', $printerText)) {
@@ -139,14 +147,14 @@ class CupsService
         if ($diag['cups_active'] === false) {
             return $this->failedPreflight($checks, 'CUPS parado ou inacessível');
         }
-        if (!$diag['printer_exists']) {
-            return $this->failedPreflight($checks, 'Impressora não encontrada no CUPS');
-        }
         if (($diag['reason'] ?? '') === 'falta de papel') {
             return $this->failedPreflight($checks, 'Impressora sem papel. Não é possível enviar impressões.');
         }
         if (($diag['reason'] ?? '') === 'atolamento de papel') {
             return $this->failedPreflight($checks, 'Atolamento de papel na impressora. Não é possível enviar impressões.');
+        }
+        if (!$diag['printer_exists']) {
+            return $this->failedPreflight($checks, 'Impressora não encontrada no CUPS');
         }
         if ($diag['enabled'] === false) {
             return $this->failedPreflight($checks, 'Impressora desativada');
@@ -181,13 +189,14 @@ class CupsService
         }
 
         $after = $this->diagnostics();
-        $success = ($after['enabled'] !== false) && ($after['accepting'] !== false);
+        $commandFailures = array_filter($commands, fn($cmd) => (int) ($cmd['return_code'] ?? 1) !== 0);
+        $success = empty($commandFailures) && ($after['enabled'] !== false) && ($after['accepting'] !== false);
 
         return [
             'success' => $success,
             'message' => $success
                 ? 'Comando de reativação enviado. Confira se há papel antes de imprimir.'
-                : 'Não foi possível reativar pelo sistema. Verifique permissões do usuário web no CUPS.',
+                : 'O servidor recebeu o comando, mas a impressora ainda não ficou pronta. Veja o retorno do CUPS abaixo.',
             'commands' => $commands,
             'diagnostics' => $after,
         ];
@@ -304,7 +313,7 @@ class CupsService
             'permissão negada' => ['permission denied', 'forbidden', 'not authorized', 'unauthorized'],
             'falha no filtro do CUPS' => ['filter failed', 'filter error', 'unsupported document-format'],
             'trabalho cancelado' => ['canceled', 'cancelled', 'aborted'],
-            'falta de papel' => ['media-empty', 'paper-empty', 'out of paper', 'no paper', 'paper out'],
+            'falta de papel' => ['media-empty', 'paper-empty', 'out of paper', 'no paper', 'paper out', 'falta de papel', 'sem papel'],
             'atolamento de papel' => ['paper-jam', 'jammed', 'paper jam'],
             'impressora desativada' => ['disabled', 'paused', 'stopped'],
             'impressora não aceita impressões' => ['not accepting', 'rejecting'],
@@ -354,12 +363,6 @@ class CupsService
             $status['notice'] = 'CUPS parado ou inacessível. Não é possível enviar impressões.';
             return;
         }
-        if (($status['printer_exists'] ?? true) === false) {
-            $status['can_print'] = false;
-            $status['notice_type'] = 'danger';
-            $status['notice'] = 'Impressora não encontrada no CUPS.';
-            return;
-        }
         if ($reason === 'falta de papel') {
             $status['can_print'] = false;
             $status['notice_type'] = 'danger';
@@ -370,6 +373,12 @@ class CupsService
             $status['can_print'] = false;
             $status['notice_type'] = 'danger';
             $status['notice'] = 'Atolamento de papel na impressora. Não é possível enviar impressões.';
+            return;
+        }
+        if (($status['printer_exists'] ?? true) === false) {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'danger';
+            $status['notice'] = 'Impressora não encontrada no CUPS.';
             return;
         }
         if ($enabled === false) {
