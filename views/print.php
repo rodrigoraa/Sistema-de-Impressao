@@ -130,7 +130,8 @@
                                         <label class="form-label">Modo</label>
                                         <select class="form-select" name="sides">
                                             <option value="one-sided">Simples</option>
-                                            <option value="two-sided-long-edge">Frente e verso</option>
+                                            <option value="two-sided-long-edge">Frente e verso - borda maior</option>
+                                            <option value="two-sided-short-edge">Frente e verso - borda menor</option>
                                         </select>
                                     </div>
 

@@ -586,7 +586,7 @@ class PrintController
     private function largeDocumentAdvice($pages)
     {
         $pages = (int) $pages;
-        $threshold = max(2, (int) ($_ENV['LARGE_DOCUMENT_PAGE_WARNING'] ?? 20));
+        $threshold = max(2, (int) ($_ENV['LARGE_DOCUMENT_PAGE_WARNING'] ?? 4));
         if ($pages < $threshold) {
             return '';
         }
