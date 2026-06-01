@@ -27,6 +27,12 @@
     margin-bottom: 16px;
 }
 
+.history-page {
+    max-width: 1560px;
+    padding-left: 24px;
+    padding-right: 24px;
+}
+
 .panel-title {
     font-size: 1rem;
     font-weight: 750;
@@ -37,8 +43,36 @@
     margin-bottom: 0;
 }
 
+.history-table-panel {
+    padding: 0;
+    overflow: hidden;
+}
+
+.history-table-wrap {
+    overflow-x: auto;
+}
+
+.history-table {
+    min-width: 1080px;
+}
+
+.history-table th:nth-child(1),
+.history-table td:nth-child(1) {
+    width: 26%;
+}
+
+.history-table th:nth-child(4),
+.history-table td:nth-child(4) {
+    width: 28%;
+}
+
+.history-table th:last-child,
+.history-table td:last-child {
+    width: 180px;
+}
+
 .file-name {
-    max-width: 360px;
+    max-width: 520px;
 }
 
 .history-summary {
@@ -141,9 +175,100 @@
     }
 }
 
+@media (max-width: 768px) {
+    .history-page {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .history-table-panel {
+        background: transparent;
+        border: 0 !important;
+        box-shadow: none;
+        padding: 0;
+    }
+
+    .history-table-wrap {
+        overflow-x: visible;
+    }
+
+    .history-table {
+        display: block;
+        min-width: 0;
+    }
+
+    .history-table thead {
+        display: none;
+    }
+
+    .history-table tbody {
+        display: grid;
+        gap: 12px;
+    }
+
+    .history-table tbody tr {
+        display: grid;
+        gap: 10px;
+        background: var(--app-surface);
+        border: 1px solid var(--app-line);
+        border-radius: 8px;
+        box-shadow: var(--app-shadow);
+        padding: 14px;
+    }
+
+    .history-table tbody td {
+        display: grid;
+        grid-template-columns: minmax(92px, 32%) minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        border: 0;
+        padding: 0;
+        text-align: left !important;
+        width: auto !important;
+    }
+
+    .history-table tbody td::before {
+        content: attr(data-label);
+        color: var(--app-muted);
+        font-size: .76rem;
+        font-weight: 750;
+        text-transform: uppercase;
+    }
+
+    .history-table tbody td[colspan] {
+        display: block;
+        text-align: center !important;
+    }
+
+    .history-table tbody td[colspan]::before {
+        content: "";
+        display: none;
+    }
+
+    .file-name,
+    .history-summary {
+        max-width: none;
+        min-width: 0;
+    }
+
+    .job-actions {
+        justify-items: start;
+        min-width: 0;
+    }
+
+    .accounting-adjust {
+        width: min(100%, 320px);
+    }
+}
+
 @media (max-width: 560px) {
     .metric-grid,
     .health-grid {
         grid-template-columns: 1fr;
+    }
+
+    .history-table tbody td {
+        grid-template-columns: 1fr;
+        gap: 4px;
     }
 }

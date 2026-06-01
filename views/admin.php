@@ -75,7 +75,7 @@ $enableAttemptLabel = function ($attempt) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/base.css?v=20260601">
-    <link rel="stylesheet" href="/css/admin.css?v=20260601">
+    <link rel="stylesheet" href="/css/admin.css?v=20260602">
 </head>
 
 <body>

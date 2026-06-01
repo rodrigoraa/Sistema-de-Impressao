@@ -136,7 +136,7 @@ if ($currentStatus === 'active') {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/base.css?v=20260601">
-    <link rel="stylesheet" href="/css/admin.css?v=20260601">
+    <link rel="stylesheet" href="/css/admin.css?v=20260602">
 </head>
 
 <body>
@@ -154,7 +154,7 @@ if ($currentStatus === 'active') {
             </div>
         </header>
 
-        <main class="container py-4">
+        <main class="container-fluid history-page py-4">
             <?php if (!empty($_SESSION['flash'])): ?>
                 <div class="alert alert-<?= ($_SESSION['flash_type'] ?? '') === 'error' ? 'danger' : 'success' ?>">
                     <?= htmlspecialchars($_SESSION['flash']); unset($_SESSION['flash'], $_SESSION['flash_type']); ?>
@@ -213,9 +213,9 @@ if ($currentStatus === 'active') {
                 </form>
             </section>
 
-            <section class="panel">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle data-table">
+            <section class="panel history-table-panel">
+                <div class="table-responsive history-table-wrap">
+                    <table class="table table-hover align-middle data-table history-table">
                         <thead>
                             <tr>
                                 <th>Arquivo</th>
@@ -242,7 +242,7 @@ if ($currentStatus === 'active') {
                                         $sheetsPerCopy = max(1, (int) ceil(max(1, $selected) / max(1, (int) ($job['number_up'] ?? 1))));
                                     ?>
                                     <tr>
-                                        <td>
+                                        <td data-label="Arquivo">
                                             <div class="fw-semibold text-truncate file-name"><?= htmlspecialchars($job['original_name']) ?></div>
                                             <?php if (!empty($job['error_message'])): ?>
                                                 <small class="text-danger"><?= htmlspecialchars($traduzDiagnostico($job['error_message'])) ?></small>
@@ -269,9 +269,9 @@ if ($currentStatus === 'active') {
                                             <?php endif; ?>
                                         </td>
                                         <?php if ($isAdmin): ?>
-                                            <td><?= htmlspecialchars($job['user_name'] ?: $job['user']) ?><br><small class="text-muted"><?= htmlspecialchars($job['user']) ?></small></td>
+                                            <td data-label="Professor"><?= htmlspecialchars($job['user_name'] ?: $job['user']) ?><br><small class="text-muted"><?= htmlspecialchars($job['user']) ?></small></td>
                                         <?php endif; ?>
-                                        <td><span class="badge <?= $meta['class'] ?>"><i class="bi <?= $meta['icon'] ?>"></i> <?= $meta['label'] ?></span></td>
+                                        <td data-label="Situação"><span class="badge <?= $meta['class'] ?>"><i class="bi <?= $meta['icon'] ?>"></i> <?= $meta['label'] ?></span></td>
                                         <?php
                                             $orientationPt = [
                                                 'auto' => 'Automática',
@@ -280,7 +280,7 @@ if ($currentStatus === 'active') {
                                             ][$job['orientation']] ?? ($job['orientation'] ?: 'Retrato');
                                             $paperPt = ($job['paper'] ?? '') === 'Letter' ? 'Carta' : ($job['paper'] ?: 'A4');
                                         ?>
-                                        <td>
+                                        <td data-label="Resumo">
                                             <div class="history-summary">
                                                 <span><strong>Documento:</strong> <?= (int) $job['pages'] ?> pág.</span>
                                                 <span><strong>Seleção:</strong> <?= htmlspecialchars($selectionLabel($job)) ?><?= $selected > 0 ? ' · ' . (int) $selected . ' pág. usadas' : '' ?></span>
@@ -289,12 +289,12 @@ if ($currentStatus === 'active') {
                                                 <span><strong>Papel/orientação:</strong> <?= htmlspecialchars($paperPt) ?> · <?= htmlspecialchars($orientationPt) ?></span>
                                             </div>
                                         </td>
-                                        <td>
+                                        <td data-label="Folhas">
                                             <span class="badge text-bg-primary"><?= (int) $job['charged_pages'] ?></span>
                                             <small class="d-block text-muted"><?= (int) $sheetsPerCopy ?> por cópia</small>
                                         </td>
-                                        <td><small><?= htmlspecialchars($job['created_at']) ?></small></td>
-                                        <td class="text-end">
+                                        <td data-label="Data"><small><?= htmlspecialchars($job['created_at']) ?></small></td>
+                                        <td data-label="Ações" class="text-end">
                                             <div class="job-actions">
                                                 <?php if (!$isLegacyUsage): ?>
                                                     <div class="job-action-buttons">
