@@ -77,8 +77,20 @@ $traduzDiagnostico = function ($valor) {
             <section class="panel">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2 class="panel-title">Situação atual da impressora</h2>
-                    <a href="/admin?month=<?= htmlspecialchars($month) ?>&cpf=<?= htmlspecialchars($cpf ?? '') ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise"></i> Atualizar</a>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a href="/admin?month=<?= htmlspecialchars($month) ?>&cpf=<?= htmlspecialchars($cpf ?? '') ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise"></i> Atualizar</a>
+                        <form method="post" action="/admin/printer/enable">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                            <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-play-circle"></i> Reativar no CUPS</button>
+                        </form>
+                    </div>
                 </div>
+                <?php if (!empty($printerStatus['notice'])): ?>
+                    <div class="alert alert-<?= htmlspecialchars($printerStatus['notice_type'] ?? 'info') ?> d-flex gap-2 align-items-start">
+                        <i class="bi bi-printer"></i>
+                        <span><?= htmlspecialchars($printerStatus['notice']) ?></span>
+                    </div>
+                <?php endif; ?>
                 <div class="row g-3">
                     <div class="col-md-3">
                         <div class="metric"><span>Impressora</span><strong><?= htmlspecialchars($printerStatus['printer'] ?: 'não configurada') ?></strong></div>

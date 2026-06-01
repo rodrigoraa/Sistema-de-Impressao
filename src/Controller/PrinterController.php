@@ -1,7 +1,22 @@
 <?php
+require_once __DIR__ . '/../Service/CupsService.php';
 
 class PrinterController
 {
+    public function status()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!isset($_SESSION['user'])) {
+            http_response_code(401);
+            echo json_encode(['success' => false, 'message' => 'Sessão expirada']);
+            return;
+        }
+
+        $status = (new CupsService())->diagnostics();
+        echo json_encode(['success' => true, 'status' => $status], JSON_UNESCAPED_UNICODE);
+    }
+
     public function options()
     {
         header('Content-Type: application/json');

@@ -75,6 +75,7 @@
                 </div>
             <?php endif; ?>
             <div id="printResult" class="alert d-none"></div>
+            <div id="printerStatusBox" class="alert d-none" role="status"></div>
 
             <div class="row g-4">
 
@@ -216,7 +217,7 @@
                                     </div>
                                 <?php endif; ?>
 
-                                <button id="btnPrint" class="btn btn-primary w-100">
+                                <button id="btnPrint" class="btn btn-primary w-100" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
                                     <span class="text">Imprimir</span>
                                     <span class="spinner-border spinner-border-sm d-none"></span>
                                 </button>
@@ -300,13 +301,17 @@
         const resultBox = document.getElementById('printResult');
         const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
         const adminUsers = <?= json_encode($userList ?? [], JSON_UNESCAPED_UNICODE) ?>;
+        let printerStatus = <?= json_encode($printerStatus ?? [], JSON_UNESCAPED_UNICODE) ?>;
         let pageCountToken = 0;
         let previewToken = 0;
         let previewObjectUrl = '';
+        let currentPageAdvice = '';
+        let printingActive = false;
         const scaleSelect = document.querySelector('[name="scale"]');
         const scaleCustomBox = document.getElementById('scaleCustomBox');
         const targetUserSearch = document.getElementById('targetUserSearch');
         const targetUserCpf = document.getElementById('targetUserCpf');
+        const printerStatusBox = document.getElementById('printerStatusBox');
 
         scaleSelect.addEventListener('change', () => {
             scaleCustomBox.classList.toggle('d-none', scaleSelect.value !== 'custom');
@@ -400,6 +405,7 @@
 
             preview.innerHTML = '';
             preview.onclick = null;
+            currentPageAdvice = '';
             dropArea.classList.remove('error', 'success');
             if (previewObjectUrl) {
                 URL.revokeObjectURL(previewObjectUrl);
@@ -527,14 +533,32 @@
                             : '';
                         const warning = data.warning ? ` · atenção: ${data.warning}` : '';
                         info.textContent = `${formatSize(file.size)} · ${pagesLabel}${converted}${warning}`;
+                        currentPageAdvice = data.advice || '';
+                        renderPageAdvice();
                     } else {
                         info.textContent = `${formatSize(file.size)} · ${data.message}`;
+                        currentPageAdvice = '';
+                        renderPageAdvice();
                     }
                 })
                 .catch(() => {
                     if (token !== pageCountToken) return;
                     info.textContent = `${formatSize(file.size)} · não foi possível contar as páginas`;
+                    currentPageAdvice = '';
+                    renderPageAdvice();
                 });
+        }
+
+        function renderPageAdvice() {
+            const existing = document.getElementById('pageAdvice');
+            if (existing) existing.remove();
+            if (!currentPageAdvice) return;
+
+            const box = document.createElement('div');
+            box.id = 'pageAdvice';
+            box.className = 'print-advice';
+            box.innerHTML = `<i class="bi bi-lightbulb"></i><span>${escapeHtml(currentPageAdvice)}</span>`;
+            info.insertAdjacentElement('afterend', box);
         }
 
         ['paper', 'orientation'].forEach(name => {
@@ -552,6 +576,15 @@
             });
         });
 
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         function showPrintResult(message, success) {
             resultBox.className = `alert alert-${success ? 'success' : 'danger'}`;
             resultBox.textContent = message;
@@ -559,10 +592,46 @@
             resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
+        function renderPrinterStatus(status) {
+            printerStatus = status || {};
+            const notice = printerStatus.notice || '';
+            if (!notice) {
+                printerStatusBox.classList.add('d-none');
+                if (!printingActive) {
+                    btnPrint.disabled = false;
+                }
+                return;
+            }
+
+            const type = printerStatus.notice_type || (printerStatus.can_print === false ? 'warning' : 'success');
+            printerStatusBox.className = `alert alert-${type} printer-status-alert`;
+            printerStatusBox.innerHTML = `<i class="bi bi-printer"></i><span>${escapeHtml(notice)}</span>`;
+            printerStatusBox.classList.remove('d-none');
+            if (!printingActive) {
+                btnPrint.disabled = printerStatus.can_print === false;
+            }
+        }
+
+        function refreshPrinterStatus() {
+            fetch('/printer/status', {
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && data.status) {
+                        renderPrinterStatus(data.status);
+                    }
+                })
+                .catch(() => {});
+        }
+
         function setPrintingState(active) {
+            printingActive = active;
             const text = btnPrint.querySelector('.text');
             const spinner = btnPrint.querySelector('.spinner-border');
-            btnPrint.disabled = active;
+            btnPrint.disabled = active || printerStatus.can_print === false;
             text.textContent = active ? 'Enviando...' : 'Imprimir';
             spinner.classList.toggle('d-none', !active);
             progress.classList.toggle('d-none', !active);
@@ -576,6 +645,11 @@
             event.preventDefault();
             if (!syncTargetUserCpf()) {
                 printForm.reportValidity();
+                return;
+            }
+            if (printerStatus.can_print === false) {
+                showPrintResult(printerStatus.notice || 'Impressora indisponível. Não é possível enviar impressões.', false);
+                refreshPrinterStatus();
                 return;
             }
             resultBox.classList.add('d-none');
@@ -628,6 +702,10 @@
                     setPrintingState(false);
                 });
         });
+
+        renderPrinterStatus(printerStatus);
+        refreshPrinterStatus();
+        setInterval(refreshPrinterStatus, 30000);
 
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

@@ -82,6 +82,34 @@ class AdminController
         exit;
     }
 
+    public function enablePrinter()
+    {
+        if (!isset($_SESSION['user'])) {
+            header('Location: /login');
+            exit;
+        }
+        if (!AuthService::isAdmin()) {
+            http_response_code(403);
+            exit('Acesso negado');
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            exit('Método inválido');
+        }
+
+        $token = $_POST['csrf_token'] ?? '';
+        if (!is_string($token) || !hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
+            http_response_code(419);
+            exit('Token CSRF inválido');
+        }
+
+        $result = (new CupsService())->enablePrinter();
+        $_SESSION['flash'] = $result['message'] ?? 'Comando executado.';
+        $_SESSION['flash_type'] = !empty($result['success']) ? 'success' : 'error';
+        header('Location: /admin');
+        exit;
+    }
+
     public function monthlyPdf()
     {
         if (!isset($_SESSION['user'])) {

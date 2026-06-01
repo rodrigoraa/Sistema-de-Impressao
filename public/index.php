@@ -249,6 +249,11 @@ if ($uri === '/admin/storage/cleanup') {
     exit;
 }
 
+if ($uri === '/admin/printer/enable') {
+    (new AdminController())->enablePrinter();
+    exit;
+}
+
 if ($uri === '/admin/users') {
     (new UserController())->index();
     exit;
@@ -290,6 +295,11 @@ if ($uri === '/print/page-count') {
     exit;
 }
 
+if ($uri === '/printer/status') {
+    (new PrinterController())->status();
+    exit;
+}
+
 if ($uri === '/print/preview') {
     (new PrintController())->preview();
     exit;
@@ -314,6 +324,7 @@ if ($uri === '/prints/reprint') {
 $controller = new PrintController();
 $viewData = $controller->handle();
 $userList = is_array($viewData) ? ($viewData['userList'] ?? []) : [];
+$printerStatus = is_array($viewData) ? ($viewData['printerStatus'] ?? []) : [];
 
 // VIEW
 require $projectRoot . '/views/print.php';

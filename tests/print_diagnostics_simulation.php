@@ -15,6 +15,7 @@ $cases = [
     'trabalho cancelado' => 'kyocera-escola-123 user 1024 Mon canceled',
     'falha filtro' => 'stopped "Filter failed"',
     'falta papel' => 'printer-state-reasons=media-empty-warning',
+    'desativada por falta de papel' => 'printer kyocera-escola disabled since Mon printer-state-reasons=media-empty-warning',
     'toner' => 'marker-supply-low-warning toner low',
 ];
 

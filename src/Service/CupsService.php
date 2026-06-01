@@ -32,17 +32,22 @@ class CupsService
             'completed_jobs' => 0,
             'canceled_jobs' => 0,
             'failed_jobs' => 0,
+            'can_print' => true,
+            'notice_type' => 'success',
+            'notice' => '',
             'raw' => [],
         ];
 
         if ($this->printerName === '') {
             $status['reason'] = 'PRINTER_NAME nao configurada';
             $status['last_error'] = $status['reason'];
+            $this->applyUserNotice($status);
             return $status;
         }
 
         if ($this->isWindows()) {
             $status['reason'] = 'Diagnostico CUPS indisponivel no Windows';
+            $this->applyUserNotice($status);
             return $status;
         }
 
@@ -51,6 +56,7 @@ class CupsService
             $status['cups_active'] = false;
             $status['reason'] = 'lpstat nao encontrado';
             $status['last_error'] = $status['reason'];
+            $this->applyUserNotice($status);
             return $status;
         }
 
@@ -110,6 +116,7 @@ class CupsService
             $status['last_error'] = $status['reason'];
         }
 
+        $this->applyUserNotice($status);
         return $status;
     }
 
@@ -135,6 +142,12 @@ class CupsService
         if (!$diag['printer_exists']) {
             return $this->failedPreflight($checks, 'Impressora não encontrada no CUPS');
         }
+        if (($diag['reason'] ?? '') === 'falta de papel') {
+            return $this->failedPreflight($checks, 'Impressora sem papel. Não é possível enviar impressões.');
+        }
+        if (($diag['reason'] ?? '') === 'atolamento de papel') {
+            return $this->failedPreflight($checks, 'Atolamento de papel na impressora. Não é possível enviar impressões.');
+        }
         if ($diag['enabled'] === false) {
             return $this->failedPreflight($checks, 'Impressora desativada');
         }
@@ -143,6 +156,41 @@ class CupsService
         }
 
         return $checks;
+    }
+
+    public function enablePrinter()
+    {
+        if ($this->printerName === '') {
+            return ['success' => false, 'message' => 'PRINTER_NAME não configurada', 'commands' => []];
+        }
+        if ($this->isWindows()) {
+            return ['success' => false, 'message' => 'Reativação automática disponível apenas em servidor Linux com CUPS', 'commands' => []];
+        }
+
+        $commands = [];
+        foreach ([
+            'cupsenable' => ['/usr/sbin/cupsenable', '/usr/bin/cupsenable', 'cupsenable'],
+            'cupsaccept' => ['/usr/sbin/cupsaccept', '/usr/bin/cupsaccept', 'cupsaccept'],
+        ] as $name => $candidates) {
+            $bin = $this->findExecutable($candidates);
+            if ($bin === null) {
+                $commands[$name] = ['return_code' => 127, 'stdout' => '', 'stderr' => $name . ' nao encontrado'];
+                continue;
+            }
+            $commands[$name] = $this->run(escapeshellarg($bin) . ' ' . escapeshellarg($this->printerName) . ' 2>&1');
+        }
+
+        $after = $this->diagnostics();
+        $success = ($after['enabled'] !== false) && ($after['accepting'] !== false);
+
+        return [
+            'success' => $success,
+            'message' => $success
+                ? 'Comando de reativação enviado. Confira se há papel antes de imprimir.'
+                : 'Não foi possível reativar pelo sistema. Verifique permissões do usuário web no CUPS.',
+            'commands' => $commands,
+            'diagnostics' => $after,
+        ];
     }
 
     public function runLp($filePath, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions)
@@ -256,10 +304,10 @@ class CupsService
             'permissão negada' => ['permission denied', 'forbidden', 'not authorized', 'unauthorized'],
             'falha no filtro do CUPS' => ['filter failed', 'filter error', 'unsupported document-format'],
             'trabalho cancelado' => ['canceled', 'cancelled', 'aborted'],
-            'impressora desativada' => ['disabled', 'paused', 'stopped'],
-            'impressora não aceita impressões' => ['not accepting', 'rejecting'],
             'falta de papel' => ['media-empty', 'paper-empty', 'out of paper', 'no paper', 'paper out'],
             'atolamento de papel' => ['paper-jam', 'jammed', 'paper jam'],
+            'impressora desativada' => ['disabled', 'paused', 'stopped'],
+            'impressora não aceita impressões' => ['not accepting', 'rejecting'],
             'toner ou suprimento' => ['toner', 'marker-supply', 'marker-waste', 'ink-empty', 'ink-low'],
             'offline' => ['offline', 'not connected', 'unreachable'],
             'formato não suportado' => ['unsupported format', 'unsupported document', 'unsupported document-format'],
@@ -277,6 +325,69 @@ class CupsService
         }
 
         return '';
+    }
+
+    private function applyUserNotice(&$status)
+    {
+        $reason = $status['reason'] ?? '';
+        $enabled = $status['enabled'] ?? null;
+        $accepting = $status['accepting'] ?? null;
+
+        $status['can_print'] = true;
+        $status['notice_type'] = 'success';
+        $status['notice'] = 'Impressora pronta para receber impressões.';
+
+        if ($reason === 'PRINTER_NAME nao configurada') {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'danger';
+            $status['notice'] = 'PRINTER_NAME não configurada. Não é possível enviar impressões.';
+            return;
+        }
+        if ($reason === 'Diagnostico CUPS indisponivel no Windows') {
+            $status['notice_type'] = 'info';
+            $status['notice'] = 'Diagnóstico CUPS indisponível no Windows.';
+            return;
+        }
+        if (($status['cups_active'] ?? null) === false) {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'danger';
+            $status['notice'] = 'CUPS parado ou inacessível. Não é possível enviar impressões.';
+            return;
+        }
+        if (($status['printer_exists'] ?? true) === false) {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'danger';
+            $status['notice'] = 'Impressora não encontrada no CUPS.';
+            return;
+        }
+        if ($reason === 'falta de papel') {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'danger';
+            $status['notice'] = 'Impressora sem papel. Não é possível enviar impressões.';
+            return;
+        }
+        if ($reason === 'atolamento de papel') {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'danger';
+            $status['notice'] = 'Atolamento de papel na impressora. Não é possível enviar impressões.';
+            return;
+        }
+        if ($enabled === false) {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'warning';
+            $status['notice'] = 'Impressora desativada no CUPS. Verifique papel/erro físico e reative a impressora.';
+            return;
+        }
+        if ($accepting === false) {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'warning';
+            $status['notice'] = 'Impressora não está aceitando impressões no CUPS.';
+            return;
+        }
+        if ($reason !== '') {
+            $status['notice_type'] = 'warning';
+            $status['notice'] = 'Atenção na impressora: ' . $reason . '.';
+        }
     }
 
     public function run($command)

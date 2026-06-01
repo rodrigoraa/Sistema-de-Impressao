@@ -110,7 +110,10 @@ class PrintController
 
         // Se GET, retorna dados para a view (lista de usuários)
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            return ['userList' => $userList];
+            return [
+                'userList' => $userList,
+                'printerStatus' => (new CupsService())->diagnostics(),
+            ];
         }
 
         // ============================
@@ -400,12 +403,14 @@ class PrintController
             if ($originalPages > 0 && $convertedPages > $originalPages) {
                 $warning = "O DOCX declara {$originalPages} " . ($originalPages === 1 ? 'página' : 'páginas') . ", mas a conversão gerou {$convertedPages}.";
             }
+            $advice = $this->largeDocumentAdvice($pages);
 
             $this->respond($message, true, [
                 'pages' => $pages,
                 'original_pages' => $originalPages,
                 'converted_pages' => $convertedPages,
                 'warning' => $warning,
+                'advice' => $advice,
             ]);
         } catch (Throwable $e) {
             $this->respond('Não foi possível contar as páginas: ' . $e->getMessage(), false);
@@ -576,6 +581,17 @@ class PrintController
     {
         return !empty($extraOptions['page-ranges'])
             || in_array($extraOptions['page-set'] ?? '', ['odd', 'even'], true);
+    }
+
+    private function largeDocumentAdvice($pages)
+    {
+        $pages = (int) $pages;
+        $threshold = max(2, (int) ($_ENV['LARGE_DOCUMENT_PAGE_WARNING'] ?? 20));
+        if ($pages < $threshold) {
+            return '';
+        }
+
+        return 'Documento com muitas páginas. Tente imprimir em frente e verso ou 2 por folha.';
     }
 
     private function normalizeOrientation($orientation)

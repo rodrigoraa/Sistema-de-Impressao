@@ -141,6 +141,29 @@
     height: 8px;
 }
 
+.printer-status-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.printer-status-alert i {
+    margin-top: 2px;
+}
+
+.print-advice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 10px 12px;
+    border: 1px solid #f3d37a;
+    border-radius: 8px;
+    color: #6d5209;
+    background: #fff8e6;
+    font-size: .9rem;
+}
+
 @media (max-width: 991px) {
     .info-panel {
         position: static;
