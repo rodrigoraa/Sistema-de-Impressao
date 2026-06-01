@@ -121,7 +121,7 @@ unset($_SESSION['cups_enable_result']);
                                             $output = trim($stdout . ($stdout !== '' && $stderr !== '' ? ' | ' : '') . $stderr);
                                         ?>
                                         <tr>
-                                            <td><?= htmlspecialchars($commandName) ?></td>
+                                            <td><?= htmlspecialchars(!empty($commandResult['used_sudo']) ? 'sudo ' . $commandName : $commandName) ?></td>
                                             <td><?= (int) ($commandResult['return_code'] ?? 0) ?></td>
                                             <td><?= htmlspecialchars($output !== '' ? $output : 'sem saída') ?></td>
                                         </tr>

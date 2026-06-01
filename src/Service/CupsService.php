@@ -180,12 +180,7 @@ class CupsService
             'cupsenable' => ['/usr/sbin/cupsenable', '/usr/bin/cupsenable', 'cupsenable'],
             'cupsaccept' => ['/usr/sbin/cupsaccept', '/usr/bin/cupsaccept', 'cupsaccept'],
         ] as $name => $candidates) {
-            $bin = $this->findExecutable($candidates);
-            if ($bin === null) {
-                $commands[$name] = ['return_code' => 127, 'stdout' => '', 'stderr' => $name . ' nao encontrado'];
-                continue;
-            }
-            $commands[$name] = $this->run(escapeshellarg($bin) . ' ' . escapeshellarg($this->printerName) . ' 2>&1');
+            $commands[$name] = $this->runCupsAdminCommand($name, $candidates);
         }
 
         $after = $this->diagnostics();
@@ -365,8 +360,10 @@ class CupsService
         }
         if ($reason === 'falta de papel') {
             $status['can_print'] = false;
-            $status['notice_type'] = 'danger';
-            $status['notice'] = 'Impressora sem papel. Não é possível enviar impressões.';
+            $status['notice_type'] = $enabled === false ? 'warning' : 'danger';
+            $status['notice'] = $enabled === false
+                ? 'Impressora desativada no CUPS. Último erro: falta de papel. Recoloque papel e reative no painel administrativo.'
+                : 'Impressora sem papel. Não é possível enviar impressões.';
             return;
         }
         if ($reason === 'atolamento de papel') {
@@ -402,6 +399,9 @@ class CupsService
     private function enablePrinterFailureMessage($commands, $diagnostics)
     {
         $text = strtolower(json_encode($commands, JSON_UNESCAPED_UNICODE) ?: '');
+        if (str_contains($text, 'a password is required') || str_contains($text, 'sudo: a password')) {
+            return 'O servidor tentou reativar com sudo, mas o sudoers ainda não permite executar sem senha.';
+        }
         if (str_contains($text, 'client-error-forbidden') || str_contains($text, 'forbidden') || str_contains($text, 'permission denied')) {
             return 'O servidor recebeu o comando, mas o CUPS negou permissão para reativar a impressora.';
         }
@@ -413,6 +413,44 @@ class CupsService
         }
 
         return 'O servidor recebeu o comando, mas a impressora ainda não ficou pronta. Veja o retorno do CUPS abaixo.';
+    }
+
+    private function runCupsAdminCommand($name, $candidates)
+    {
+        $bin = $this->findExecutable($candidates);
+        if ($bin === null) {
+            return ['return_code' => 127, 'stdout' => '', 'stderr' => $name . ' nao encontrado', 'used_sudo' => false];
+        }
+
+        $direct = $this->run(escapeshellarg($bin) . ' ' . escapeshellarg($this->printerName) . ' 2>&1');
+        $direct['used_sudo'] = false;
+        if ((int) $direct['return_code'] === 0 || !$this->looksLikePermissionDenied($direct['stdout'] . "\n" . $direct['stderr'])) {
+            return $direct;
+        }
+
+        $sudo = $this->findExecutable(['/usr/bin/sudo', '/bin/sudo', 'sudo']);
+        if ($sudo === null) {
+            $direct['stderr'] = trim($direct['stderr'] . "\nsudo nao encontrado para tentar reativacao com privilegio");
+            return $direct;
+        }
+
+        $withSudo = $this->run(escapeshellarg($sudo) . ' -n ' . escapeshellarg($bin) . ' ' . escapeshellarg($this->printerName) . ' 2>&1');
+        $withSudo['used_sudo'] = true;
+        $withSudo['direct_return_code'] = $direct['return_code'];
+        $withSudo['direct_stdout'] = $direct['stdout'];
+        $withSudo['direct_stderr'] = $direct['stderr'];
+
+        return $withSudo;
+    }
+
+    private function looksLikePermissionDenied($text)
+    {
+        $text = strtolower((string) $text);
+        return str_contains($text, 'client-error-forbidden')
+            || str_contains($text, 'forbidden')
+            || str_contains($text, 'permission denied')
+            || str_contains($text, 'not authorized')
+            || str_contains($text, 'unauthorized');
     }
 
     public function run($command)
