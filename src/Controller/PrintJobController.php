@@ -17,6 +17,10 @@ class PrintJobController
 
         $status = $_GET['status'] ?? '';
         $isAdmin = AuthService::isAdmin();
+        if (!$isAdmin && in_array($status, ['active', 'queued', 'processing'], true)) {
+            $status = '';
+            $_GET['status'] = '';
+        }
         $service = new PrintJobService();
         $jobs = $service->listForUser($_SESSION['user'], $isAdmin, $status, 150, [
             'cpf' => $_GET['cpf'] ?? '',

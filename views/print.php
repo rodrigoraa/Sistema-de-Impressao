@@ -40,9 +40,11 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                         <?= htmlspecialchars($sessionName) ?>
                     </span>
 
-                    <a href="/prints?status=active" class="btn btn-outline-light btn-sm">
-                        <i class="bi bi-list-task"></i> Fila
-                    </a>
+                    <?php if ($sessionRole === 'admin'): ?>
+                        <a href="/prints?status=active" class="btn btn-outline-light btn-sm">
+                            <i class="bi bi-list-task"></i> Fila
+                        </a>
+                    <?php endif; ?>
 
                     <a href="/logout" class="btn btn-outline-danger btn-sm">
                         <i class="bi bi-box-arrow-right"></i> Sair
@@ -253,8 +255,8 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                             </ul>
 
                             <div class="quick-actions mt-3">
-                                <a href="/prints?status=active">
-                                    <span><i class="bi bi-list-task"></i> Ver fila de impressão</span>
+                                <a href="<?= $sessionRole === 'admin' ? '/prints?status=active' : '/prints' ?>">
+                                    <span><i class="bi <?= $sessionRole === 'admin' ? 'bi-list-task' : 'bi-clock-history' ?>"></i> <?= $sessionRole === 'admin' ? 'Ver fila de impressão' : 'Ver meu histórico' ?></span>
                                     <i class="bi bi-chevron-right"></i>
                                 </a>
                                 <?php if ($sessionRole === 'admin'): ?>

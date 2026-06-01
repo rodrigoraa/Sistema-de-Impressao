@@ -65,27 +65,51 @@
     flex-wrap: wrap;
 }
 
-.btn-group form .btn {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
+.job-actions {
+    display: grid;
+    justify-items: end;
+    gap: 8px;
+    min-width: 150px;
+}
+
+.job-action-buttons {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
 }
 
 .accounting-adjust {
-    min-width: 190px;
+    width: min(260px, 72vw);
+    border: 1px solid #f2c66d;
+    border-radius: 8px;
+    background: #fff8e7;
+    padding: 8px;
 }
 
 .accounting-adjust summary {
     list-style: none;
     cursor: pointer;
+    color: #7a4a00;
+    font-size: .84rem;
+    font-weight: 750;
+    text-align: center;
 }
 
 .accounting-adjust summary::-webkit-details-marker {
     display: none;
 }
 
+.accounting-adjust[open] {
+    box-shadow: 0 10px 24px rgba(122, 74, 0, .12);
+}
+
+.accounting-adjust .form-label {
+    color: #6b4a12;
+}
+
 .health-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     gap: 12px;
 }
 

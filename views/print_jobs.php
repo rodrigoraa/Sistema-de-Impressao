@@ -98,12 +98,19 @@ $hasPartialSelection = function ($job) {
 };
 $statusFilters = [
     '' => 'Todo o histórico',
-    'active' => 'Fila',
-    'queued' => 'Na fila',
-    'processing' => 'Enviando',
     'completed' => 'Concluídas',
     'failed' => 'Erros',
 ];
+if ($isAdmin) {
+    $statusFilters = [
+        '' => 'Todo o histórico',
+        'active' => 'Fila',
+        'queued' => 'Na fila',
+        'processing' => 'Enviando',
+        'completed' => 'Concluídas',
+        'failed' => 'Erros',
+    ];
+}
 $currentStatus = $_GET['status'] ?? '';
 $pageHeading = $isAdmin ? 'Histórico completo de impressão' : 'Meu histórico de impressão';
 $pageDescription = $isAdmin ? 'Todas as impressões de todos os professores' : 'Minhas impressões e tentativas';
@@ -128,8 +135,8 @@ if ($currentStatus === 'active') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="/css/base.css?v=20260511">
-    <link rel="stylesheet" href="/css/admin.css?v=20260511">
+    <link rel="stylesheet" href="/css/base.css?v=20260601">
+    <link rel="stylesheet" href="/css/admin.css?v=20260601">
 </head>
 
 <body>
@@ -288,21 +295,23 @@ if ($currentStatus === 'active') {
                                         </td>
                                         <td><small><?= htmlspecialchars($job['created_at']) ?></small></td>
                                         <td class="text-end">
-                                            <div class="btn-group btn-group-sm">
+                                            <div class="job-actions">
                                                 <?php if (!$isLegacyUsage): ?>
-                                                    <a class="btn btn-outline-secondary" title="Baixar arquivo" href="/prints/download?id=<?= (int) $job['id'] ?>"><i class="bi bi-download"></i></a>
-                                                    <?php if ($partialSelection): ?>
-                                                        <button class="btn btn-outline-secondary" disabled title="Faça uma nova impressão para repetir a seleção de páginas"><i class="bi bi-arrow-repeat"></i></button>
-                                                    <?php else: ?>
-                                                        <form method="post" action="/prints/reprint" class="d-inline">
-                                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                                                            <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
-                                                            <button class="btn btn-outline-primary" title="Reimprimir" onclick="return confirm('Reimprimir este arquivo?')"><i class="bi bi-arrow-repeat"></i></button>
-                                                        </form>
-                                                    <?php endif; ?>
+                                                    <div class="job-action-buttons">
+                                                        <a class="btn btn-outline-secondary btn-sm" title="Baixar arquivo" href="/prints/download?id=<?= (int) $job['id'] ?>"><i class="bi bi-download"></i></a>
+                                                        <?php if ($partialSelection): ?>
+                                                            <button class="btn btn-outline-secondary btn-sm" disabled title="Faça uma nova impressão para repetir a seleção de páginas"><i class="bi bi-arrow-repeat"></i></button>
+                                                        <?php else: ?>
+                                                            <form method="post" action="/prints/reprint" class="d-inline">
+                                                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                                                <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
+                                                                <button class="btn btn-outline-primary btn-sm" title="Reimprimir" onclick="return confirm('Reimprimir este arquivo?')"><i class="bi bi-arrow-repeat"></i></button>
+                                                            </form>
+                                                        <?php endif; ?>
+                                                    </div>
                                                     <?php if ($isAdmin && ($job['status'] ?? '') === 'completed'): ?>
-                                                        <details class="accounting-adjust mt-2 text-start">
-                                                            <summary class="btn btn-outline-warning btn-sm">Corrigir</summary>
+                                                        <details class="accounting-adjust text-start">
+                                                            <summary>Corrigir folhas</summary>
                                                             <form method="post" action="/prints/accounting" class="mt-2">
                                                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                                                 <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
