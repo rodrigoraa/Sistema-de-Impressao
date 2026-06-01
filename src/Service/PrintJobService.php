@@ -55,6 +55,22 @@ class PrintJobService
         $this->updateStatus($id, 'processing', $preparedFile, $pages, $chargedPages, null, false);
     }
 
+    public function updateSelection($id, $selectedPagesLabel, $selectedPagesCount)
+    {
+        $stmt = $this->db->prepare("
+            UPDATE print_jobs
+            SET selected_pages_label = :selected_pages_label,
+                selected_pages_count = :selected_pages_count,
+                updated_at = :updated_at
+            WHERE id = :id
+        ");
+        $stmt->bindValue(':selected_pages_label', substr((string) $selectedPagesLabel, 0, 120), SQLITE3_TEXT);
+        $stmt->bindValue(':selected_pages_count', max(0, (int) $selectedPagesCount), SQLITE3_INTEGER);
+        $stmt->bindValue(':updated_at', date('Y-m-d H:i:s'), SQLITE3_TEXT);
+        $stmt->bindValue(':id', (int) $id, SQLITE3_INTEGER);
+        $stmt->execute();
+    }
+
     public function markCompleted($id, $preparedFile, $pages, $chargedPages)
     {
         $this->updateStatus($id, 'completed', $preparedFile, $pages, $chargedPages, null, true);
@@ -214,6 +230,60 @@ class PrintJobService
         $row = $result ? $result->fetchArray(SQLITE3_ASSOC) : false;
 
         return $row ?: null;
+    }
+
+    public function adjustAccounting($id, $chargedPages, $reason, $adminCpf)
+    {
+        $id = (int) $id;
+        $chargedPages = max(0, (int) $chargedPages);
+        $reason = trim((string) $reason);
+        if ($id < 1) {
+            throw new RuntimeException('Impressão inválida');
+        }
+        if ($reason === '') {
+            throw new RuntimeException('Informe o motivo da correção');
+        }
+
+        $job = $this->findVisible($id, '', true);
+        if ($job === null || !empty($job['legacy_usage'])) {
+            throw new RuntimeException('Impressão não encontrada');
+        }
+        if (($job['status'] ?? '') !== 'completed') {
+            throw new RuntimeException('Só é possível corrigir contabilização de impressões concluídas');
+        }
+
+        $previous = (int) ($job['charged_pages'] ?? 0);
+        $now = date('Y-m-d H:i:s');
+        $entry = sprintf(
+            '[%s] Contabilização corrigida por %s: %d -> %d. Motivo: %s',
+            $now,
+            $adminCpf,
+            $previous,
+            $chargedPages,
+            str_replace(["\r", "\n"], ' ', $reason)
+        );
+        $observations = trim((string) ($job['observations'] ?? ''));
+        $observations = trim($observations . ($observations !== '' ? "\n" : '') . $entry);
+
+        $stmt = $this->db->prepare("
+            UPDATE print_jobs
+            SET charged_pages = :charged_pages,
+                entered_accumulator = :entered_accumulator,
+                observations = :observations,
+                updated_at = :updated_at
+            WHERE id = :id
+        ");
+        $stmt->bindValue(':charged_pages', $chargedPages, SQLITE3_INTEGER);
+        $stmt->bindValue(':entered_accumulator', $chargedPages > 0 ? 1 : 0, SQLITE3_INTEGER);
+        $stmt->bindValue(':observations', substr($observations, -4000), SQLITE3_TEXT);
+        $stmt->bindValue(':updated_at', $now, SQLITE3_TEXT);
+        $stmt->bindValue(':id', $id, SQLITE3_INTEGER);
+        $stmt->execute();
+
+        return [
+            'previous' => $previous,
+            'current' => $chargedPages,
+        ];
     }
 
     public function statsForUser($user, $isAdmin = false)
@@ -444,6 +514,8 @@ class PrintJobService
                 'copies' => 1,
                 'number_up' => 1,
                 'charged_pages' => (int) ($row['pages'] ?? 0),
+                'selected_pages_label' => '',
+                'selected_pages_count' => 0,
                 'sides' => '',
                 'orientation' => '',
                 'paper' => '',

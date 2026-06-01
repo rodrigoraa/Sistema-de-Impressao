@@ -112,7 +112,7 @@ class PrintController
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             return [
                 'userList' => $userList,
-                'printerStatus' => (new CupsService())->diagnostics(),
+                'printerStatus' => (new CupsService())->diagnostics(true),
             ];
         }
 
@@ -253,6 +253,8 @@ class PrintController
         $chargedPages = 0;
         $completed = false;
         $errorMessage = '';
+        $billableSourcePages = 0;
+        $printedPagesLabel = '';
         try {
             $originalPages = $sourceExt === 'docx' ? PageCounter::countDocxPages($dest) : 0;
             $printedFile = $printer->prepareFile($dest, $orientation, $paper, $extraOptions);
@@ -273,6 +275,8 @@ class PrintController
                 }
             }
             $billableSourcePages = $this->selectedPageCount($pages, $extraOptions);
+            $printedPagesLabel = $this->printedPagesLabel($pages, $extraOptions, $billableSourcePages);
+            $jobService->updateSelection($jobId, $printedPagesLabel, $billableSourcePages);
             $printOptions = $extraOptions;
             if ($this->hasPageSelection($extraOptions)) {
                 $selectedFile = $printer->selectPdfPages($printedFile, $pages, $extraOptions);
@@ -318,11 +322,17 @@ class PrintController
 
         // Mensagem de retorno
         if ($success) {
-            $msg = "Impressão concluída ({$pages} páginas, {$numberUp} por folha, {$copies} cópias = {$chargedPages} contabilizadas)";
+            $printResult = $printer->lastPrintResult();
+            $printedPagesLabel = $printedPagesLabel ?: $this->printedPagesLabel($pages, $extraOptions, $billableSourcePages ?: $pages);
+            $sourceLabel = ($billableSourcePages ?: $pages) === 1 ? '1 página selecionada' : (($billableSourcePages ?: $pages) . ' páginas selecionadas');
+            $copiesLabel = $copies === 1 ? '1 cópia' : "{$copies} cópias";
+            $chargedLabel = $chargedPages === 1 ? '1 contabilizada' : "{$chargedPages} contabilizadas";
+            $cupsConfirmation = $this->cupsConfirmationMessage($printResult['status_cups'] ?? '');
+            $msg = "Impressão concluída. {$printedPagesLabel}; {$sourceLabel}; {$numberUp} por folha; {$copiesLabel}; {$chargedLabel}. {$cupsConfirmation}.";
         } elseif ($completed === false && $pages > 0 && $errorMessage === '') {
-            $msg = "Impressão cancelada ou não concluída ({$pages} páginas x {$copies} cópias). Nada foi contabilizado.";
+            $msg = "A impressão não foi confirmada. Documento com {$pages} página(s), {$copies} cópia(s). Nada foi contabilizado.";
         } else {
-            $msg = "Erro ao enviar impressão" . ($errorMessage ? ": {$errorMessage}" : "");
+            $msg = "Não foi possível enviar a impressão" . ($errorMessage ? ": {$errorMessage}" : ". Verifique o aviso da impressora ou informe a equipe de TI.");
         }
 
         // Resposta AJAX vs Flash
@@ -575,6 +585,44 @@ class PrintController
         }
 
         return max(1, count($selected));
+    }
+
+    private function printedPagesLabel($totalPages, $extraOptions, $selectedCount)
+    {
+        $totalPages = max(1, (int) $totalPages);
+        $selectedCount = max(1, (int) $selectedCount);
+        $ranges = trim((string) ($extraOptions['page-ranges'] ?? ''));
+        $pageSet = $extraOptions['page-set'] ?? '';
+
+        if ($ranges !== '') {
+            $label = 'Páginas ' . str_replace(',', ', ', preg_replace('/\s+/', '', $ranges));
+        } else {
+            $label = $totalPages === 1 ? 'Página 1' : "Páginas 1-{$totalPages}";
+        }
+
+        if ($pageSet === 'odd') {
+            $label .= ' ímpares';
+        } elseif ($pageSet === 'even') {
+            $label .= ' pares';
+        }
+
+        if ($ranges === '' && $selectedCount >= $totalPages && $pageSet === '') {
+            return $totalPages === 1 ? 'Página 1' : "Todas as páginas ({$totalPages})";
+        }
+
+        return $label;
+    }
+
+    private function cupsConfirmationMessage($statusCups)
+    {
+        return match ((string) $statusCups) {
+            'completed' => 'O servidor confirmou a conclusão da impressão',
+            'left_queue' => 'O servidor enviou o trabalho para a impressora, mas não recebeu confirmação final',
+            'accepted_unverified' => 'O servidor aceitou o trabalho, mas não conseguiu confirmar o fim da impressão',
+            'accepted_unidentified' => 'O servidor aceitou o trabalho, mas não identificou o número dele na fila',
+            'accepted' => 'O servidor aceitou o trabalho para impressão',
+            default => 'Status CUPS: ' . ((string) $statusCups !== '' ? (string) $statusCups : 'não informado'),
+        };
     }
 
     private function hasPageSelection($extraOptions)

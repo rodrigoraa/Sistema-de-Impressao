@@ -18,6 +18,10 @@ $cases = [
     'desativada por falta de papel' => 'printer kyocera-escola disabled since Mon printer-state-reasons=media-empty-warning',
     'mensagem em portugues sem papel' => 'printer-state-message="falta de papel"',
     'toner' => 'marker-supply-low-warning toner low',
+    'sem toner' => 'printer-state-message="sem toner"',
+    'offline' => 'printer-state-reasons=offline-report',
+    'tampa aberta' => 'printer-state-reasons=door-open-report',
+    'atolamento portugues' => 'printer-state-message="papel atolado"',
 ];
 
 echo "Simulacao de diagnostico CUPS\n";

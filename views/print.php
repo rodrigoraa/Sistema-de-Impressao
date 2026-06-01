@@ -1,3 +1,7 @@
+<?php
+$sessionRole = $_SESSION['role'] ?? 'user';
+$sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
+?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -33,7 +37,7 @@
                 <div class="d-flex align-items-center gap-3">
                     <span class="user">
                         <i class="bi bi-person-circle"></i>
-                        <?= htmlspecialchars($_SESSION['name']) ?>
+                        <?= htmlspecialchars($sessionName) ?>
                     </span>
 
                     <a href="/prints?status=active" class="btn btn-outline-light btn-sm">
@@ -59,7 +63,7 @@
                     <a href="/prints" class="btn btn-outline-secondary btn-sm">
                         <i class="bi bi-clock-history"></i> Histórico
                     </a>
-                    <?php if ($_SESSION['role'] === 'admin'): ?>
+                    <?php if ($sessionRole === 'admin'): ?>
                         <a href="/admin" class="btn btn-outline-secondary btn-sm">
                             <i class="bi bi-speedometer2"></i> Painel
                         </a>
@@ -195,7 +199,7 @@
 
                                 </div>
 
-                                <?php if ($_SESSION['role'] === 'admin'): ?>
+                                <?php if ($sessionRole === 'admin'): ?>
                                     <div class="mb-3 admin-box">
 
                                         <label class="form-label">
@@ -253,7 +257,7 @@
                                     <span><i class="bi bi-list-task"></i> Ver fila de impressão</span>
                                     <i class="bi bi-chevron-right"></i>
                                 </a>
-                                <?php if ($_SESSION['role'] === 'admin'): ?>
+                                <?php if ($sessionRole === 'admin'): ?>
                                     <a href="/admin">
                                         <span><i class="bi bi-speedometer2"></i> Abrir painel administrativo</span>
                                         <i class="bi bi-chevron-right"></i>
@@ -649,7 +653,7 @@
                 return;
             }
             if (printerStatus.can_print === false) {
-                showPrintResult(printerStatus.notice || 'Impressora indisponível. Não é possível enviar impressões.', false);
+                showPrintResult(printerStatus.notice || 'A impressora não está disponível agora. Avise a equipe de TI.', false);
                 refreshPrinterStatus();
                 return;
             }
@@ -677,7 +681,7 @@
                 .then(async response => {
                     const text = await response.text();
                     if (response.status === 413) {
-                        throw new Error('Arquivo maior que o limite aceito pelo nginx. Ajuste client_max_body_size no servidor.');
+                        throw new Error('O arquivo é maior que o limite aceito pelo servidor. Avise a equipe de TI para ajustar o limite de upload.');
                     }
                     try {
                         return JSON.parse(text);
@@ -693,8 +697,8 @@
                 })
                 .catch(error => {
                     const message = error.name === 'AbortError'
-                        ? 'Tempo esgotado ao enviar impressão. Verifique a fila e os logs do servidor.'
-                        : `Erro ao enviar impressão: ${error.message}`;
+                        ? 'O envio demorou mais que o esperado. Verifique a fila de impressão; se o problema continuar, avise a equipe de TI.'
+                        : `Não foi possível enviar a impressão: ${error.message}`;
                     showPrintResult(message, false);
                 })
                 .finally(() => {

@@ -320,6 +320,11 @@ if ($uri === '/prints/reprint') {
     exit;
 }
 
+if ($uri === '/prints/accounting') {
+    (new PrintJobController())->adjustAccounting();
+    exit;
+}
+
 // PROCESSA
 $controller = new PrintController();
 $viewData = $controller->handle();

@@ -73,6 +73,9 @@ class PrintJobController
         if ($job === null || empty($job['stored_file']) || !$this->isDownloadableFile($job['stored_file'])) {
             $this->finish('Arquivo original não encontrado para reimpressão', false);
         }
+        if ($this->hasPartialSelection($job)) {
+            $this->finish('Esta impressão usou seleção de páginas. Para evitar imprimir páginas a mais, faça uma nova impressão escolhendo o mesmo intervalo.', false);
+        }
 
         $user = $job['user'];
         $copies = max(1, (int) ($job['copies'] ?? 1));
@@ -94,6 +97,7 @@ class PrintJobController
                 $pages = 1;
             }
             $chargedPages = (int) ceil($pages / $numberUp) * $copies;
+            $service->updateSelection($newJobId, $pages === 1 ? 'Página 1' : "Todas as páginas ({$pages})", $pages);
             $service->markProcessing($newJobId, $preparedFile, $pages, $chargedPages);
             $completed = $printer->printPrepared($preparedFile, $sourceExt, $copies, $sides, $orientation, 3, $numberUp, ['media' => $paper]);
             $service->updateCupsResult($newJobId, $printer->lastPrintResult());
@@ -101,15 +105,58 @@ class PrintJobController
             if ($completed === true) {
                 $service->markCompleted($newJobId, $preparedFile, $pages, $chargedPages);
                 (new QuotaService())->register($user, $chargedPages, $job['stored_file']);
-                $this->finish('Reimpressão enviada com sucesso', true);
+                $this->finish('Reimpressão concluída. ' . $this->cupsConfirmationMessage($printer->lastPrintResult()['status_cups'] ?? ''), true);
             }
 
             $service->markFailed($newJobId, $preparedFile, $pages, $chargedPages, 'Reimpressão não concluída');
-            $this->finish('Reimpressão não concluída', false);
+            $this->finish('A reimpressão não foi confirmada. Nada foi contabilizado.', false);
         } catch (Throwable $e) {
             $service->updateCupsResult($newJobId, $printer->lastPrintResult());
             $service->markFailed($newJobId, $preparedFile, $pages, $chargedPages, $e->getMessage());
-            $this->finish('Erro ao reimprimir: ' . $e->getMessage(), false);
+            $this->finish('Não foi possível reimprimir: ' . $e->getMessage(), false);
+        }
+    }
+
+    private function hasPartialSelection($job)
+    {
+        $pages = max(0, (int) ($job['pages'] ?? 0));
+        $selected = max(0, (int) ($job['selected_pages_count'] ?? 0));
+        $label = trim((string) ($job['selected_pages_label'] ?? ''));
+
+        if ($pages < 1 || $selected < 1 || $selected >= $pages) {
+            return false;
+        }
+
+        return $label !== '';
+    }
+
+    public function adjustAccounting()
+    {
+        if (!isset($_SESSION['user'])) {
+            header('Location: /login');
+            exit;
+        }
+        if (!AuthService::isAdmin()) {
+            http_response_code(403);
+            exit('Acesso negado');
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            exit('Método inválido');
+        }
+
+        $token = $_POST['csrf_token'] ?? '';
+        if (!is_string($token) || !hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
+            $this->finish('Token CSRF inválido', false);
+        }
+
+        try {
+            $chargedPages = max(0, (int) ($_POST['charged_pages'] ?? 0));
+            $reason = (string) ($_POST['reason'] ?? '');
+            $result = (new PrintJobService())->adjustAccounting($_POST['id'] ?? 0, $chargedPages, $reason, $_SESSION['user']);
+            $this->finish('Contabilização atualizada. Antes: ' . (int) $result['previous'] . ' folha(s). Agora: ' . (int) $result['current'] . ' folha(s).', true);
+        } catch (Throwable $e) {
+            $this->finish('Não foi possível corrigir a contabilização: ' . $e->getMessage(), false);
         }
     }
 
@@ -123,6 +170,18 @@ class PrintJobController
         $file = realpath($path);
 
         return $uploadRoot !== false && $file !== false && str_starts_with($file, $uploadRoot . DIRECTORY_SEPARATOR);
+    }
+
+    private function cupsConfirmationMessage($statusCups)
+    {
+        return match ((string) $statusCups) {
+            'completed' => 'O servidor confirmou a conclusão da impressão.',
+            'left_queue' => 'O servidor enviou o trabalho para a impressora, mas não recebeu confirmação final.',
+            'accepted_unverified' => 'O servidor aceitou o trabalho, mas não conseguiu confirmar o fim da impressão.',
+            'accepted_unidentified' => 'O servidor aceitou o trabalho, mas não identificou o número dele na fila.',
+            'accepted' => 'O servidor aceitou o trabalho para impressão.',
+            default => 'Status CUPS: ' . ((string) $statusCups !== '' ? (string) $statusCups : 'não informado') . '.',
+        };
     }
 
     private function finish($message, $success)

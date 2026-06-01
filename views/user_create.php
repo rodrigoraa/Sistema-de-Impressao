@@ -1,3 +1,4 @@
+<?php $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? ''); ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -31,7 +32,7 @@
                 <div class="d-flex align-items-center gap-3">
                     <span class="user">
                         <i class="bi bi-person-circle"></i>
-                        <?= htmlspecialchars($_SESSION['name']) ?>
+                        <?= htmlspecialchars($sessionName) ?>
                     </span>
 
                     <a href="/logout" class="btn btn-outline-danger btn-sm">

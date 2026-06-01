@@ -13,7 +13,7 @@ class PrinterController
             return;
         }
 
-        $status = (new CupsService())->diagnostics();
+        $status = (new CupsService())->diagnostics(true);
         echo json_encode(['success' => true, 'status' => $status], JSON_UNESCAPED_UNICODE);
     }
 

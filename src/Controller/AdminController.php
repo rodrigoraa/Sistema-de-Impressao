@@ -38,7 +38,9 @@ class AdminController
             $totalMonth += (int) ($row['charged_pages'] ?? 0);
         }
         $jobStats = $jobService->statsForUser($_SESSION['user'], true);
-        $printerStatus = (new CupsService())->diagnostics();
+        $cupsService = new CupsService();
+        $printerStatus = $cupsService->diagnostics(true);
+        $lastEnableAttempt = $cupsService->lastEnableAttempt();
         $storageService = new StorageCleanupService();
         $storageStats = $storageService->stats();
 
@@ -103,7 +105,7 @@ class AdminController
             exit('Token CSRF inválido');
         }
 
-        $result = (new CupsService())->enablePrinter();
+        $result = (new CupsService())->enablePrinter('manual');
         $_SESSION['flash'] = $result['message'] ?? 'Comando executado.';
         $_SESSION['flash_type'] = !empty($result['success']) ? 'success' : 'error';
         $_SESSION['cups_enable_result'] = $result;

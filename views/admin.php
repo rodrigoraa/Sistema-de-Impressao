@@ -1,4 +1,5 @@
 <?php
+$sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
 $traduzDiagnostico = function ($valor) {
     $mapa = [
         'timeout' => 'Tempo esgotado',
@@ -25,6 +26,43 @@ $traduzDiagnostico = function ($valor) {
 };
 $cupsEnableResult = $_SESSION['cups_enable_result'] ?? null;
 unset($_SESSION['cups_enable_result']);
+$lastEnableAttempt = $lastEnableAttempt ?? null;
+$cupsEnableResult = $cupsEnableResult ?? $lastEnableAttempt;
+$simNao = function ($valor) {
+    if ($valor === null || $valor === '') {
+        return 'N/D';
+    }
+
+    return $valor ? 'Sim' : 'Não';
+};
+$healthBadge = function ($type) {
+    return [
+        'success' => 'text-bg-success',
+        'warning' => 'text-bg-warning',
+        'danger' => 'text-bg-danger',
+        'info' => 'text-bg-info',
+    ][$type] ?? 'text-bg-secondary';
+};
+$enableAttemptLabel = function ($attempt) {
+    if (!is_array($attempt)) {
+        return 'Não testado';
+    }
+    $text = strtolower(json_encode($attempt, JSON_UNESCAPED_UNICODE) ?: '');
+    if (!empty($attempt['success'])) {
+        return !empty($attempt['source']) && $attempt['source'] === 'auto' ? 'Automático OK' : 'Manual OK';
+    }
+    if (str_contains($text, 'a password is required') || str_contains($text, 'sudo: a password')) {
+        return 'Sem permissão no sudo';
+    }
+    if (str_contains($text, 'client-error-forbidden') || str_contains($text, 'forbidden')) {
+        return 'Servidor negou';
+    }
+    if (str_contains($text, 'nao encontrado') || str_contains($text, 'not found')) {
+        return 'Comando ausente';
+    }
+
+    return 'Falhou';
+};
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -49,7 +87,7 @@ unset($_SESSION['cups_enable_result']);
                     <strong>Painel Administrativo</strong>
                 </div>
                 <div class="d-flex align-items-center gap-3">
-                    <span class="user"><i class="bi bi-person-circle"></i> <?= htmlspecialchars($_SESSION['name']) ?></span>
+                    <span class="user"><i class="bi bi-person-circle"></i> <?= htmlspecialchars($sessionName) ?></span>
                     <a href="/logout" class="btn btn-outline-danger btn-sm"><i class="bi bi-box-arrow-right"></i> Sair</a>
                 </div>
             </div>
@@ -78,7 +116,7 @@ unset($_SESSION['cups_enable_result']);
 
             <section class="panel">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2 class="panel-title">Situação atual da impressora</h2>
+                    <h2 class="panel-title">Painel de saúde da impressora</h2>
                     <div class="d-flex gap-2 flex-wrap">
                         <a href="/admin?month=<?= htmlspecialchars($month) ?>&cpf=<?= htmlspecialchars($cpf ?? '') ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise"></i> Atualizar</a>
                         <form method="post" action="/admin/printer/enable">
@@ -93,16 +131,39 @@ unset($_SESSION['cups_enable_result']);
                         <span><?= htmlspecialchars($printerStatus['notice']) ?></span>
                     </div>
                 <?php endif; ?>
+                <div class="health-grid mb-3">
+                    <div class="health-item">
+                        <span>Estado geral</span>
+                        <strong><span class="badge <?= htmlspecialchars($healthBadge($printerStatus['notice_type'] ?? 'info')) ?>"><?= !empty($printerStatus['can_print']) ? 'Pronta' : 'Bloqueada' ?></span></strong>
+                        <small><?= htmlspecialchars($traduzDiagnostico($printerStatus['reason'] ?: 'sem erro atual')) ?></small>
+                    </div>
+                    <div class="health-item">
+                        <span>Serviço de impressão</span>
+                        <strong><?= ($printerStatus['cups_active'] ?? null) === null ? 'N/D' : (($printerStatus['cups_active'] ?? false) ? 'Ativo' : 'Inacessível') ?></strong>
+                        <small>Impressora <?= !empty($printerStatus['printer_exists']) ? 'encontrada' : 'não encontrada' ?></small>
+                    </div>
+                    <div class="health-item">
+                        <span>Servidor</span>
+                        <strong><?= htmlspecialchars($enableAttemptLabel($lastEnableAttempt)) ?></strong>
+                        <small><?= is_array($lastEnableAttempt) ? htmlspecialchars(($lastEnableAttempt['created_at'] ?? '') . ' · ' . (($lastEnableAttempt['source'] ?? '') === 'auto' ? 'automático' : 'manual')) : 'sem tentativa registrada' ?></small>
+                    </div>
+                    <div class="health-item">
+                        <span>Fila atual</span>
+                        <strong><?= (int) $printerStatus['pending_jobs'] ?></strong>
+                        <small><?= (int) $printerStatus['completed_jobs'] ?> concluídos · <?= (int) $printerStatus['failed_jobs'] ?> falhas</small>
+                    </div>
+                </div>
                 <?php if (is_array($cupsEnableResult)): ?>
                     <div class="alert alert-light border">
                         <div class="d-flex justify-content-between gap-2 flex-wrap">
-                            <strong>Último comando CUPS</strong>
+                            <strong>Última reativação registrada</strong>
                             <span class="badge text-bg-<?= !empty($cupsEnableResult['success']) ? 'success' : 'warning' ?>">
-                                <?= !empty($cupsEnableResult['success']) ? 'Reativado' : 'Não reativado' ?>
+                                <?= htmlspecialchars($enableAttemptLabel($cupsEnableResult)) ?>
                             </span>
                         </div>
                         <div class="small text-muted mt-1">
-                            O servidor recebeu a solicitação e executou os comandos abaixo.
+                            <?= (($cupsEnableResult['source'] ?? '') === 'auto') ? 'Tentativa automática do sistema.' : 'Tentativa manual pelo painel.' ?>
+                            <?= !empty($cupsEnableResult['created_at']) ? 'Data: ' . htmlspecialchars($cupsEnableResult['created_at']) . '.' : '' ?>
                         </div>
                         <div class="table-responsive mt-2">
                             <table class="table table-sm mb-2">
@@ -145,10 +206,10 @@ unset($_SESSION['cups_enable_result']);
                         <div class="metric"><span>Impressora</span><strong><?= htmlspecialchars($printerStatus['printer'] ?: 'não configurada') ?></strong></div>
                     </div>
                     <div class="col-md-3">
-                        <div class="metric"><span>Impressora ativada</span><strong><?= $printerStatus['enabled'] === null ? 'N/D' : ($printerStatus['enabled'] ? 'Sim' : 'Não') ?></strong></div>
+                        <div class="metric"><span>Impressora ativada</span><strong><?= htmlspecialchars($simNao($printerStatus['enabled'])) ?></strong></div>
                     </div>
                     <div class="col-md-3">
-                        <div class="metric"><span>Aceitando impressões</span><strong><?= $printerStatus['accepting'] === null ? 'N/D' : ($printerStatus['accepting'] ? 'Sim' : 'Não') ?></strong></div>
+                        <div class="metric"><span>Aceitando impressões</span><strong><?= htmlspecialchars($simNao($printerStatus['accepting'])) ?></strong></div>
                     </div>
                     <div class="col-md-3">
                         <div class="metric"><span>Fila</span><strong><?= (int) $printerStatus['pending_jobs'] ?></strong></div>
