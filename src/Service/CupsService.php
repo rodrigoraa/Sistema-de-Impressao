@@ -196,7 +196,7 @@ class CupsService
             'success' => $success,
             'message' => $success
                 ? 'Comando de reativação enviado. Confira se há papel antes de imprimir.'
-                : 'O servidor recebeu o comando, mas a impressora ainda não ficou pronta. Veja o retorno do CUPS abaixo.',
+                : $this->enablePrinterFailureMessage($commands, $after),
             'commands' => $commands,
             'diagnostics' => $after,
         ];
@@ -397,6 +397,22 @@ class CupsService
             $status['notice_type'] = 'warning';
             $status['notice'] = 'Atenção na impressora: ' . $reason . '.';
         }
+    }
+
+    private function enablePrinterFailureMessage($commands, $diagnostics)
+    {
+        $text = strtolower(json_encode($commands, JSON_UNESCAPED_UNICODE) ?: '');
+        if (str_contains($text, 'client-error-forbidden') || str_contains($text, 'forbidden') || str_contains($text, 'permission denied')) {
+            return 'O servidor recebeu o comando, mas o CUPS negou permissão para reativar a impressora.';
+        }
+        if (str_contains($text, 'nao encontrado') || str_contains($text, 'not found')) {
+            return 'O servidor recebeu o comando, mas não encontrou cupsenable/cupsaccept.';
+        }
+        if (($diagnostics['reason'] ?? '') === 'falta de papel') {
+            return 'O servidor recebeu o comando, mas a impressora continua sem papel.';
+        }
+
+        return 'O servidor recebeu o comando, mas a impressora ainda não ficou pronta. Veja o retorno do CUPS abaixo.';
     }
 
     public function run($command)
