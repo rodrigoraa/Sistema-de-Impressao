@@ -4,6 +4,16 @@ require_once __DIR__ . '/../Service/Database.php';
 
 class AuthController
 {
+    private function validateCsrfOrFail()
+    {
+        $token = $_POST['csrf_token'] ?? '';
+        $sessionToken = $_SESSION['csrf_token'] ?? '';
+        if (!is_string($token) || !is_string($sessionToken) || $sessionToken === '' || !hash_equals($sessionToken, $token)) {
+            http_response_code(419);
+            exit('Token CSRF inválido');
+        }
+    }
+
     private function db()
     {
         return Database::connect();
@@ -17,6 +27,7 @@ class AuthController
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $this->validateCsrfOrFail();
 
             $db = $this->db();
 
@@ -24,7 +35,7 @@ class AuthController
             $senha = $_POST['senha'] ?? '';
 
             $stmt = $db->prepare("SELECT * FROM users WHERE cpf = :cpf");
-            $stmt->bindValue(':cpf', $cpf);
+            $stmt->bindValue(':cpf', $cpf, SQLITE3_TEXT);
             $result = $stmt->execute();
 
             $user = $result->fetchArray(SQLITE3_ASSOC);

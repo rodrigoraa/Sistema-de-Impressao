@@ -60,13 +60,14 @@
             <?php if (!empty($_SESSION['flash'])): ?>
                 <div class="alert alert-danger d-flex align-items-center gap-2">
                     <i class="bi bi-exclamation-circle-fill"></i>
-                    <span><?= $_SESSION['flash'];
+                    <span><?= htmlspecialchars($_SESSION['flash']);
                     unset($_SESSION['flash']); ?></span>
                 </div>
             <?php endif; ?>
 
             <!-- FORM -->
             <form method="post" class="login-form">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
 
                 <div class="mb-3">
                     <label class="form-label">CPF</label>

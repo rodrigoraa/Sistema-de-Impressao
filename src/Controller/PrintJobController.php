@@ -40,16 +40,16 @@ class PrintJobController
         }
 
         $service = new PrintJobService();
-        $job = $service->findVisible($_GET['id'] ?? 0, $_SESSION['user'], AuthService::isAdmin());
+        $job = $service->findVisible((int) ($_GET['id'] ?? 0), $_SESSION['user'], AuthService::isAdmin());
         if ($job === null || empty($job['stored_file']) || !$this->isDownloadableFile($job['stored_file'])) {
             http_response_code(404);
             exit('Arquivo não encontrado');
         }
 
-        $name = $job['original_name'] ?: basename($job['stored_file']);
+        $name = $this->downloadFilename($job['original_name'] ?: basename($job['stored_file']));
         header('Content-Type: application/octet-stream');
         header('Content-Length: ' . filesize($job['stored_file']));
-        header('Content-Disposition: attachment; filename="' . str_replace('"', '', basename($name)) . '"');
+        header('Content-Disposition: attachment; filename="' . $name . '"');
         readfile($job['stored_file']);
         exit;
     }
@@ -73,7 +73,7 @@ class PrintJobController
 
         $isAdmin = AuthService::isAdmin();
         $service = new PrintJobService();
-        $job = $service->findVisible($_POST['id'] ?? 0, $_SESSION['user'], $isAdmin);
+        $job = $service->findVisible((int) ($_POST['id'] ?? 0), $_SESSION['user'], $isAdmin);
         if ($job === null || empty($job['stored_file']) || !$this->isDownloadableFile($job['stored_file'])) {
             $this->finish('Arquivo original não encontrado para reimpressão', false);
         }
@@ -117,7 +117,7 @@ class PrintJobController
         } catch (Throwable $e) {
             $service->updateCupsResult($newJobId, $printer->lastPrintResult());
             $service->markFailed($newJobId, $preparedFile, $pages, $chargedPages, $e->getMessage());
-            $this->finish('Não foi possível reimprimir: ' . $e->getMessage(), false);
+            $this->finish('Não foi possível reimprimir. Verifique o aviso da impressora ou informe a equipe de TI.', false);
         }
     }
 
@@ -174,6 +174,16 @@ class PrintJobController
         $file = realpath($path);
 
         return $uploadRoot !== false && $file !== false && str_starts_with($file, $uploadRoot . DIRECTORY_SEPARATOR);
+    }
+
+    private function downloadFilename($name)
+    {
+        $name = basename((string) $name);
+        $name = preg_replace('/[\r\n"]+/', '', $name);
+        $name = preg_replace('/[^A-Za-z0-9._ -]+/', '_', $name);
+        $name = trim((string) $name, " ._\t");
+
+        return $name !== '' ? $name : 'arquivo';
     }
 
     private function cupsConfirmationMessage($statusCups)

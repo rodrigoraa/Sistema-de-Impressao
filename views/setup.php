@@ -29,12 +29,13 @@
 
             <?php if (!empty($_SESSION['flash'])): ?>
                 <div class="alert alert-danger">
-                    <?= $_SESSION['flash'];
+                    <?= htmlspecialchars($_SESSION['flash']);
                     unset($_SESSION['flash']); ?>
                 </div>
             <?php endif; ?>
 
             <form method="post" class="login-form">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
 
                 <div class="mb-3">
                     <label class="form-label">Nome</label>

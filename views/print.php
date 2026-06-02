@@ -76,7 +76,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
             <!-- ALERT -->
             <?php if (!empty($_SESSION['flash'])): ?>
                 <div class="alert alert-<?= ($_SESSION['flash_type'] ?? '') === 'error' ? 'danger' : 'success' ?>">
-                    <?= $_SESSION['flash'];
+                    <?= htmlspecialchars($_SESSION['flash']);
                     unset($_SESSION['flash']); ?>
                 </div>
             <?php endif; ?>

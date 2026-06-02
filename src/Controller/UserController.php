@@ -77,14 +77,18 @@ class UserController
                 VALUES (:n, :c, :p, :r)
             ");
 
-            $stmt->bindValue(':n', $name);
-            $stmt->bindValue(':c', $cpf);
-            $stmt->bindValue(':p', $password);
-            $stmt->bindValue(':r', $role);
+            $stmt->bindValue(':n', $name, SQLITE3_TEXT);
+            $stmt->bindValue(':c', $cpf, SQLITE3_TEXT);
+            if ($password === null) {
+                $stmt->bindValue(':p', null, SQLITE3_NULL);
+            } else {
+                $stmt->bindValue(':p', $password, SQLITE3_TEXT);
+            }
+            $stmt->bindValue(':r', $role, SQLITE3_TEXT);
 
             $res = $stmt->execute();
             if (!$res) {
-                exit('Erro ao salvar usuário: ' . htmlspecialchars($db->lastErrorMsg()));
+                exit('Erro ao salvar usuário. Verifique se o CPF já foi cadastrado.');
             }
 
             header('Location: /admin/users');
@@ -101,12 +105,15 @@ class UserController
             exit('Acesso negado');
         }
 
-        $id = $_GET['id'] ?? null;
+        $id = max(0, (int) ($_GET['id'] ?? 0));
+        if ($id < 1) {
+            exit('Usuário inválido');
+        }
 
         $db = $this->db();
 
         $stmt = $db->prepare("SELECT * FROM users WHERE id = :id");
-        $stmt->bindValue(':id', $id);
+        $stmt->bindValue(':id', $id, SQLITE3_INTEGER);
 
         $user = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
 
@@ -132,12 +139,12 @@ class UserController
 
         $db = $this->db();
 
-        $id = $_POST['id'];
-        $name = trim($_POST['name']);
-        $cpf = preg_replace('/\D/', '', $_POST['cpf']);
-        $role = $_POST['role'];
+        $id = max(0, (int) ($_POST['id'] ?? 0));
+        $name = trim((string) ($_POST['name'] ?? ''));
+        $cpf = preg_replace('/\D/', '', (string) ($_POST['cpf'] ?? ''));
+        $role = (string) ($_POST['role'] ?? '');
 
-        if (!$name || !$cpf) {
+        if ($id < 1 || !$name || !$cpf) {
             exit('Dados inválidos');
         }
 
@@ -148,7 +155,7 @@ class UserController
         // senha opcional
         if (!empty($_POST['password'])) {
 
-            $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+            $password = password_hash((string) $_POST['password'], PASSWORD_DEFAULT);
 
             $stmt = $db->prepare("
             UPDATE users 
@@ -167,12 +174,14 @@ class UserController
         ");
         }
 
-        $stmt->bindValue(':id', $id);
-        $stmt->bindValue(':n', $name);
-        $stmt->bindValue(':c', $cpf);
-        $stmt->bindValue(':r', $role);
+        $stmt->bindValue(':id', $id, SQLITE3_INTEGER);
+        $stmt->bindValue(':n', $name, SQLITE3_TEXT);
+        $stmt->bindValue(':c', $cpf, SQLITE3_TEXT);
+        $stmt->bindValue(':r', $role, SQLITE3_TEXT);
 
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            exit('Erro ao atualizar usuário');
+        }
 
         header('Location: /admin/users');
         exit;
@@ -191,13 +200,16 @@ class UserController
         }
         $this->validateCsrfOrFail();
 
-        $id = $_POST['id'] ?? null;
+        $id = max(0, (int) ($_POST['id'] ?? 0));
+        if ($id < 1) {
+            exit('Usuário inválido');
+        }
 
         $db = $this->db();
 
         // evita apagar a si mesmo
         $stmt = $db->prepare("SELECT cpf FROM users WHERE id = :id");
-        $stmt->bindValue(':id', $id);
+        $stmt->bindValue(':id', $id, SQLITE3_INTEGER);
         $user = $stmt->execute()->fetchArray(SQLITE3_ASSOC);
 
         if ($user && $user['cpf'] === $_SESSION['user']) {
@@ -205,7 +217,7 @@ class UserController
         }
 
         $stmt = $db->prepare("DELETE FROM users WHERE id = :id");
-        $stmt->bindValue(':id', $id);
+        $stmt->bindValue(':id', $id, SQLITE3_INTEGER);
         $stmt->execute();
 
         header('Location: /admin/users');

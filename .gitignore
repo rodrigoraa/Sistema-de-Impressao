@@ -2,3 +2,6 @@
 
 storage/usage.db
 storage/sessions/
+storage/logs/
+storage/uploads/
+storage/print-debug/

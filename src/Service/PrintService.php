@@ -322,56 +322,6 @@ class PrintService
         return in_array($value, ['1', 'true', 'yes', 'on'], true);
     }
 
-    private function extractCupsJobId($output)
-    {
-        if (!preg_match('/\b([A-Za-z0-9_.:@-]+-\d+)\b/', $output, $match)) {
-            return null;
-        }
-
-        return $match[1];
-    }
-
-    private function waitForCupsJob($jobId)
-    {
-        $lpstat = $this->findExecutable(['/usr/bin/lpstat', '/bin/lpstat', 'lpstat']);
-        if ($lpstat === null) {
-            $this->log('CUPS: lpstat nao encontrado; contabilizacao permitida pelo aceite do lp');
-            return true;
-        }
-
-        $waitSeconds = max(1, (int) ($_ENV['PRINT_JOB_WAIT_SECONDS'] ?? 120));
-        $deadline = time() + $waitSeconds;
-        $seen = false;
-
-        while (time() <= $deadline) {
-            if ($this->cupsJobInList($lpstat, $jobId, 'completed')) {
-                $this->log('CUPS: job concluido=' . $jobId);
-                return true;
-            }
-
-            if ($this->cupsJobInList($lpstat, $jobId, 'not-completed')) {
-                $seen = true;
-                sleep(2);
-                continue;
-            }
-
-            $this->log('CUPS: job nao esta mais na fila; considerando concluido pelo aceite do lp=' . $jobId . ' visto=' . ($seen ? 'sim' : 'nao'));
-            return true;
-        }
-
-        $this->log('CUPS: tempo esgotado aguardando conclusao do job=' . $jobId);
-        return false;
-    }
-
-    private function cupsJobInList($lpstat, $jobId, $which)
-    {
-        $cmd = escapeshellarg($lpstat) . ' -W ' . escapeshellarg($which) . ' -o ' . escapeshellarg($jobId) . ' 2>&1';
-        exec($cmd, $output, $status);
-        $text = implode("\n", $output);
-
-        return $status === 0 && preg_match('/(^|\s)' . preg_quote($jobId, '/') . '\s/', $text) === 1;
-    }
-
     private function printWindows($filePath, $copies, $sides, $orientation, $numberUp, $extraOptions)
     {
         $sumatra = $this->findSumatra();

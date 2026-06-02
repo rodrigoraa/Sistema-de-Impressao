@@ -4,6 +4,16 @@ require_once __DIR__ . '/../Service/Database.php';
 
 class SetupController
 {
+    private function validateCsrfOrFail()
+    {
+        $token = $_POST['csrf_token'] ?? '';
+        $sessionToken = $_SESSION['csrf_token'] ?? '';
+        if (!is_string($token) || !is_string($sessionToken) || $sessionToken === '' || !hash_equals($sessionToken, $token)) {
+            http_response_code(419);
+            exit('Token CSRF inválido');
+        }
+    }
+
     public function index()
     {
         $db = Database::connect();
@@ -14,6 +24,8 @@ class SetupController
         }
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $this->validateCsrfOrFail();
+
             $name = trim($_POST['name'] ?? '');
             $cpf = preg_replace('/\\D/', '', $_POST['cpf'] ?? '');
             $password = (string) ($_POST['password'] ?? '');
@@ -36,12 +48,12 @@ class SetupController
 
             $res = $stmt->execute();
             if (!$res) {
-                $_SESSION['flash'] = 'Erro ao criar administrador: ' . $db->lastErrorMsg();
+                $_SESSION['flash'] = 'Erro ao criar administrador. Verifique os dados e tente novamente.';
                 header('Location: /setup');
                 exit;
             }
 
-                $_SESSION['flash'] = 'Administrador criado. Faça login.';
+            $_SESSION['flash'] = 'Administrador criado. Faça login.';
             header('Location: /login');
             exit;
         }

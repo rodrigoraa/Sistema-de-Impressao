@@ -296,7 +296,7 @@ class PrintController
             $success = $completed === true;
         } catch (Throwable $e) {
             $printer->log("Erro interno ao imprimir: " . $e->getMessage());
-            $errorMessage = $e->getMessage();
+            $errorMessage = $this->safeErrorMessage($e->getMessage());
             $jobService->updateCupsResult($jobId, $printer->lastPrintResult());
             $success = false;
         }
@@ -423,7 +423,7 @@ class PrintController
                 'advice' => $advice,
             ]);
         } catch (Throwable $e) {
-            $this->respond('Não foi possível contar as páginas: ' . $e->getMessage(), false);
+            $this->respond('Não foi possível contar as páginas: ' . $this->safeErrorMessage($e->getMessage()), false);
         } finally {
             @unlink($tempFile);
             if ($preparedFile !== $tempFile) {
@@ -507,7 +507,7 @@ class PrintController
             readfile($previewFile);
         } catch (Throwable $e) {
             http_response_code(500);
-            echo 'Não foi possível gerar a pré-visualização: ' . $e->getMessage();
+            echo 'Não foi possível gerar a pré-visualização: ' . $this->safeErrorMessage($e->getMessage());
         } finally {
             @unlink($tempFile);
             if ($previewFile !== $tempFile) {
@@ -710,6 +710,23 @@ class PrintController
         $base = trim((string) $base, '._-');
 
         return ($base !== '' ? $base : 'documento') . '.pdf';
+    }
+
+    private function safeErrorMessage($message)
+    {
+        $message = trim(strip_tags((string) $message));
+        $root = str_replace('\\', '/', dirname(__DIR__, 2));
+        $message = str_replace([dirname(__DIR__, 2), $root], '[projeto]', $message);
+        $message = preg_replace('/\[projeto\][\\\\\/][^\s]+/', '[arquivo]', $message);
+        $message = preg_replace('/[A-Z]:\\\\[^\s]+/i', '[arquivo]', $message);
+        $message = preg_replace('/(^|\s)\/[^\s]+/', '$1[arquivo]', $message);
+        $message = preg_replace('/\s+/', ' ', (string) $message);
+
+        if ($message === '') {
+            return 'erro interno';
+        }
+
+        return strlen($message) > 220 ? substr($message, 0, 220) . '...' : $message;
     }
 
     // Redireciona com flash message na sessão
