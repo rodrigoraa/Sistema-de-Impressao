@@ -298,6 +298,7 @@ class CupsService
         $waitSeconds = max(1, (int) ($_ENV['PRINT_JOB_WAIT_SECONDS'] ?? 120));
         $deadline = time() + $waitSeconds;
         $seen = false;
+        $lastDiagnostics = null;
 
         while (time() <= $deadline) {
             $completed = $this->run(escapeshellarg($lpstat) . ' -W completed -o ' . escapeshellarg($jobId) . ' 2>&1');
@@ -308,6 +309,7 @@ class CupsService
                     'completed' => !$failed,
                     'status_cups' => $failed ? 'failed_or_canceled' : 'completed',
                     'error_message' => $failed ? $this->classifyReason($completedText) : '',
+                    'diagnostics' => $lastDiagnostics,
                 ];
             }
 
@@ -315,10 +317,47 @@ class CupsService
             $activeText = $active['stdout'] . "\n" . $active['stderr'];
             if ($active['return_code'] === 0 && preg_match('/(^|\s)' . preg_quote($jobId, '/') . '\s/', $activeText)) {
                 $seen = true;
+                $activeReason = $this->classifyReason($activeText);
+                if ($this->isBlockingPrinterReason($activeReason)) {
+                    $lastDiagnostics = $this->diagnostics(false);
+                    return [
+                        'completed' => false,
+                        'status_cups' => 'printer_fault',
+                        'error_message' => $activeReason,
+                        'diagnostics' => $lastDiagnostics,
+                    ];
+                }
+
+                $lastDiagnostics = $this->diagnostics(false);
+                $diagReason = $lastDiagnostics['reason'] ?? '';
+                if ($this->isBlockingPrinterReason($diagReason)) {
+                    return [
+                        'completed' => false,
+                        'status_cups' => 'printer_fault',
+                        'error_message' => $diagReason,
+                        'diagnostics' => $lastDiagnostics,
+                    ];
+                }
+
                 sleep(2);
                 continue;
             }
 
+            return $this->monitorPrinterAfterJobLeavesQueue($seen);
+        }
+
+        return [
+            'completed' => false,
+            'status_cups' => 'timeout',
+            'error_message' => 'Tempo esgotado aguardando conclusão do trabalho no CUPS',
+            'diagnostics' => $lastDiagnostics,
+        ];
+    }
+
+    private function monitorPrinterAfterJobLeavesQueue($seen)
+    {
+        $monitorSeconds = max(0, (int) ($_ENV['PRINT_JOB_AFTER_QUEUE_MONITOR_SECONDS'] ?? 45));
+        if ($monitorSeconds < 1) {
             return [
                 'completed' => true,
                 'status_cups' => $seen ? 'left_queue' : 'accepted_unverified',
@@ -326,11 +365,67 @@ class CupsService
             ];
         }
 
+        $deadline = time() + $monitorSeconds;
+        $idleSeenAt = null;
+        $idleConfirmSeconds = max(2, (int) ($_ENV['PRINT_JOB_IDLE_CONFIRM_SECONDS'] ?? 6));
+        $lastDiagnostics = null;
+
+        while (time() <= $deadline) {
+            $lastDiagnostics = $this->diagnostics(false);
+            $reason = $lastDiagnostics['reason'] ?? '';
+            if ($this->isBlockingPrinterReason($reason)) {
+                return [
+                    'completed' => false,
+                    'status_cups' => 'printer_fault',
+                    'error_message' => $reason,
+                    'diagnostics' => $lastDiagnostics,
+                ];
+            }
+
+            $state = strtolower((string) ($lastDiagnostics['printer_state'] ?? ''));
+            $message = strtolower((string) ($lastDiagnostics['printer_state_message'] ?? ''));
+            $isPrinting = str_contains($state, 'printing') || str_contains($message, 'printing') || str_contains($message, 'imprimindo');
+            $pendingJobs = (int) ($lastDiagnostics['pending_jobs'] ?? 0);
+
+            if (!$isPrinting && $pendingJobs < 1) {
+                if ($idleSeenAt === null) {
+                    $idleSeenAt = time();
+                }
+                if ((time() - $idleSeenAt) >= $idleConfirmSeconds) {
+                    return [
+                        'completed' => true,
+                        'status_cups' => $seen ? 'left_queue' : 'accepted_unverified',
+                        'error_message' => '',
+                        'diagnostics' => $lastDiagnostics,
+                    ];
+                }
+            } else {
+                $idleSeenAt = null;
+            }
+
+            sleep(2);
+        }
+
         return [
-            'completed' => false,
-            'status_cups' => 'timeout',
-            'error_message' => 'Tempo esgotado aguardando conclusão do trabalho no CUPS',
+            'completed' => true,
+            'status_cups' => $seen ? 'left_queue' : 'accepted_unverified',
+            'error_message' => '',
+            'diagnostics' => $lastDiagnostics,
         ];
+    }
+
+    private function isBlockingPrinterReason($reason)
+    {
+        return in_array((string) $reason, [
+            'falta de papel',
+            'atolamento de papel',
+            'tampa aberta',
+            'toner ou suprimento',
+            'offline',
+            'erro de comunicação',
+            'falha no filtro do CUPS',
+            'impressora desativada',
+        ], true);
     }
 
     public function classifyReason($text)

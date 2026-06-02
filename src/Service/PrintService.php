@@ -299,6 +299,9 @@ class PrintService
 
         $wait = $cups->waitForJob($jobId);
         $this->lastPrintResult['status_cups'] = $wait['status_cups'] ?? $this->lastPrintResult['status_cups'];
+        if (!empty($wait['diagnostics']) && is_array($wait['diagnostics'])) {
+            $this->lastPrintResult['diagnostics'] = $wait['diagnostics'];
+        }
         if (!empty($wait['error_message'])) {
             $this->lastPrintResult['error_message'] = $wait['error_message'];
             $this->lastPrintResult['error_category'] = $wait['error_message'];

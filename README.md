@@ -26,10 +26,13 @@ LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
 SUMATRA_PATH=C:\Program Files\SumatraPDF\SumatraPDF.exe
 IMAGEMAGICK_PATH=/usr/bin/convert
 PRINT_JOB_WAIT_SECONDS=120
+PRINT_JOB_AFTER_QUEUE_MONITOR_SECONDS=45
+PRINT_JOB_IDLE_CONFIRM_SECONDS=6
 ```
 
 ## Auditoria e diagnóstico de impressão
 - Cada tentativa fica registrada em `print_jobs`, inclusive falhas de pré-validação, envio inválido, erro no CUPS, tempo esgotado e falha no `lp`.
+- Depois que um trabalho sai da fila do CUPS, o sistema ainda monitora a impressora por `PRINT_JOB_AFTER_QUEUE_MONITOR_SECONDS` segundos para capturar falta de papel, atolamento, tampa aberta, offline ou suprimento antes de marcar a impressão como concluída.
 - O painel administrativo mostra impressora ativada/desativada, aceitando/recusando impressões, estado da impressora, mensagem atual, trabalhos pendentes/concluídos/cancelados/falhos e o último diagnóstico conhecido.
 - O acumulado mensal considera somente trabalhos concluídos marcados para entrar no acumulado; falhas não entram no total.
 - O relatório PDF mensal fica em `/admin/report/pdf` e aceita filtros por mês, CPF e inclusão/ocultação de falhas.

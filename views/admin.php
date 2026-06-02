@@ -11,6 +11,7 @@ $traduzDiagnostico = function ($valor) {
         'accepted_unverified' => 'Aceito, sem confirmação',
         'accepted_unidentified' => 'Aceito, ID não identificado',
         'failed_or_canceled' => 'Falhou ou foi cancelado',
+        'printer_fault' => 'Falha detectada na impressora',
         'left_queue' => 'Saiu da fila',
     ];
     $valor = trim((string) $valor);

@@ -670,7 +670,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
             }, 500);
 
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 180000);
+            const timeout = setTimeout(() => controller.abort(), 300000);
 
             fetch(printForm.action || window.location.href, {
                 method: 'POST',

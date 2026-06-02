@@ -617,10 +617,11 @@ class PrintController
     {
         return match ((string) $statusCups) {
             'completed' => 'O servidor confirmou a conclusão da impressão',
-            'left_queue' => 'O servidor enviou o trabalho para a impressora, mas não recebeu confirmação final',
-            'accepted_unverified' => 'O servidor aceitou o trabalho, mas não conseguiu confirmar o fim da impressão',
-            'accepted_unidentified' => 'O servidor aceitou o trabalho, mas não identificou o número dele na fila',
-            'accepted' => 'O servidor aceitou o trabalho para impressão',
+            'printer_fault' => 'O servidor detectou falha na impressora durante ou logo após o envio',
+            'left_queue' => 'O trabalho foi enviado para a impressora',
+            'accepted_unverified' => 'O trabalho foi enviado para a impressora',
+            'accepted_unidentified' => 'O trabalho foi enviado para a impressora',
+            'accepted' => 'O trabalho foi enviado para a impressora',
             default => 'Status CUPS: ' . ((string) $statusCups !== '' ? (string) $statusCups : 'não informado'),
         };
     }

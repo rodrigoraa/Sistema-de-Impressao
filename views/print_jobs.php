@@ -10,6 +10,7 @@ $traduzDiagnostico = function ($valor) {
         'accepted_unverified' => 'Aceito, sem confirmação',
         'accepted_unidentified' => 'Aceito, ID não identificado',
         'failed_or_canceled' => 'Falhou ou foi cancelado',
+        'printer_fault' => 'Falha detectada na impressora',
         'left_queue' => 'Saiu da fila',
     ];
     $valor = trim((string) $valor);
@@ -35,6 +36,7 @@ $cupsLabels = [
     'accepted_unidentified' => ['label' => 'Aceito, sem número na fila', 'class' => 'text-bg-warning'],
     'completed' => ['label' => 'Conclusão confirmada', 'class' => 'text-bg-success'],
     'failed_or_canceled' => ['label' => 'Falhou ou foi cancelado', 'class' => 'text-bg-danger'],
+    'printer_fault' => ['label' => 'Falha detectada na impressora', 'class' => 'text-bg-danger'],
     'left_queue' => ['label' => 'Saiu da fila, sem confirmação final', 'class' => 'text-bg-warning'],
     'timeout' => ['label' => 'Tempo esgotado', 'class' => 'text-bg-danger'],
     'preflight_failed' => ['label' => 'Falha antes do envio', 'class' => 'text-bg-danger'],
