@@ -297,6 +297,12 @@ class PrintService
             return true;
         }
 
+        if (!$this->shouldWaitForCupsCompletion()) {
+            $this->log('CUPS: job aceito; liberando tela sem aguardar conclusao fisica=' . $jobId);
+            $this->lastPrintResult['status_cups'] = 'accepted';
+            return true;
+        }
+
         $wait = $cups->waitForJob($jobId);
         $this->lastPrintResult['status_cups'] = $wait['status_cups'] ?? $this->lastPrintResult['status_cups'];
         if (!empty($wait['diagnostics']) && is_array($wait['diagnostics'])) {
@@ -308,6 +314,12 @@ class PrintService
         }
 
         return (bool) ($wait['completed'] ?? false);
+    }
+
+    private function shouldWaitForCupsCompletion()
+    {
+        $value = strtolower(trim((string) ($_ENV['PRINT_JOB_WAIT_FOR_COMPLETION'] ?? '0')));
+        return in_array($value, ['1', 'true', 'yes', 'on'], true);
     }
 
     private function extractCupsJobId($output)

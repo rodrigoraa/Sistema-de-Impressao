@@ -25,6 +25,7 @@ APP_TIMEZONE=America/Cuiaba
 LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
 SUMATRA_PATH=C:\Program Files\SumatraPDF\SumatraPDF.exe
 IMAGEMAGICK_PATH=/usr/bin/convert
+PRINT_JOB_WAIT_FOR_COMPLETION=0
 PRINT_JOB_WAIT_SECONDS=120
 PRINT_JOB_AFTER_QUEUE_MONITOR_SECONDS=45
 PRINT_JOB_IDLE_CONFIRM_SECONDS=6
@@ -32,7 +33,8 @@ PRINT_JOB_IDLE_CONFIRM_SECONDS=6
 
 ## Auditoria e diagnóstico de impressão
 - Cada tentativa fica registrada em `print_jobs`, inclusive falhas de pré-validação, envio inválido, erro no CUPS, tempo esgotado e falha no `lp`.
-- Depois que um trabalho sai da fila do CUPS, o sistema ainda monitora a impressora por `PRINT_JOB_AFTER_QUEUE_MONITOR_SECONDS` segundos para capturar falta de papel, atolamento, tampa aberta, offline ou suprimento antes de marcar a impressão como concluída.
+- Por padrão, `PRINT_JOB_WAIT_FOR_COMPLETION=0` libera a tela assim que o CUPS aceita o trabalho, sem esperar a impressão física terminar.
+- Se `PRINT_JOB_WAIT_FOR_COMPLETION=1`, depois que um trabalho sai da fila do CUPS, o sistema ainda monitora a impressora por `PRINT_JOB_AFTER_QUEUE_MONITOR_SECONDS` segundos para capturar falta de papel, atolamento, tampa aberta, offline ou suprimento antes de marcar a impressão como concluída.
 - O painel administrativo mostra impressora ativada/desativada, aceitando/recusando impressões, estado da impressora, mensagem atual, trabalhos pendentes/concluídos/cancelados/falhos e o último diagnóstico conhecido.
 - O acumulado mensal considera somente trabalhos concluídos marcados para entrar no acumulado; falhas não entram no total.
 - O relatório PDF mensal fica em `/admin/report/pdf` e aceita filtros por mês, CPF e inclusão/ocultação de falhas.
@@ -49,6 +51,58 @@ sudo cupsaccept kyocera-escola
 sudo cupsdisable kyocera-escola
 sudo cupsreject kyocera-escola
 sudo systemctl status cups
+```
+
+## Monitoramento automático da impressora
+O script `scripts/printer_health_check.php` pode rodar em segundo plano para consultar CUPS mesmo quando nenhum professor está usando a tela. Ele detecta sem papel, atolamento, impressora desativada/offline e também tenta `cupsenable`/`cupsaccept` quando a reativação automática estiver permitida.
+
+Teste manual:
+
+```bash
+cd /var/www/impressao
+php scripts/printer_health_check.php
+```
+
+Cron simples, a cada minuto:
+
+```cron
+* * * * * cd /var/www/impressao && /usr/bin/php scripts/printer_health_check.php >> storage/logs/printer-health-cron.log 2>&1
+```
+
+Se precisar verificar mais rápido que 1 minuto, use um timer systemd em vez de cron:
+
+```ini
+# /etc/systemd/system/impressao-printer-health.service
+[Unit]
+Description=Monitor da impressora do sistema de impressao
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/www/impressao
+ExecStart=/usr/bin/php /var/www/impressao/scripts/printer_health_check.php
+```
+
+```ini
+# /etc/systemd/system/impressao-printer-health.timer
+[Unit]
+Description=Executa o monitor da impressora a cada 30 segundos
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=30
+AccuracySec=1
+Unit=impressao-printer-health.service
+
+[Install]
+WantedBy=timers.target
+```
+
+Ativar:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now impressao-printer-health.timer
+systemctl list-timers impressao-printer-health.timer
 ```
 
 ## Simulações locais

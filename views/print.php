@@ -314,6 +314,8 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
         let previewObjectUrl = '';
         let currentPageAdvice = '';
         let printingActive = false;
+        let postPrintWatchTimer = null;
+        let postPrintWatchUntil = 0;
         const scaleSelect = document.querySelector('[name="scale"]');
         const scaleCustomBox = document.getElementById('scaleCustomBox');
         const targetUserSearch = document.getElementById('targetUserSearch');
@@ -599,6 +601,26 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
             resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
+        function friendlyServerError(text, response) {
+            const raw = String(text || '').trim();
+            const lower = raw.toLowerCase();
+
+            if (response && response.status === 413) {
+                return 'O arquivo é maior que o limite aceito pelo servidor. Avise a equipe de TI para ajustar o limite de upload.';
+            }
+            if ((response && response.status === 504) || lower.includes('gateway time-out') || lower.includes('error code 504')) {
+                return 'O envio demorou mais que o esperado. Verifique a fila de impressão; se o problema continuar, avise a equipe de TI.';
+            }
+            if (lower.includes('<!doctype html') || lower.includes('<html')) {
+                return 'O servidor retornou uma página de erro. Tente novamente; se continuar, avise a equipe de TI.';
+            }
+            if (!raw) {
+                return 'O servidor não retornou uma resposta válida. Tente novamente.';
+            }
+
+            return raw.length > 220 ? `${raw.slice(0, 220)}...` : raw;
+        }
+
         function renderPrinterStatus(status) {
             printerStatus = status || {};
             const notice = printerStatus.notice || '';
@@ -620,7 +642,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
         }
 
         function refreshPrinterStatus() {
-            fetch('/printer/status', {
+            return fetch('/printer/status', {
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest'
                 }
@@ -632,6 +654,25 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                     }
                 })
                 .catch(() => {});
+        }
+
+        function startPostPrintStatusWatch() {
+            if (postPrintWatchTimer) {
+                clearInterval(postPrintWatchTimer);
+            }
+
+            postPrintWatchUntil = Date.now() + 180000;
+            refreshPrinterStatus();
+
+            postPrintWatchTimer = setInterval(() => {
+                if (Date.now() > postPrintWatchUntil) {
+                    clearInterval(postPrintWatchTimer);
+                    postPrintWatchTimer = null;
+                    return;
+                }
+
+                refreshPrinterStatus();
+            }, 5000);
         }
 
         function setPrintingState(active) {
@@ -682,25 +723,28 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
             })
                 .then(async response => {
                     const text = await response.text();
-                    if (response.status === 413) {
-                        throw new Error('O arquivo é maior que o limite aceito pelo servidor. Avise a equipe de TI para ajustar o limite de upload.');
-                    }
                     try {
                         return JSON.parse(text);
                     } catch {
-                        throw new Error(text || 'Resposta inválida do servidor');
+                        throw new Error(friendlyServerError(text, response));
                     }
                 })
                 .then(data => {
                     showPrintResult(data.message || 'Impressão enviada', !!data.success);
                     if (data.success) {
                         bar.style.width = '100%';
+                        startPostPrintStatusWatch();
                     }
                 })
                 .catch(error => {
-                    const message = error.name === 'AbortError'
+                    let message = error.name === 'AbortError'
                         ? 'O envio demorou mais que o esperado. Verifique a fila de impressão; se o problema continuar, avise a equipe de TI.'
                         : `Não foi possível enviar a impressão: ${error.message}`;
+                    if (String(error.message || '').startsWith('O envio demorou')
+                        || String(error.message || '').startsWith('O servidor retornou')
+                        || String(error.message || '').startsWith('O arquivo é maior')) {
+                        message = error.message;
+                    }
                     showPrintResult(message, false);
                 })
                 .finally(() => {
