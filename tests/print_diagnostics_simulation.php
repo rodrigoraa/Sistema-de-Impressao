@@ -30,6 +30,32 @@ foreach ($cases as $name => $text) {
     echo "- {$name}: " . ($reason !== '' ? $reason : 'sem erro classificado') . "\n";
 }
 
+$ippPaperEvidence = implode("\n", [
+    'media-ready = iso_a4_210x297mm',
+    'media-col-ready:',
+    'media-source=tray-1',
+    'printer-input-tray:',
+    'name=Cassette 1',
+    'level=150',
+]);
+
+if ($cups->classifyReason('printer-state-reasons=media-empty-error media-needed-warning', $ippPaperEvidence) !== '') {
+    fwrite(STDERR, "IPP com papel nao deve bloquear por falta de papel\n");
+    exit(1);
+}
+
+if ($cups->classifyReason('printer kyocera-escola disabled since Mon printer-state-reasons=media-empty-warning', $ippPaperEvidence) !== 'impressora desativada') {
+    fwrite(STDERR, "IPP com papel deve preservar outros motivos de bloqueio\n");
+    exit(1);
+}
+
+if ($cups->classifyReason('printer-state-reasons=media-empty-warning', "printer-input-tray:\nlevel=0") !== 'falta de papel') {
+    fwrite(STDERR, "IPP sem papel nao deve mascarar falta de papel\n");
+    exit(1);
+}
+
+echo "IPP com papel: OK\n";
+
 $pdf = (new PdfReportService())->monthlyReport('Relatório mensal de impressões', [
     'month' => '2026-05',
     'cpf' => '',

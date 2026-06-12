@@ -67,6 +67,7 @@ class CupsService
         $stateStatus = $this->run(escapeshellarg($lpstat) . ' -l -p ' . $printer . ' 2>&1');
         $pending = $this->run(escapeshellarg($lpstat) . ' -o ' . $printer . ' 2>&1');
         $completed = $this->run(escapeshellarg($lpstat) . ' -W completed -o ' . $printer . ' 2>&1');
+        $ippStatus = $this->queryPrinterIppAttributes($lpstat);
 
         $status['raw'] = [
             'printer' => $printerStatus,
@@ -75,6 +76,9 @@ class CupsService
             'pending' => $pending,
             'completed' => $completed,
         ];
+        if ($ippStatus !== null) {
+            $status['raw']['ipp'] = $ippStatus;
+        }
 
         $status['cups_active'] = !($printerStatus['return_code'] !== 0 && $this->looksLikeCupsDown($printerStatus['stdout'] . "\n" . $printerStatus['stderr']));
         $printerText = trim($printerStatus['stdout'] . "\n" . $printerStatus['stderr']);
@@ -118,7 +122,8 @@ class CupsService
         $status['failed_jobs'] = $this->countMatchingJobLines($completed['stdout'], '/fail|error|stopped/i');
 
         $combined = trim($printerText . "\n" . $acceptText . "\n" . $stateText);
-        $status['reason'] = $this->classifyReason($combined);
+        $ippText = $this->ippAttributesText($ippStatus);
+        $status['reason'] = $this->classifyReason($combined, $ippText);
         if ($printerStatus['return_code'] !== 0 || $acceptStatus['return_code'] !== 0 || $stateStatus['return_code'] !== 0) {
             $status['last_error'] = $this->truncate($combined, 1000);
         } elseif ($status['reason'] !== '') {
@@ -428,9 +433,11 @@ class CupsService
         ], true);
     }
 
-    public function classifyReason($text)
+    public function classifyReason($text, $ippAttributesText = null)
     {
         $text = strtolower((string) $text);
+        $paperAvailableByIpp = $ippAttributesText !== null
+            && $this->ippShowsPaperAvailable((string) $ippAttributesText);
         $map = [
             'CUPS parado ou erro de comunicação' => ['connection refused', 'bad file descriptor', 'scheduler is not running', 'failed to connect', 'cups server', 'not running'],
             'permissão negada' => ['permission denied', 'forbidden', 'not authorized', 'unauthorized'],
@@ -452,12 +459,177 @@ class CupsService
         foreach ($map as $label => $needles) {
             foreach ($needles as $needle) {
                 if (str_contains($text, $needle)) {
+                    if ($label === 'falta de papel' && $paperAvailableByIpp) {
+                        continue 2;
+                    }
                     return $label;
                 }
             }
         }
 
         return '';
+    }
+
+    private function queryPrinterIppAttributes($lpstat)
+    {
+        $device = $this->queryPrinterDeviceUri($lpstat);
+        if ($device === null || ($device['uri'] ?? '') === '') {
+            return $device;
+        }
+
+        $uri = (string) $device['uri'];
+        if (!$this->canQueryIppUri($uri)) {
+            $device['attributes'] = [
+                'stdout' => '',
+                'stderr' => 'URI da impressora nao usa IPP/HTTP',
+                'return_code' => 1,
+            ];
+            return $device;
+        }
+
+        $ipptool = $this->findExecutable(['/usr/bin/ipptool', '/bin/ipptool', 'ipptool']);
+        if ($ipptool === null) {
+            $device['attributes'] = [
+                'stdout' => '',
+                'stderr' => 'ipptool nao encontrado',
+                'return_code' => 127,
+            ];
+            return $device;
+        }
+
+        $testFile = $this->ippToolGetPrinterAttributesTest();
+        if ($testFile === null) {
+            $device['attributes'] = [
+                'stdout' => '',
+                'stderr' => 'arquivo de teste do ipptool nao encontrado',
+                'return_code' => 127,
+            ];
+            return $device;
+        }
+
+        $timeout = max(1, min(30, (int) ($_ENV['IPP_DIAGNOSTIC_TIMEOUT_SECONDS'] ?? 5)));
+        $attributes = $this->run(
+            escapeshellarg($ipptool) . ' -tv -T ' . $timeout . ' '
+            . escapeshellarg($uri) . ' '
+            . escapeshellarg($testFile['path'])
+            . ' 2>&1'
+        );
+        if (!empty($testFile['temporary'])) {
+            @unlink($testFile['path']);
+        }
+
+        $device['attributes'] = $attributes;
+        return $device;
+    }
+
+    private function queryPrinterDeviceUri($lpstat)
+    {
+        $device = $this->run(escapeshellarg($lpstat) . ' -v ' . escapeshellarg($this->printerName) . ' 2>&1');
+        $text = trim($device['stdout'] . "\n" . $device['stderr']);
+        $uri = '';
+
+        if ((int) ($device['return_code'] ?? 1) === 0) {
+            if (preg_match('/\bdevice\s+for\s+[^:]+:\s*(\S+)/i', $text, $match)) {
+                $uri = trim($match[1]);
+            } elseif (preg_match('/\b(ipp|ipps|http|https):\/\/\S+/i', $text, $match)) {
+                $uri = trim($match[0]);
+            }
+        }
+
+        return [
+            'uri' => $uri,
+            'device' => $device,
+        ];
+    }
+
+    private function canQueryIppUri($uri)
+    {
+        $scheme = parse_url((string) $uri, PHP_URL_SCHEME);
+        return in_array(strtolower((string) $scheme), ['ipp', 'ipps', 'http', 'https'], true);
+    }
+
+    private function ippToolGetPrinterAttributesTest()
+    {
+        foreach ([
+            '/usr/share/cups/ipptool/get-printer-attributes.test',
+            '/usr/local/share/cups/ipptool/get-printer-attributes.test',
+        ] as $candidate) {
+            if (is_file($candidate)) {
+                return ['path' => $candidate, 'temporary' => false];
+            }
+        }
+
+        $path = @tempnam(sys_get_temp_dir(), 'cups-ipp-');
+        if ($path === false) {
+            return null;
+        }
+
+        $content = implode("\n", [
+            '{',
+            '  NAME "Get-Printer-Attributes"',
+            '  OPERATION Get-Printer-Attributes',
+            '  GROUP operation',
+            '  ATTR charset attributes-charset utf-8',
+            '  ATTR naturalLanguage attributes-natural-language en',
+            '  ATTR uri printer-uri $uri',
+            '}',
+            '',
+        ]);
+
+        if (@file_put_contents($path, $content) === false) {
+            @unlink($path);
+            return null;
+        }
+
+        return ['path' => $path, 'temporary' => true];
+    }
+
+    private function ippAttributesText($ippStatus)
+    {
+        if (!is_array($ippStatus) || !isset($ippStatus['attributes']) || !is_array($ippStatus['attributes'])) {
+            return null;
+        }
+
+        return trim(($ippStatus['attributes']['stdout'] ?? '') . "\n" . ($ippStatus['attributes']['stderr'] ?? ''));
+    }
+
+    private function ippShowsPaperAvailable($text)
+    {
+        $text = (string) $text;
+        if ($text === '') {
+            return false;
+        }
+
+        if (preg_match('/\bmedia-ready\b\s*(?:\([^)]+\))?\s*[:=]\s*([^\r\n]+)/i', $text, $match)
+            && $this->ippAttributeHasUsefulValue($match[1])) {
+            return true;
+        }
+
+        if (preg_match('/\bmedia-col-ready\b\s*(?:\([^)]+\))?\s*[:=]\s*([^\r\n{]+)/i', $text, $match)
+            && $this->ippAttributeHasUsefulValue($match[1])) {
+            return true;
+        }
+
+        if (preg_match('/\bmedia-col-ready\b[\s\S]{0,800}\bmedia-source\b\s*(?:\([^)]+\))?\s*[:=]\s*([^\r\n;]+)/i', $text, $match)
+            && $this->ippAttributeHasUsefulValue($match[1])) {
+            return true;
+        }
+
+        if (preg_match('/\bprinter-input-tray\b[\s\S]{0,800}\blevel\s*=\s*([1-9]\d*)\b/i', $text)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function ippAttributeHasUsefulValue($value)
+    {
+        $value = strtolower(trim((string) $value, " \t\r\n\"'"));
+        if ($value === '') {
+            return false;
+        }
+
+        return !in_array($value, ['none', 'unknown', 'no-value', 'not-settable', 'unsupported'], true);
     }
 
     private function applyUserNotice(&$status)
