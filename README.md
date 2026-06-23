@@ -20,6 +20,8 @@ Você pode configurar via `config/config.php` ou criando um arquivo `.env` na ra
 ```env
 PRINTER_NAME=kyocera-escola
 UPLOAD_PATH=/var/www/impressao/storage/uploads
+SHARE_TARGET_PATH=/var/www/impressao/storage/share-target
+MAX_UPLOAD_BYTES=20971520
 LOG_PATH=/var/www/impressao/storage/logs/app.log
 APP_TIMEZONE=America/Cuiaba
 LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
@@ -30,6 +32,51 @@ PRINT_JOB_WAIT_SECONDS=120
 PRINT_JOB_AFTER_QUEUE_MONITOR_SECONDS=45
 PRINT_JOB_IDLE_CONFIRM_SECONDS=6
 ```
+
+## Compartilhar arquivos direto do WhatsApp, iPhone e Android
+
+O sistema também funciona como PWA e pode receber arquivos pelo menu "Compartilhar" de outros aplicativos, como WhatsApp, visualizador de PDF, galeria e gerenciadores de arquivo.
+
+Para esse fluxo funcionar corretamente:
+
+- O site precisa estar publicado com HTTPS.
+- O usuário precisa instalar o sistema como PWA na tela inicial do celular.
+- No iPhone, abra o site pelo Safari, toque em "Compartilhar" e depois em "Adicionar à Tela de Início".
+- O compartilhamento direto só funciona corretamente quando o sistema está instalado como PWA.
+- O suporte pode variar conforme a versão do iOS/Safari.
+- Caso o PWA não apareça no menu de compartilhamento do iPhone, use o upload manual do sistema como alternativa.
+
+Formatos aceitos no compartilhamento:
+
+- PDF: `application/pdf`
+- DOC: `application/msword`
+- DOCX: `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+- PNG: `image/png`
+- JPG/JPEG: `image/jpeg`
+- WEBP: `image/webp`
+- TXT: `text/plain`
+
+O arquivo compartilhado é salvo primeiro em `storage/share-target/`, fora da pasta pública. Ele abre uma tela de confirmação antes de imprimir. A impressão não é feita automaticamente ao receber o compartilhamento. Ao confirmar, o sistema move o arquivo para o fluxo normal de upload/impressão; ao cancelar, remove o arquivo temporário.
+
+Teste manual no Android:
+
+1. Abrir o site no Chrome.
+2. Instalar o PWA.
+3. Abrir um PDF ou imagem no WhatsApp.
+4. Tocar em compartilhar.
+5. Escolher o Sistema de Impressão.
+6. Confirmar se a tela de confirmação abre com o arquivo anexado.
+
+Teste manual no iPhone:
+
+1. Abrir o site no Safari.
+2. Tocar em compartilhar.
+3. Escolher "Adicionar à Tela de Início".
+4. Abrir um arquivo no WhatsApp.
+5. Tocar em compartilhar.
+6. Verificar se o PWA aparece como opção.
+7. Caso apareça, enviar o arquivo para o sistema.
+8. Caso não apareça, documentar que depende do suporte do iOS e usar upload manual.
 
 ## Auditoria e diagnóstico de impressão
 - Cada tentativa fica registrada em `print_jobs`, inclusive falhas de pré-validação, envio inválido, erro no CUPS, tempo esgotado e falha no `lp`.

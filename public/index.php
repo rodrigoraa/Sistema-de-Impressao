@@ -74,6 +74,25 @@ function servePublicAssetIfRequested($projectRoot)
         exit;
     }
 
+    $rootAssets = [
+        '/manifest.webmanifest' => ['file' => '/public/manifest.webmanifest', 'type' => 'application/manifest+json; charset=utf-8', 'cache' => 'public, max-age=3600'],
+        '/service-worker.js' => ['file' => '/public/service-worker.js', 'type' => 'application/javascript; charset=utf-8', 'cache' => 'no-cache'],
+    ];
+    if (isset($rootAssets[$uri])) {
+        $asset = $rootAssets[$uri];
+        $file = realpath($projectRoot . $asset['file']);
+        if ($file === false || !is_file($file)) {
+            http_response_code(404);
+            exit;
+        }
+
+        header('Content-Type: ' . $asset['type']);
+        header('Content-Length: ' . filesize($file));
+        header('Cache-Control: ' . $asset['cache']);
+        readfile($file);
+        exit;
+    }
+
     if (!preg_match('#^/(css|image|js)/[A-Za-z0-9._/\- ]+$#', $uri)) {
         return;
     }
@@ -129,6 +148,8 @@ $config = is_file($projectRoot . '/config/config.php')
 
 $_ENV['PRINTER_NAME'] = $_ENV['PRINTER_NAME'] ?? ($config['printer_name'] ?? '');
 $_ENV['UPLOAD_PATH'] = $_ENV['UPLOAD_PATH'] ?? ($config['upload_path'] ?? ($projectRoot . '/storage/uploads/'));
+$_ENV['SHARE_TARGET_PATH'] = $_ENV['SHARE_TARGET_PATH'] ?? ($config['share_target_path'] ?? ($projectRoot . '/storage/share-target/'));
+$_ENV['MAX_UPLOAD_BYTES'] = $_ENV['MAX_UPLOAD_BYTES'] ?? (string) ($config['max_upload_bytes'] ?? (20 * 1024 * 1024));
 $_ENV['LOG_PATH'] = $_ENV['LOG_PATH'] ?? ($config['log_path'] ?? ($projectRoot . '/storage/logs/app.log'));
 $_ENV['APP_TIMEZONE'] = $_ENV['APP_TIMEZONE'] ?? ($config['app_timezone'] ?? 'America/Cuiaba');
 @date_default_timezone_set($_ENV['APP_TIMEZONE']);
@@ -176,6 +197,11 @@ if ($uploadDir && !is_dir($uploadDir)) {
     @mkdir($uploadDir, 0775, true);
 }
 
+$shareTargetDir = rtrim((string) ($_ENV['SHARE_TARGET_PATH'] ?? ''), '/');
+if ($shareTargetDir && !is_dir($shareTargetDir)) {
+    @mkdir($shareTargetDir, 0775, true);
+}
+
 $logPath = (string) ($_ENV['LOG_PATH'] ?? '');
 $logDir = $logPath ? dirname($logPath) : '';
 if ($logDir && !is_dir($logDir)) {
@@ -190,6 +216,7 @@ require_once $projectRoot . '/src/Controller/UserController.php';
 require_once $projectRoot . '/src/Controller/SetupController.php';
 require_once $projectRoot . '/src/Controller/PrinterController.php';
 require_once $projectRoot . '/src/Controller/PrintJobController.php';
+require_once $projectRoot . '/src/Controller/ShareTargetController.php';
 
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
@@ -284,6 +311,11 @@ if ($uri === '/printer/options') {
     exit;
 }
 
+if ($uri === '/share-target.php') {
+    (new ShareTargetController())->handle();
+    exit;
+}
+
 // PROTEÇÃO
 if (!isset($_SESSION['user'])) {
     header('Location: /login');
@@ -330,6 +362,8 @@ $controller = new PrintController();
 $viewData = $controller->handle();
 $userList = is_array($viewData) ? ($viewData['userList'] ?? []) : [];
 $printerStatus = is_array($viewData) ? ($viewData['printerStatus'] ?? []) : [];
+$maxUploadMb = is_array($viewData) ? ($viewData['maxUploadMb'] ?? $controller->maxUploadMegabytes()) : $controller->maxUploadMegabytes();
+$allowedExtensions = is_array($viewData) ? ($viewData['allowedExtensions'] ?? $controller->allowedExtensions()) : $controller->allowedExtensions();
 
 // VIEW
 require $projectRoot . '/views/print.php';

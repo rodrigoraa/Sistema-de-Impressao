@@ -164,6 +164,53 @@
     font-size: .9rem;
 }
 
+.share-confirm-page {
+    max-width: 860px;
+}
+
+.share-confirm-form {
+    display: grid;
+    gap: 16px;
+}
+
+.share-file-details {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+}
+
+.share-file-details div {
+    display: grid;
+    gap: 2px;
+    padding: 12px;
+    border: 1px solid var(--app-line);
+    border-radius: 8px;
+    background: var(--app-surface-2);
+}
+
+.share-file-details dt {
+    color: var(--app-muted);
+    font-size: .78rem;
+    font-weight: 750;
+    text-transform: uppercase;
+}
+
+.share-file-details dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-weight: 650;
+}
+
+.share-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.share-actions .btn {
+    min-height: 52px;
+}
+
 @media (max-width: 991px) {
     .info-panel {
         position: static;
@@ -173,5 +220,27 @@
 @media (max-width: 575px) {
     .option-grid {
         grid-template-columns: 1fr;
+    }
+
+    .upload-box {
+        padding: 28px 16px;
+    }
+
+    .upload-box p {
+        overflow-wrap: anywhere;
+    }
+
+    .btn,
+    .form-control,
+    .form-select {
+        min-height: 44px;
+    }
+
+    .share-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .share-confirm-page .page-title .btn {
+        width: 100%;
     }
 }

@@ -52,7 +52,7 @@ class PrintService
         $this->lastPrintResult = [];
         $preparedExt = strtolower(pathinfo($preparedFile, PATHINFO_EXTENSION));
         $this->log('Arquivo preparado para impressao: ext_origem=' . $sourceExt . ' preparado=' . $preparedFile . ' ext_preparado=' . $preparedExt . ' tamanho=' . (@filesize($preparedFile) ?: 0));
-        if (in_array($sourceExt, ['doc', 'docx', 'jpg', 'jpeg', 'png'], true)) {
+        if (in_array($sourceExt, ['doc', 'docx', 'jpg', 'jpeg', 'png', 'webp', 'txt'], true)) {
             $debugCopy = $this->copyDebugFile($preparedFile, $sourceExt . '-preparado');
             if ($debugCopy !== null) {
                 $this->log(strtoupper($sourceExt) . ' diagnostico: copia do arquivo preparado=' . $debugCopy);
@@ -93,8 +93,12 @@ class PrintService
             return $this->convertOfficeToPdf($filePath, $extraOptions);
         }
 
-        if (in_array($ext, ['jpg', 'jpeg', 'png'], true)) {
+        if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
             return $this->convertImageToPdf($filePath, $orientation, $paper);
+        }
+
+        if ($ext === 'txt') {
+            return $this->convertTextToPdf($filePath, $orientation, $paper);
         }
 
         throw new RuntimeException('Tipo de arquivo nao suportado para impressao');
@@ -259,7 +263,7 @@ class PrintService
 
     private function printCups($filePath, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions, $sourceExt = '')
     {
-        if (in_array($sourceExt, ['jpg', 'jpeg', 'png'], true)) {
+        if (in_array($sourceExt, ['jpg', 'jpeg', 'png', 'webp'], true)) {
             $this->log('CUPS imagem: enviando PDF preparado com opcoes de papel/orientacao.');
         }
 
@@ -281,7 +285,7 @@ class PrintService
             throw new RuntimeException($preflight['reason']);
         }
 
-        $cupsOrientation = in_array($sourceExt, ['jpg', 'jpeg', 'png'], true) ? '' : $orientation;
+        $cupsOrientation = in_array($sourceExt, ['jpg', 'jpeg', 'png', 'webp'], true) ? '' : $orientation;
         $send = $cups->runLp($filePath, $copies, $sides, $cupsOrientation, $quality, $numberUp, $extraOptions);
         $send['diagnostics'] = $preflight['diagnostics'] ?? [];
         $this->lastPrintResult = $send;
@@ -667,6 +671,22 @@ class PrintService
             throw new RuntimeException('Falha ao converter PNG usando PHP GD. Instale ImageMagick no servidor.');
         }
 
+        if ($ext === 'webp') {
+            if (!function_exists('imagecreatefromwebp')) {
+                $this->log('WEBP sem conversor disponivel: ImageMagick nao encontrado e PHP GD nao possui suporte a WEBP.');
+                throw new RuntimeException('WEBP nao pode ser convertido neste servidor. Instale ImageMagick ou habilite suporte WEBP no PHP GD.');
+            }
+
+            $pdfFile = tempnam(sys_get_temp_dir(), 'webppdf_') . '.pdf';
+            if ($this->writeWebpPdfWithGd($filePath, $pdfFile, $orientation, $paper)) {
+                $this->log('WEBP convertido para PDF via GD: ' . $pdfFile);
+                return $pdfFile;
+            }
+
+            @unlink($pdfFile);
+            throw new RuntimeException('Falha ao converter WEBP usando PHP GD. Instale ImageMagick no servidor.');
+        }
+
         if (!in_array($ext, ['jpg', 'jpeg'], true)) {
             throw new RuntimeException('Formato de imagem nao suportado');
         }
@@ -759,6 +779,11 @@ class PrintService
                     if ($jpegDebug !== null) {
                         $this->log('PNG diagnostico: JPG intermediario=' . $jpegDebug . ' tamanho=' . (@filesize($jpegDebug) ?: 0));
                     }
+                } elseif (strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'webp') {
+                    $jpegDebug = $this->copyDebugFile($jpegFile, 'webp-intermediario');
+                    if ($jpegDebug !== null) {
+                        $this->log('WEBP diagnostico: JPG intermediario=' . $jpegDebug . ' tamanho=' . (@filesize($jpegDebug) ?: 0));
+                    }
                 } elseif (in_array(strtolower(pathinfo($filePath, PATHINFO_EXTENSION)), ['jpg', 'jpeg'], true)) {
                     $jpegDebug = $this->copyDebugFile($jpegFile, 'jpg-normalizado');
                     if ($jpegDebug !== null) {
@@ -813,6 +838,53 @@ class PrintService
         $white = imagecolorallocate($canvas, 255, 255, 255);
         imagefilledrectangle($canvas, 0, 0, $width, $height, $white);
         imagealphablending($canvas, true);
+        imagecopy($canvas, $image, 0, 0, 0, 0, $width, $height);
+
+        ob_start();
+        $ok = imagejpeg($canvas, null, 92);
+        $jpegData = ob_get_clean();
+
+        imagedestroy($canvas);
+        imagedestroy($image);
+
+        if (!$ok || $jpegData === false || $jpegData === '') {
+            return false;
+        }
+
+        $this->writeImagePdf(
+            $jpegData,
+            $pdfPath,
+            $width,
+            $height,
+            '/DCTDecode',
+            $orientation,
+            $paper
+        );
+
+        return true;
+    }
+
+    private function writeWebpPdfWithGd($imagePath, $pdfPath, $orientation, $paper)
+    {
+        if (!function_exists('imagecreatefromwebp')) {
+            return false;
+        }
+
+        $image = @imagecreatefromwebp($imagePath);
+        if (!$image) {
+            return false;
+        }
+
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $canvas = imagecreatetruecolor($width, $height);
+        if (!$canvas) {
+            imagedestroy($image);
+            return false;
+        }
+
+        $white = imagecolorallocate($canvas, 255, 255, 255);
+        imagefilledrectangle($canvas, 0, 0, $width, $height, $white);
         imagecopy($canvas, $image, 0, 0, 0, 0, $width, $height);
 
         ob_start();
@@ -919,6 +991,141 @@ class PrintService
         }
 
         return $image;
+    }
+
+    private function convertTextToPdf($filePath, $orientation, $paper)
+    {
+        $content = @file_get_contents($filePath);
+        if ($content === false) {
+            throw new RuntimeException('Nao foi possivel ler o arquivo TXT');
+        }
+
+        if ($orientation === 'auto') {
+            $orientation = 'portrait';
+        }
+
+        $pdfFile = tempnam(sys_get_temp_dir(), 'txtpdf_') . '.pdf';
+        $this->writeTextPdf($content, $pdfFile, $orientation, $paper);
+        $this->log('TXT convertido para PDF: ' . $pdfFile);
+
+        return $pdfFile;
+    }
+
+    private function writeTextPdf($text, $pdfPath, $orientation, $paper)
+    {
+        [$pageWidth, $pageHeight] = $this->paperSize($paper);
+        if ($orientation === 'landscape') {
+            [$pageWidth, $pageHeight] = [$pageHeight, $pageWidth];
+        }
+
+        $fontSize = 10;
+        $leading = 13;
+        $margin = 48;
+        $usableWidth = max(120, $pageWidth - ($margin * 2));
+        $usableHeight = max(120, $pageHeight - ($margin * 2));
+        $maxChars = max(32, (int) floor($usableWidth / ($fontSize * 0.55)));
+        $linesPerPage = max(1, (int) floor($usableHeight / $leading));
+        $lines = $this->wrapTextForPdf($text, $maxChars);
+        $pages = array_chunk($lines, $linesPerPage);
+        if (empty($pages)) {
+            $pages = [['']];
+        }
+
+        $objects = [];
+        $objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+        $objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
+
+        $kids = [];
+        $objectNumber = 4;
+        foreach ($pages as $pageLines) {
+            $pageObject = $objectNumber;
+            $contentObject = $objectNumber + 1;
+            $kids[] = $pageObject . ' 0 R';
+
+            $objects[$pageObject] = sprintf(
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.2F %.2F] /Resources << /Font << /F1 3 0 R >> >> /Contents %d 0 R >>",
+                $pageWidth,
+                $pageHeight,
+                $contentObject
+            );
+
+            $cursorY = $pageHeight - $margin - $fontSize;
+            $content = sprintf("BT\n/F1 %d Tf\n%.2F %.2F Td\n%.2F TL\n", $fontSize, $margin, $cursorY, $leading);
+            foreach ($pageLines as $index => $line) {
+                if ($index > 0) {
+                    $content .= "T*\n";
+                }
+                $content .= '(' . $this->pdfTextString($line) . ") Tj\n";
+            }
+            $content .= "ET";
+            $objects[$contentObject] = "<< /Length " . strlen($content) . " >>\nstream\n" . $content . "\nendstream";
+
+            $objectNumber += 2;
+        }
+
+        $objects[2] = "<< /Type /Pages /Kids [" . implode(' ', $kids) . "] /Count " . count($kids) . " >>";
+        ksort($objects);
+
+        $pdf = "%PDF-1.4\n";
+        $offsets = [0];
+        foreach ($objects as $number => $object) {
+            $offsets[$number] = strlen($pdf);
+            $pdf .= $number . " 0 obj\n" . $object . "\nendobj\n";
+        }
+
+        $maxObject = max(array_keys($objects));
+        $xref = strlen($pdf);
+        $pdf .= "xref\n0 " . ($maxObject + 1) . "\n";
+        $pdf .= "0000000000 65535 f \n";
+        for ($i = 1; $i <= $maxObject; $i++) {
+            $pdf .= isset($offsets[$i])
+                ? sprintf("%010d 00000 n \n", $offsets[$i])
+                : "0000000000 65535 f \n";
+        }
+        $pdf .= "trailer\n<< /Size " . ($maxObject + 1) . " /Root 1 0 R >>\n";
+        $pdf .= "startxref\n{$xref}\n%%EOF\n";
+
+        if (file_put_contents($pdfPath, $pdf) === false) {
+            throw new RuntimeException('Nao foi possivel criar PDF do TXT');
+        }
+    }
+
+    private function wrapTextForPdf($text, $maxChars)
+    {
+        $text = str_replace("\0", '', (string) $text);
+        $text = str_replace(["\r\n", "\r"], "\n", $text);
+        $text = preg_replace('/[^\x09\x0A\x20-\x7E\x80-\xFF]/', '', $text);
+        $lines = [];
+
+        foreach (explode("\n", $text) as $line) {
+            $line = str_replace("\t", '    ', rtrim($line));
+            if ($line === '') {
+                $lines[] = '';
+                continue;
+            }
+
+            foreach (explode("\n", wordwrap($line, $maxChars, "\n", true)) as $wrapped) {
+                $lines[] = $wrapped;
+            }
+        }
+
+        return $lines ?: [''];
+    }
+
+    private function pdfTextString($text)
+    {
+        $converted = false;
+        if (function_exists('iconv')) {
+            $converted = @iconv('UTF-8', 'Windows-1252//TRANSLIT', (string) $text);
+            if ($converted === false) {
+                $converted = @iconv('ISO-8859-1', 'Windows-1252//TRANSLIT', (string) $text);
+            }
+        }
+        if ($converted === false) {
+            $converted = (string) $text;
+        }
+
+        return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $converted);
     }
 
     private function writeImagePdf($imageData, $pdfPath, $imageWidth, $imageHeight, $filter, $orientation, $paper)

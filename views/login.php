@@ -4,6 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <link rel="icon" type="image/png" href="/favicon.ico?v=2">
+    <link rel="apple-touch-icon" href="/image/pwa-icon-180.png">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#0f3f4f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Sistema de Impressão">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>Sistema de Impressão | Acesso</title>
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -116,6 +122,7 @@
             senhaWrap.style.display = admins.includes(val) ? 'block' : 'none';
         });
     </script>
+    <script src="/js/pwa.js?v=20260623"></script>
 
 </body>
 

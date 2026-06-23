@@ -6,10 +6,41 @@ require_once __DIR__ . '/../Service/Database.php';
 require_once __DIR__ . '/../Service/PrintJobService.php';
 require_once __DIR__ . '/../Service/CupsService.php';
 
+class UploadValidationException extends RuntimeException
+{
+    private $category;
+
+    public function __construct($message, $category = 'arquivo_invalido')
+    {
+        parent::__construct($message);
+        $this->category = $category;
+    }
+
+    public function category()
+    {
+        return $this->category;
+    }
+}
+
 class PrintController
 {
-    private $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+    private $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'webp', 'txt'];
     private $maxUploadBytes = 20 * 1024 * 1024;
+
+    public function allowedExtensions()
+    {
+        return $this->allowedExtensions;
+    }
+
+    public function maxUploadBytes()
+    {
+        return max(1, (int) ($_ENV['MAX_UPLOAD_BYTES'] ?? $this->maxUploadBytes));
+    }
+
+    public function maxUploadMegabytes()
+    {
+        return (int) ceil($this->maxUploadBytes() / 1024 / 1024);
+    }
 
     private function validateCsrfOrFail()
     {
@@ -43,22 +74,24 @@ class PrintController
         }
     }
 
-    private function hasAllowedMimeType($tmpPath, $ext)
+    private function hasAllowedMimeType($tmpPath, $ext, $mime = null)
     {
         if (!is_file($tmpPath)) {
             return false;
         }
 
-        if (!function_exists('finfo_open')) {
+        if ($mime === null && !function_exists('finfo_open')) {
             return true;
         }
 
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        if ($finfo === false) {
-            return true;
+        if ($mime === null) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo === false) {
+                return true;
+            }
+            $mime = finfo_file($finfo, $tmpPath);
+            finfo_close($finfo);
         }
-        $mime = finfo_file($finfo, $tmpPath);
-        finfo_close($finfo);
 
         $allowedByExtension = [
             'pdf' => ['application/pdf'],
@@ -67,6 +100,8 @@ class PrintController
             'jpg' => ['image/jpeg'],
             'jpeg' => ['image/jpeg'],
             'png' => ['image/png', 'image/x-png', 'application/png', 'application/octet-stream'],
+            'webp' => ['image/webp'],
+            'txt' => ['text/plain'],
         ];
 
         if (!isset($allowedByExtension[$ext])) {
@@ -85,22 +120,124 @@ class PrintController
         return false;
     }
 
-    public function handle()
+    public function validateUploadFile($file)
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            session_start();
+        if (!is_array($file)) {
+            throw new UploadValidationException(
+                'Arquivo não enviado. Verifique upload_max_filesize e post_max_size no servidor.',
+                'arquivo_ausente'
+            );
         }
 
+        if (isset($file['name']) && is_array($file['name'])) {
+            $file = [
+                'name' => $file['name'][0] ?? '',
+                'type' => $file['type'][0] ?? '',
+                'tmp_name' => $file['tmp_name'][0] ?? '',
+                'error' => $file['error'][0] ?? UPLOAD_ERR_NO_FILE,
+                'size' => $file['size'][0] ?? 0,
+            ];
+        }
+
+        $errorCode = $file['error'] ?? UPLOAD_ERR_NO_FILE;
+        if ($errorCode !== UPLOAD_ERR_OK) {
+            throw new UploadValidationException($this->uploadErrorMessage($errorCode), 'falha_upload');
+        }
+
+        $origName = basename(str_replace('\\', '/', (string) ($file['name'] ?? 'arquivo')));
+        $tmpPath = (string) ($file['tmp_name'] ?? '');
+        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+        $size = (int) ($file['size'] ?? 0);
+
+        if ($size < 1 || $size > $this->maxUploadBytes()) {
+            throw new UploadValidationException('Arquivo inválido ou acima de ' . $this->maxUploadMegabytes() . 'MB', 'arquivo_invalido');
+        }
+
+        if ($ext === '' || !in_array($ext, $this->allowedExtensions, true)) {
+            throw new UploadValidationException('Tipo de arquivo não permitido', 'formato_nao_suportado');
+        }
+
+        $mimeType = $this->detectMimeType($tmpPath);
+        if (!$this->hasAllowedMimeType($tmpPath, $ext, $mimeType)) {
+            $this->logUploadFailure("MIME incompatível: nome={$origName} ext={$ext} mime={$mimeType}");
+            throw new UploadValidationException('Formato de arquivo não suportado', 'formato_nao_suportado');
+        }
+
+        return [
+            'original_name' => $origName !== '' ? $origName : 'arquivo.' . $ext,
+            'tmp_path' => $tmpPath,
+            'extension' => $ext,
+            'size' => $size,
+            'mime_type' => $mimeType,
+        ];
+    }
+
+    public function storeUploadedFile($file, $targetDir)
+    {
+        $info = $this->validateUploadFile($file);
+        $dest = $this->targetPathForOriginalName($targetDir, $info['original_name']);
+
+        if (!move_uploaded_file($info['tmp_path'], $dest)) {
+            throw new UploadValidationException('Erro ao salvar arquivo', 'falha_armazenamento');
+        }
+
+        $info['stored_file'] = $dest;
+        return $info;
+    }
+
+    public function moveExistingFileToUploadPath($sourcePath, $originalName)
+    {
+        if (!is_file($sourcePath)) {
+            throw new RuntimeException('Arquivo compartilhado não encontrado');
+        }
+
+        $dest = $this->targetPathForOriginalName($_ENV['UPLOAD_PATH'] ?? '', $originalName);
+        if (!@rename($sourcePath, $dest)) {
+            if (!@copy($sourcePath, $dest)) {
+                throw new RuntimeException('Não foi possível preparar o arquivo compartilhado para impressão');
+            }
+            @unlink($sourcePath);
+        }
+
+        return $dest;
+    }
+
+    private function targetPathForOriginalName($targetDir, $originalName)
+    {
+        $targetDir = rtrim((string) $targetDir, "\\/");
+        if ($targetDir === '') {
+            throw new UploadValidationException('UPLOAD_PATH não configurado', 'falha_configuracao');
+        }
+
+        if (!is_dir($targetDir) && !mkdir($targetDir, 0775, true)) {
+            throw new UploadValidationException('Erro ao preparar pasta de upload', 'falha_armazenamento');
+        }
+
+        $baseDir = realpath($targetDir);
+        if ($baseDir === false || !is_dir($baseDir)) {
+            throw new UploadValidationException('Pasta de upload inválida', 'falha_configuracao');
+        }
+
+        $filename = bin2hex(random_bytes(12)) . '_' . $this->sanitizeFilename($originalName);
+        $dest = $baseDir . DIRECTORY_SEPARATOR . $filename;
+        $normalizedBase = rtrim(str_replace('\\', '/', $baseDir), '/') . '/';
+        $normalizedDest = str_replace('\\', '/', $dest);
+        if (!str_starts_with($normalizedDest, $normalizedBase)) {
+            throw new UploadValidationException('Caminho de upload inválido', 'falha_armazenamento');
+        }
+
+        return $dest;
+    }
+
+    public function formContext()
+    {
         $userList = [];
 
-        // Se não logado, apenas retorna usuário (lista vazia)
         if (!isset($_SESSION['user'])) {
             return ['userList' => $userList];
         }
 
-        $isAdmin = (($_SESSION['role'] ?? '') === 'admin');
-        if ($isAdmin) {
-            // Carrega lista de usuários (nome, cpf) para dropdown se for admin
+        if (($_SESSION['role'] ?? '') === 'admin') {
             $db = Database::connect();
             $result = $db->query("SELECT name, cpf FROM users ORDER BY name");
             while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
@@ -108,12 +245,32 @@ class PrintController
             }
         }
 
+        return [
+            'userList' => $userList,
+            'printerStatus' => (new CupsService())->diagnostics(true),
+            'maxUploadMb' => $this->maxUploadMegabytes(),
+            'allowedExtensions' => $this->allowedExtensions,
+        ];
+    }
+
+    public function handle()
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            session_start();
+        }
+
+        $context = $this->formContext();
+        $userList = $context['userList'] ?? [];
+
+        if (!isset($_SESSION['user'])) {
+            return $context;
+        }
+
+        $isAdmin = (($_SESSION['role'] ?? '') === 'admin');
+
         // Se GET, retorna dados para a view (lista de usuários)
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            return [
-                'userList' => $userList,
-                'printerStatus' => (new CupsService())->diagnostics(true),
-            ];
+            return $context;
         }
 
         // ============================
@@ -125,57 +282,52 @@ class PrintController
         $user = $this->resolvePrintUser($isAdmin, $userList);
         $jobService = new PrintJobService();
 
-        // Validação inicial
-        if (!isset($_FILES['arquivo'])) {
-            $this->logUploadFailure('Arquivo ausente em $_FILES');
-            $this->registerFailedAttempt($jobService, $user, 'arquivo_ausente', 'Arquivo não enviado');
-            $this->fail("Arquivo não enviado. Verifique upload_max_filesize e post_max_size no servidor.");
-        }
-        $file = $_FILES['arquivo'];
-        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            $this->logUploadFailure('Erro de upload codigo=' . ($file['error'] ?? UPLOAD_ERR_NO_FILE));
-            $message = $this->uploadErrorMessage($file['error'] ?? UPLOAD_ERR_NO_FILE);
-            $this->registerFailedAttempt($jobService, $user, 'falha_upload', $message, $file['name'] ?? 'arquivo');
-            $this->fail($message);
-        }
-
-        $origName = (string) $file['name'];
-        $tmpPath = $file['tmp_name'];
-        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
-        $size = intval($file['size'] ?? 0);
-        if ($size < 1 || $size > $this->maxUploadBytes) {
-            $this->registerFailedAttempt($jobService, $user, 'arquivo_invalido', 'Arquivo inválido ou acima de 20MB', $origName, null, $ext, $size);
-            $this->fail('Arquivo inválido ou acima de 20MB');
-        }
-        $this->logUploadFailure("Upload recebido: nome={$origName} ext={$ext} size={$size}");
-
-        // Extensões permitidas
-        if (!in_array($ext, $this->allowedExtensions, true)) {
-            $this->registerFailedAttempt($jobService, $user, 'formato_nao_suportado', 'Tipo de arquivo não permitido', $origName, null, $ext, $size);
-            $this->fail("Tipo de arquivo não permitido");
-        }
-        $mimeType = $this->detectMimeType($tmpPath);
-        if (!$this->hasAllowedMimeType($tmpPath, $ext)) {
-            $this->logUploadFailure("MIME incompatível: nome={$origName} ext={$ext} mime={$mimeType}");
-            $this->registerFailedAttempt($jobService, $user, 'formato_nao_suportado', 'MIME type não permitido: ' . ($mimeType ?: 'desconhecido'), $origName, null, $ext, $size);
-            $this->fail('Formato de arquivo não suportado');
+        try {
+            $fileInfo = $this->storeUploadedFile($_FILES['arquivo'] ?? null, $_ENV['UPLOAD_PATH'] ?? '');
+        } catch (UploadValidationException $e) {
+            $rawFile = $_FILES['arquivo'] ?? null;
+            $originalName = 'arquivo';
+            if (is_array($rawFile)) {
+                $rawName = $rawFile['name'] ?? 'arquivo';
+                $originalName = is_array($rawName) ? (string) ($rawName[0] ?? 'arquivo') : (string) $rawName;
+            }
+            $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            $rawSize = is_array($rawFile) ? ($rawFile['size'] ?? 0) : 0;
+            $size = is_array($rawSize) ? (int) ($rawSize[0] ?? 0) : (int) $rawSize;
+            $this->registerFailedAttempt($jobService, $user, $e->category(), $e->getMessage(), $originalName, null, $extension, $size);
+            $this->fail($e->getMessage());
         }
 
-        // Configura caminhos via env (ou config carregada)
-        $uploadPath = $_ENV['UPLOAD_PATH'] ?? '';
-        if (!$uploadPath) {
-            $this->registerFailedAttempt($jobService, $user, 'falha_configuracao', 'UPLOAD_PATH não configurado', $origName, null, $ext, $size);
-            $this->fail("UPLOAD_PATH não configurado");
+        $this->logUploadFailure("Upload recebido: nome={$fileInfo['original_name']} ext={$fileInfo['extension']} size={$fileInfo['size']}");
+
+        $this->processSavedFile(
+            $fileInfo['stored_file'],
+            $fileInfo['original_name'],
+            $fileInfo['extension'],
+            (int) $fileInfo['size'],
+            (string) $fileInfo['mime_type'],
+            $user,
+            $jobService
+        );
+    }
+
+    public function printSavedFile($dest, $origName, $ext, $size, $mimeType)
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            session_start();
         }
-        if (!is_dir($uploadPath)) {
-            mkdir($uploadPath, 0775, true);
-        }
-        $newFilename = uniqid('', true) . '_' . $this->sanitizeFilename($origName);
-        $dest = rtrim($uploadPath, '/') . '/' . $newFilename;
-        if (!move_uploaded_file($tmpPath, $dest)) {
-            $this->registerFailedAttempt($jobService, $user, 'falha_armazenamento', 'Erro ao salvar arquivo', $origName, null, $ext, $size);
-            $this->fail("Erro ao salvar arquivo");
-        }
+
+        $this->validateCsrfOrFail();
+
+        $context = $this->formContext();
+        $userList = $context['userList'] ?? [];
+        $isAdmin = (($_SESSION['role'] ?? '') === 'admin');
+        $user = $this->resolvePrintUser($isAdmin, $userList);
+        $this->processSavedFile($dest, $origName, $ext, $size, $mimeType, $user, new PrintJobService());
+    }
+
+    private function processSavedFile($dest, $origName, $ext, $size, $mimeType, $user, $jobService)
+    {
 
         // Parâmetros de impressão vindos do formulário
         $copies = max(1, intval($_POST['copies'] ?? 1));
@@ -231,7 +383,7 @@ class PrintController
         // Prepara, conta paginas e envia para impressao usando o mesmo arquivo convertido.
         $sourceExt = strtolower(pathinfo($dest, PATHINFO_EXTENSION));
         $printer = new PrintService();
-        if ($orientation === 'auto' && in_array($sourceExt, ['jpg', 'jpeg', 'png'], true)) {
+        if ($orientation === 'auto' && in_array($sourceExt, ['jpg', 'jpeg', 'png', 'webp'], true)) {
             $detectedOrientation = $printer->detectImageOrientation($dest);
             if ($detectedOrientation !== null) {
                 $orientation = $detectedOrientation;
@@ -266,7 +418,7 @@ class PrintController
             if ($sourceExt === 'docx' && $originalPages > 0 && $convertedPages > 0 && $convertedPages !== $originalPages) {
                 $printer->log("DOCX metadado de paginas diverge do PDF convertido: metadado={$originalPages} convertido={$convertedPages} arquivo={$dest}");
             }
-            if ($orientation === 'auto' && in_array($sourceExt, ['pdf', 'doc', 'docx'], true)) {
+            if ($orientation === 'auto' && in_array($sourceExt, ['pdf', 'doc', 'docx', 'txt'], true)) {
                 $detectedOrientation = $printer->detectPdfOrientation($printedFile);
                 if ($detectedOrientation !== null) {
                     $printer->log('Documento: orientacao automatica ' . $detectedOrientation . ' aplicada no lugar de ' . $orientation . ' arquivo=' . $printedFile);
@@ -372,11 +524,15 @@ class PrintController
         if (!in_array($ext, $this->allowedExtensions, true)) {
             $this->respond('Tipo de arquivo não permitido', false);
         }
+        $size = (int) ($file['size'] ?? 0);
+        if ($size < 1 || $size > $this->maxUploadBytes()) {
+            $this->respond('Arquivo inválido ou acima de ' . $this->maxUploadMegabytes() . 'MB', false);
+        }
         if (!$this->hasAllowedMimeType($file['tmp_name'], $ext)) {
             $this->respond('Formato de arquivo não reconhecido para pré-contagem', false);
         }
 
-        if (in_array($ext, ['jpg', 'jpeg', 'png'], true)) {
+        if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
             $this->respond('Documento com 1 página', true, [
                 'pages' => 1,
             ]);
@@ -457,15 +613,15 @@ class PrintController
 
         $file = $_FILES['arquivo'];
         $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
-        if (!in_array($ext, ['pdf', 'doc', 'docx'], true)) {
+        if (!in_array($ext, ['pdf', 'doc', 'docx', 'txt'], true)) {
             http_response_code(400);
-            exit('Pré-visualização disponível apenas para PDF, DOC e DOCX.');
+            exit('Pré-visualização disponível apenas para PDF, DOC, DOCX e TXT.');
         }
 
         $size = intval($file['size'] ?? 0);
-        if ($size < 1 || $size > $this->maxUploadBytes) {
+        if ($size < 1 || $size > $this->maxUploadBytes()) {
             http_response_code(400);
-            exit('Arquivo inválido ou acima de 20MB.');
+            exit('Arquivo inválido ou acima de ' . $this->maxUploadMegabytes() . 'MB.');
         }
 
         if (!$this->hasAllowedMimeType($file['tmp_name'], $ext)) {
@@ -481,7 +637,7 @@ class PrintController
 
         $previewFile = $tempFile;
         try {
-            if (in_array($ext, ['doc', 'docx'], true)) {
+            if (in_array($ext, ['doc', 'docx', 'txt'], true)) {
                 $printer = new PrintService();
                 $paper = $_POST['paper'] ?? 'A4';
                 $orientation = $this->normalizeOrientation($_POST['orientation'] ?? 'auto');

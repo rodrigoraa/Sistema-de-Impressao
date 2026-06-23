@@ -8,6 +8,12 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
 <head>
     <meta charset="UTF-8">
     <link rel="icon" type="image/png" href="/favicon.ico?v=2">
+    <link rel="apple-touch-icon" href="/image/pwa-icon-180.png">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#0f3f4f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Sistema de Impressão">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>Impressão</title>
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,7 +22,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20260511">
-    <link rel="stylesheet" href="/css/print.css?v=20260511">
+    <link rel="stylesheet" href="/css/print.css?v=20260623">
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </head>
@@ -107,7 +113,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                                     <div class="upload-box" id="drop-area">
                                         <i class="bi bi-cloud-upload fs-1"></i>
                                         <p id="file-label">Clique ou arraste o arquivo</p>
-                                        <input type="file" name="arquivo" id="fileInput" hidden required>
+                                        <input type="file" name="arquivo" id="fileInput" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,text/plain" hidden required>
                                     </div>
 
                                     <div id="file-info" class="mt-2 small text-muted"></div>
@@ -121,7 +127,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                                     </div>
 
                                     <small class="text-muted">
-                                        PDF, DOC, DOCX ou imagem (máx 20MB)
+                                        PDF, DOC, DOCX, TXT ou imagem (máx <?= (int) ($maxUploadMb ?? 20) ?>MB)
                                     </small>
 
                                 </div>
@@ -247,7 +253,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                             </div>
 
                             <ul class="list-unstyled info-list">
-                                <li><i class="bi bi-check-circle"></i> Envie arquivos PDF, DOC, DOCX ou imagem</li>
+                                <li><i class="bi bi-check-circle"></i> Envie arquivos PDF, DOC, DOCX, TXT ou imagem</li>
                                 <li><i class="bi bi-check-circle"></i> Escolha frente e verso se necessário</li>
                                 <li><i class="bi bi-check-circle"></i> Consulte arquivos impressos para baixar ou reimprimir</li>
                                 <li><i class="bi bi-check-circle"></i> Administradores podem imprimir para outros
@@ -382,7 +388,8 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
         dropArea.onclick = () => input.click();
 
         // tipos permitidos
-        const allowed = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+        const allowed = <?= json_encode(array_values($allowedExtensions ?? ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'webp', 'txt'])) ?>;
+        const maxUploadMb = <?= (int) ($maxUploadMb ?? 20) ?>;
 
         // tamanho
         function formatSize(bytes) {
@@ -393,7 +400,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
         function openModal(url, ext) {
             const modalContent = document.getElementById('modalContent');
 
-            if (['jpg', 'jpeg', 'png'].includes(ext)) {
+            if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
                 modalContent.innerHTML = `<img src="${url}" style="max-width:100%;">`;
             }
 
@@ -429,8 +436,6 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                 return;
             }
 
-            const maxUploadMb = 20;
-
             // valida tamanho
             if (file.size > maxUploadMb * 1024 * 1024) {
                 label.textContent = `Arquivo muito grande (máx ${maxUploadMb}MB)`;
@@ -441,11 +446,11 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
 
             // sucesso
             label.textContent = file.name;
-            info.textContent = ['jpg', 'jpeg', 'png'].includes(ext)
+            info.textContent = ['jpg', 'jpeg', 'png', 'webp'].includes(ext)
                 ? `${formatSize(file.size)} · 1 página`
                 : `${formatSize(file.size)} · calculando páginas...`;
             dropArea.classList.add('success');
-            if (['jpg', 'jpeg', 'png'].includes(ext)) {
+            if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
                 pageCountToken++;
             } else {
                 loadPageCount(file, ++pageCountToken);
@@ -454,7 +459,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
             const url = URL.createObjectURL(file);
 
             // preview pequeno + clique
-            if (['jpg', 'jpeg', 'png'].includes(ext)) {
+            if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
                 preview.innerHTML = `<img src="${url}" style="cursor:pointer;">`;
                 preview.onclick = () => openModal(url, ext);
             }
@@ -464,7 +469,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                 preview.onclick = () => openModal(url, ext);
             }
 
-            if (['doc', 'docx'].includes(ext)) {
+            if (['doc', 'docx', 'txt'].includes(ext)) {
                 preview.innerHTML = `<p class="text-muted">Gerando pré-visualização em PDF...</p>`;
                 loadDocumentPreview(file, ++previewToken);
             }
@@ -515,7 +520,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
 
         function loadPageCount(file, token) {
             const ext = file.name.split('.').pop().toLowerCase();
-            if (['jpg', 'jpeg', 'png'].includes(ext)) {
+            if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
                 info.textContent = `${formatSize(file.size)} · 1 página`;
                 return;
             }
@@ -577,7 +582,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                     const ext = file.name.split('.').pop().toLowerCase();
                     info.textContent = `${formatSize(file.size)} · recalculando páginas...`;
                     loadPageCount(file, ++pageCountToken);
-                    if (['doc', 'docx'].includes(ext)) {
+                    if (['doc', 'docx', 'txt'].includes(ext)) {
                         preview.innerHTML = `<p class="text-muted">Atualizando pré-visualização em PDF...</p>`;
                         loadDocumentPreview(file, ++previewToken);
                     }
@@ -759,6 +764,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
         setInterval(refreshPrinterStatus, 30000);
 
     </script>
+    <script src="/js/pwa.js?v=20260623"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 

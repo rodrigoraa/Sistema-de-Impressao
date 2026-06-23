@@ -22,7 +22,9 @@ class AuthController
     public function login()
     {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST' && isset($_SESSION['user'])) {
-            header('Location: /');
+            $redirect = $_SESSION['after_login_redirect'] ?? '/';
+            unset($_SESSION['after_login_redirect']);
+            header('Location: ' . $this->safeRedirectPath($redirect));
             exit;
         }
 
@@ -60,7 +62,9 @@ class AuthController
             $_SESSION['name'] = $user['name'];
             $_SESSION['role'] = $user['role'];
 
-            header('Location: /');
+            $redirect = $_SESSION['after_login_redirect'] ?? '/';
+            unset($_SESSION['after_login_redirect']);
+            header('Location: ' . $this->safeRedirectPath($redirect));
             exit;
         }
 
@@ -74,6 +78,16 @@ class AuthController
         }
 
         require __DIR__ . '/../../views/login.php';
+    }
+
+    private function safeRedirectPath($path)
+    {
+        $path = (string) $path;
+        if ($path === '' || $path[0] !== '/' || str_starts_with($path, '//') || preg_match('/[\r\n]/', $path)) {
+            return '/';
+        }
+
+        return $path;
     }
 
     public function logout()
