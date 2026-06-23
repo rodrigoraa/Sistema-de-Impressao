@@ -14,13 +14,13 @@ class ShareTargetController
         $printController = new PrintController();
         $this->cleanupExpiredSharedFiles();
 
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['arquivo'])) {
-            $this->receiveSharedFile($printController);
-            return;
-        }
-
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $this->handleConfirmation($printController);
+            if ($this->isConfirmationPost()) {
+                $this->handleConfirmation($printController);
+                return;
+            }
+
+            $this->receiveSharedFile($printController);
             return;
         }
 
@@ -29,10 +29,13 @@ class ShareTargetController
 
     private function receiveSharedFile(PrintController $printController)
     {
+        $file = $this->uploadedFileFromRequest();
+
         try {
-            $fileInfo = $printController->storeUploadedFile($_FILES['arquivo'] ?? null, $this->shareDir());
+            $fileInfo = $printController->storeUploadedFile($file, $this->shareDir());
         } catch (UploadValidationException $e) {
-            $_SESSION['flash'] = $e->getMessage();
+            $this->logShareTargetIssue('Falha ao receber arquivo compartilhado: ' . $e->getMessage());
+            $_SESSION['flash'] = 'Não foi possível receber o arquivo compartilhado. ' . $e->getMessage();
             $_SESSION['flash_type'] = 'error';
             header('Location: ' . (isset($_SESSION['user']) ? '/' : '/login'));
             exit;
@@ -133,6 +136,56 @@ class ShareTargetController
         ];
 
         require __DIR__ . '/../../views/share_confirm.php';
+    }
+
+    private function isConfirmationPost()
+    {
+        return isset($_POST['share_action']) || isset($_POST['share_token']);
+    }
+
+    private function uploadedFileFromRequest()
+    {
+        if (isset($_FILES['arquivo'])) {
+            return $this->normalizeUploadedFile($_FILES['arquivo']);
+        }
+
+        foreach ($_FILES as $field => $file) {
+            $normalized = $this->normalizeUploadedFile($file);
+            if ($normalized !== null) {
+                $this->logShareTargetIssue("Arquivo recebido pelo campo alternativo '{$field}'.");
+                return $normalized;
+            }
+        }
+
+        $this->logShareTargetIssue('POST de compartilhamento sem arquivo em $_FILES.');
+        return null;
+    }
+
+    private function normalizeUploadedFile($file)
+    {
+        if (!is_array($file)) {
+            return null;
+        }
+
+        if (isset($file['name']) && is_array($file['name'])) {
+            foreach (array_keys($file['name']) as $index) {
+                $candidate = [
+                    'name' => $file['name'][$index] ?? '',
+                    'type' => $file['type'][$index] ?? '',
+                    'tmp_name' => $file['tmp_name'][$index] ?? '',
+                    'error' => $file['error'][$index] ?? UPLOAD_ERR_NO_FILE,
+                    'size' => $file['size'][$index] ?? 0,
+                ];
+
+                if (($candidate['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE || $candidate['name'] !== '') {
+                    return $candidate;
+                }
+            }
+
+            return null;
+        }
+
+        return $file;
     }
 
     private function requestedToken()
@@ -251,5 +304,32 @@ class ShareTargetController
         $message = preg_replace('/\s+/', ' ', $message);
 
         return strlen($message) > 180 ? substr($message, 0, 180) . '...' : ($message ?: 'erro interno');
+    }
+
+    private function logShareTargetIssue($message)
+    {
+        $logPath = (string) ($_ENV['LOG_PATH'] ?? '');
+        if ($logPath === '') {
+            return;
+        }
+
+        $dir = dirname($logPath);
+        if ($dir && !is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+
+        $contentLength = preg_replace('/\D+/', '', (string) ($_SERVER['CONTENT_LENGTH'] ?? ''));
+        $contentType = $this->safeMessage((string) ($_SERVER['CONTENT_TYPE'] ?? ''));
+        $fields = $this->safeMessage(implode(',', array_keys($_FILES)));
+        $line = sprintf(
+            "%s | SHARE_TARGET: %s | content_length=%s | content_type=%s | file_fields=%s\n",
+            date('Y-m-d H:i:s'),
+            $this->safeMessage($message),
+            $contentLength !== '' ? $contentLength : '-',
+            $contentType !== '' ? $contentType : '-',
+            $fields !== '' ? $fields : '-'
+        );
+
+        @file_put_contents($logPath, $line, FILE_APPEND);
     }
 }
