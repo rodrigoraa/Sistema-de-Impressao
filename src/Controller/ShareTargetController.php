@@ -35,7 +35,7 @@ class ShareTargetController
             $fileInfo = $printController->storeUploadedFile($file, $this->shareDir());
         } catch (UploadValidationException $e) {
             $this->logShareTargetIssue('Falha ao receber arquivo compartilhado: ' . $e->getMessage());
-            $_SESSION['flash'] = 'Não foi possível receber o arquivo compartilhado. ' . $e->getMessage();
+            $_SESSION['flash'] = 'Não foi possível receber o arquivo compartilhado. ' . $this->shareUploadMessage($e);
             $_SESSION['flash_type'] = 'error';
             header('Location: ' . (isset($_SESSION['user']) ? '/' : '/login'));
             exit;
@@ -304,6 +304,20 @@ class ShareTargetController
         $message = preg_replace('/\s+/', ' ', $message);
 
         return strlen($message) > 180 ? substr($message, 0, 180) . '...' : ($message ?: 'erro interno');
+    }
+
+    private function shareUploadMessage(UploadValidationException $e)
+    {
+        if ($e->category() !== 'arquivo_ausente') {
+            return $e->getMessage();
+        }
+
+        $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if ($contentLength > 0) {
+            return 'O servidor recebeu ' . $this->formatBytes($contentLength) . ', mas o PHP descartou o arquivo antes da validação. Aumente upload_max_filesize e post_max_size no servidor e reinicie o PHP/Apache.';
+        }
+
+        return 'Nenhum arquivo chegou ao servidor. Abra o documento no aplicativo e compartilhe o arquivo em si, não apenas o link ou texto.';
     }
 
     private function logShareTargetIssue($message)

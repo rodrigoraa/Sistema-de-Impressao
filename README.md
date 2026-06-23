@@ -173,12 +173,23 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-O PHP também precisa permitir o mesmo tamanho ou maior:
+O PHP também precisa permitir tamanho maior que o limite interno do sistema. O projeto limita o envio a 20 MB em `MAX_UPLOAD_BYTES`, então deixe o PHP acima disso:
 
 ```ini
 upload_max_filesize = 25M
-post_max_size = 25M
+post_max_size = 30M
+max_input_time = 120
+memory_limit = 256M
 ```
+
+O arquivo `public/.user.ini` já traz esses valores para servidores com PHP-FPM/CGI que leem `.user.ini`. Em alguns servidores é preciso ajustar o `php.ini` ou o pool do PHP-FPM e reiniciar o serviço:
+
+```bash
+sudo systemctl restart php8.2-fpm
+sudo systemctl reload nginx
+```
+
+Se o PWA abrir, mas aparecer "Arquivo não enviado" ou "o PHP descartou o arquivo", o POST chegou ao site, porém o PHP descartou o corpo antes de preencher `$_FILES`. Confira `upload_max_filesize`, `post_max_size`, `client_max_body_size` e o log configurado em `LOG_PATH`.
 
 ## Diagnóstico de DOC/DOCX no Linux
 - DOC/DOCX são convertidos para PDF pelo LibreOffice antes de ir para o CUPS.
