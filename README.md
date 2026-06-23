@@ -191,6 +191,8 @@ sudo systemctl reload nginx
 
 Se o PWA abrir, mas aparecer "Arquivo não enviado" ou "o PHP descartou o arquivo", o POST chegou ao site, porém o PHP descartou o corpo antes de preencher `$_FILES`. Confira `upload_max_filesize`, `post_max_size`, `client_max_body_size` e o log configurado em `LOG_PATH`.
 
+Se a mensagem informar um tamanho muito pequeno, por exemplo `502 B`, o limite do servidor provavelmente não é o problema. Nesse caso o Android abriu o PWA, mas o aplicativo de origem enviou apenas metadados/texto do compartilhamento, não o arquivo. No WhatsApp, abra o documento primeiro e use a opção de compartilhar/enviar o arquivo; se o anexo não vier, compartilhe o mesmo arquivo pelo app Arquivos/Downloads ou use o upload manual.
+
 ## Diagnóstico de DOC/DOCX no Linux
 - DOC/DOCX são convertidos para PDF pelo LibreOffice antes de ir para o CUPS.
 - O sistema salva uma cópia do PDF convertido em `storage/print-debug/` para comparar se o problema aconteceu na conversão ou só na impressão.

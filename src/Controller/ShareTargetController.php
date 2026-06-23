@@ -313,11 +313,38 @@ class ShareTargetController
         }
 
         $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+        $postMaxBytes = $this->iniSizeToBytes((string) ini_get('post_max_size'));
+
+        if ($contentLength > 0 && $postMaxBytes > 0 && $contentLength > $postMaxBytes) {
+            return 'O servidor recebeu ' . $this->formatBytes($contentLength) . ', mas o limite post_max_size do PHP é ' . $this->formatBytes($postMaxBytes) . '. Aumente upload_max_filesize e post_max_size e reinicie o PHP/Apache.';
+        }
+
         if ($contentLength > 0) {
-            return 'O servidor recebeu ' . $this->formatBytes($contentLength) . ', mas o PHP descartou o arquivo antes da validação. Aumente upload_max_filesize e post_max_size no servidor e reinicie o PHP/Apache.';
+            return 'O Android abriu o sistema, mas o aplicativo de origem enviou apenas ' . $this->formatBytes($contentLength) . ' de dados e nenhum arquivo anexado. No WhatsApp, abra o documento e use a opção de compartilhar/enviar o arquivo; se não aparecer, compartilhe pelo app Arquivos/Downloads ou use o upload manual.';
         }
 
         return 'Nenhum arquivo chegou ao servidor. Abra o documento no aplicativo e compartilhe o arquivo em si, não apenas o link ou texto.';
+    }
+
+    private function iniSizeToBytes($value)
+    {
+        $value = trim((string) $value);
+        if ($value === '' || $value === '-1') {
+            return 0;
+        }
+
+        $unit = strtolower(substr($value, -1));
+        $number = (float) $value;
+
+        if ($unit === 'g') {
+            $number *= 1024 * 1024 * 1024;
+        } elseif ($unit === 'm') {
+            $number *= 1024 * 1024;
+        } elseif ($unit === 'k') {
+            $number *= 1024;
+        }
+
+        return (int) $number;
     }
 
     private function logShareTargetIssue($message)
@@ -335,12 +362,14 @@ class ShareTargetController
         $contentLength = preg_replace('/\D+/', '', (string) ($_SERVER['CONTENT_LENGTH'] ?? ''));
         $contentType = $this->safeMessage((string) ($_SERVER['CONTENT_TYPE'] ?? ''));
         $fields = $this->safeMessage(implode(',', array_keys($_FILES)));
+        $postFields = $this->safeMessage(implode(',', array_keys($_POST)));
         $line = sprintf(
-            "%s | SHARE_TARGET: %s | content_length=%s | content_type=%s | file_fields=%s\n",
+            "%s | SHARE_TARGET: %s | content_length=%s | content_type=%s | post_fields=%s | file_fields=%s\n",
             date('Y-m-d H:i:s'),
             $this->safeMessage($message),
             $contentLength !== '' ? $contentLength : '-',
             $contentType !== '' ? $contentType : '-',
+            $postFields !== '' ? $postFields : '-',
             $fields !== '' ? $fields : '-'
         );
 
