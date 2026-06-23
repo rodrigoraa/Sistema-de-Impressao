@@ -42,6 +42,67 @@ class PrintController
         return (int) ceil($this->maxUploadBytes() / 1024 / 1024);
     }
 
+    public function savedFilePageInfo($filePath, $ext, $paper = 'A4', $orientation = 'auto', $extraOptions = [])
+    {
+        $filePath = (string) $filePath;
+        $ext = strtolower((string) $ext);
+        $paper = in_array((string) $paper, ['A4', 'Letter'], true) ? (string) $paper : 'A4';
+        $orientation = $this->normalizeOrientation($orientation);
+
+        if (!is_file($filePath)) {
+            return [
+                'success' => false,
+                'message' => 'Arquivo não encontrado para contagem de páginas.',
+            ];
+        }
+
+        if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            return [
+                'success' => true,
+                'pages' => 1,
+                'original_pages' => 0,
+                'converted_pages' => 1,
+                'warning' => '',
+                'advice' => '',
+            ];
+        }
+
+        $preparedFile = $filePath;
+        try {
+            $printer = new PrintService();
+            $originalPages = $ext === 'docx' ? PageCounter::countDocxPages($filePath) : 0;
+            $preparedFile = $printer->prepareFile($filePath, $orientation, $paper, is_array($extraOptions) ? $extraOptions : []);
+            $convertedPages = PageCounter::count($preparedFile);
+            $pages = $convertedPages;
+            if ($pages < 1) {
+                $pages = $originalPages > 0 ? $originalPages : 1;
+            }
+
+            $warning = '';
+            if ($originalPages > 0 && $convertedPages > $originalPages) {
+                $warning = "O DOCX declara {$originalPages} " . ($originalPages === 1 ? 'página' : 'páginas') . ", mas a conversão gerou {$convertedPages}.";
+            }
+
+            return [
+                'success' => true,
+                'pages' => $pages,
+                'original_pages' => $originalPages,
+                'converted_pages' => $convertedPages,
+                'warning' => $warning,
+                'advice' => $this->largeDocumentAdvice($pages),
+            ];
+        } catch (Throwable $e) {
+            return [
+                'success' => false,
+                'message' => 'Não foi possível contar as páginas: ' . $this->safeErrorMessage($e->getMessage()),
+            ];
+        } finally {
+            if ($preparedFile !== $filePath) {
+                @unlink($preparedFile);
+            }
+        }
+    }
+
     private function validateCsrfOrFail()
     {
         $token = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');

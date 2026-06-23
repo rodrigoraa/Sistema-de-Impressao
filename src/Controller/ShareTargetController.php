@@ -78,10 +78,22 @@ class ShareTargetController
         $token = $this->requestedToken();
         $entry = $this->sharedEntry($token);
         if ($entry === null) {
+            if ($this->wasSubmitted($token)) {
+                $this->flashAndRedirectPreserving(
+                    'Essa impressão compartilhada já foi enviada para a impressora. Aguarde a conclusão física do trabalho.',
+                    true,
+                    '/'
+                );
+            }
+
             $this->flashAndRedirect('Arquivo compartilhado não encontrado ou expirado.', false, '/');
         }
 
         $action = $_POST['share_action'] ?? '';
+        if ($action === 'page_count') {
+            $this->respondSharedPageCount($printController, $entry);
+        }
+
         if ($action === 'cancel') {
             $this->deleteSharedFile($entry);
             unset($_SESSION['shared_files'][$token]);
@@ -94,6 +106,7 @@ class ShareTargetController
 
         try {
             $dest = $printController->moveExistingFileToUploadPath($entry['stored_file'], $entry['original_name']);
+            $this->markSubmitted($token, $entry, $dest);
             unset($_SESSION['shared_files'][$token]);
             $printController->printSavedFile(
                 $dest,
@@ -119,6 +132,14 @@ class ShareTargetController
         $token = $this->requestedToken();
         $entry = $this->sharedEntry($token);
         if ($entry === null) {
+            if ($this->wasSubmitted($token)) {
+                $this->flashAndRedirectPreserving(
+                    'Essa impressão compartilhada já foi enviada para a impressora.',
+                    true,
+                    '/'
+                );
+            }
+
             $this->flashAndRedirect('Arquivo compartilhado não encontrado ou expirado.', false, '/');
         }
 
@@ -126,6 +147,16 @@ class ShareTargetController
         $userList = $context['userList'] ?? [];
         $printerStatus = $context['printerStatus'] ?? [];
         $maxUploadMb = $context['maxUploadMb'] ?? $printController->maxUploadMegabytes();
+        $allowedExtensions = $context['allowedExtensions'] ?? $printController->allowedExtensions();
+        $pageInfo = $printController->savedFilePageInfo($entry['stored_file'], $entry['extension']);
+        $pageLabel = 'Não calculado';
+        if (($pageInfo['success'] ?? false) === true) {
+            $pages = (int) ($pageInfo['pages'] ?? 0);
+            $pageLabel = $pages === 1 ? '1 página' : $pages . ' páginas';
+            if (!empty($pageInfo['original_pages']) && !empty($pageInfo['converted_pages']) && $pageInfo['original_pages'] !== $pageInfo['converted_pages']) {
+                $pageLabel .= ' após conversão';
+            }
+        }
         $shareToken = $token;
         $sharedFile = [
             'original_name' => $entry['original_name'],
@@ -133,9 +164,26 @@ class ShareTargetController
             'mime_type' => $entry['mime_type'],
             'size' => (int) $entry['size'],
             'size_label' => $this->formatBytes((int) $entry['size']),
+            'page_label' => $pageLabel,
+            'page_warning' => (string) ($pageInfo['warning'] ?? ''),
+            'page_advice' => (string) ($pageInfo['advice'] ?? ''),
+            'page_error' => (($pageInfo['success'] ?? false) === true) ? '' : (string) ($pageInfo['message'] ?? 'Não foi possível contar as páginas.'),
         ];
+        $sharedMode = true;
 
-        require __DIR__ . '/../../views/share_confirm.php';
+        require __DIR__ . '/../../views/print.php';
+    }
+
+    private function respondSharedPageCount(PrintController $printController, $entry)
+    {
+        $pageInfo = $printController->savedFilePageInfo(
+            $entry['stored_file'],
+            $entry['extension'],
+            $_POST['paper'] ?? 'A4',
+            $_POST['orientation'] ?? 'auto'
+        );
+
+        $this->respondJson($pageInfo, ($pageInfo['success'] ?? false) === true ? 200 : 400);
     }
 
     private function isConfirmationPost()
@@ -218,9 +266,42 @@ class ShareTargetController
         return $entry;
     }
 
+    private function markSubmitted($token, $entry, $dest)
+    {
+        if ($token === '') {
+            return;
+        }
+
+        if (empty($_SESSION['submitted_shared_files']) || !is_array($_SESSION['submitted_shared_files'])) {
+            $_SESSION['submitted_shared_files'] = [];
+        }
+
+        $_SESSION['submitted_shared_files'][$token] = [
+            'original_name' => is_array($entry) ? (string) ($entry['original_name'] ?? 'arquivo') : 'arquivo',
+            'stored_file' => (string) $dest,
+            'submitted_at' => time(),
+        ];
+    }
+
+    private function wasSubmitted($token)
+    {
+        if ($token === '' || empty($_SESSION['submitted_shared_files'][$token]) || !is_array($_SESSION['submitted_shared_files'][$token])) {
+            return false;
+        }
+
+        $submittedAt = (int) ($_SESSION['submitted_shared_files'][$token]['submitted_at'] ?? 0);
+        if ($submittedAt < 1 || (time() - $submittedAt) > $this->ttlSeconds) {
+            unset($_SESSION['submitted_shared_files'][$token]);
+            return false;
+        }
+
+        return true;
+    }
+
     private function cleanupExpiredSharedFiles()
     {
         if (empty($_SESSION['shared_files']) || !is_array($_SESSION['shared_files'])) {
+            $this->cleanupSubmittedTokens();
             return;
         }
 
@@ -230,6 +311,23 @@ class ShareTargetController
             if ($createdAt < 1 || ($now - $createdAt) > $this->ttlSeconds || !$this->isSafeSharedPath($entry['stored_file'] ?? '')) {
                 $this->deleteSharedFile($entry);
                 unset($_SESSION['shared_files'][$token]);
+            }
+        }
+
+        $this->cleanupSubmittedTokens();
+    }
+
+    private function cleanupSubmittedTokens()
+    {
+        if (empty($_SESSION['submitted_shared_files']) || !is_array($_SESSION['submitted_shared_files'])) {
+            return;
+        }
+
+        $now = time();
+        foreach ($_SESSION['submitted_shared_files'] as $token => $entry) {
+            $submittedAt = (int) ($entry['submitted_at'] ?? 0);
+            if ($submittedAt < 1 || ($now - $submittedAt) > $this->ttlSeconds) {
+                unset($_SESSION['submitted_shared_files'][$token]);
             }
         }
     }
@@ -278,8 +376,33 @@ class ShareTargetController
 
     private function flashAndRedirect($message, $success, $target)
     {
+        if ($this->isAjax()) {
+            $this->respondJson([
+                'success' => (bool) $success,
+                'message' => $message,
+            ], $success ? 200 : 400);
+        }
+
         $_SESSION['flash'] = $message;
         $_SESSION['flash_type'] = $success ? 'success' : 'error';
+        header('Location: ' . $target);
+        exit;
+    }
+
+    private function flashAndRedirectPreserving($message, $success, $target)
+    {
+        if ($this->isAjax()) {
+            $this->respondJson([
+                'success' => (bool) $success,
+                'message' => $message,
+            ], $success ? 200 : 400);
+        }
+
+        if (empty($_SESSION['flash'])) {
+            $_SESSION['flash'] = $message;
+            $_SESSION['flash_type'] = $success ? 'success' : 'error';
+        }
+
         header('Location: ' . $target);
         exit;
     }
@@ -374,5 +497,18 @@ class ShareTargetController
         );
 
         @file_put_contents($logPath, $line, FILE_APPEND);
+    }
+
+    private function isAjax()
+    {
+        return strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+    }
+
+    private function respondJson($payload, $statusCode = 200)
+    {
+        http_response_code((int) $statusCode);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+        exit;
     }
 }

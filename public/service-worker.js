@@ -1,4 +1,4 @@
-const CACHE_NAME = 'impressao-pwa-v1';
+const CACHE_NAME = 'impressao-pwa-v2';
 const STATIC_PATHS = ['/css/', '/js/', '/image/', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

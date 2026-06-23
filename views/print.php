@@ -1,6 +1,10 @@
 <?php
 $sessionRole = $_SESSION['role'] ?? 'user';
 $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
+$sharedMode = !empty($sharedMode);
+$shareToken = (string) ($shareToken ?? '');
+$sharedFile = is_array($sharedFile ?? null) ? $sharedFile : [];
+$printFormAction = $sharedMode ? '/share-target.php' : '';
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -101,8 +105,12 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                                 <h4><i class="bi bi-printer"></i> Configuração</h4>
                             </div>
 
-                            <form id="printForm" method="post" enctype="multipart/form-data">
+                            <form id="printForm" method="post" enctype="multipart/form-data" <?= $printFormAction !== '' ? 'action="' . htmlspecialchars($printFormAction) . '"' : '' ?>>
                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                <?php if ($sharedMode): ?>
+                                    <input type="hidden" name="share_token" value="<?= htmlspecialchars($shareToken) ?>">
+                                    <input type="hidden" name="share_action" value="print">
+                                <?php endif; ?>
 
                                 <div class="mb-3 upload-wrapper">
 
@@ -110,13 +118,40 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                                         <i class="bi bi-file-earmark-arrow-up"></i> Arquivo
                                     </label>
 
-                                    <div class="upload-box" id="drop-area">
-                                        <i class="bi bi-cloud-upload fs-1"></i>
-                                        <p id="file-label">Clique ou arraste o arquivo</p>
-                                        <input type="file" name="arquivo" id="fileInput" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,text/plain" hidden required>
-                                    </div>
+                                    <?php if ($sharedMode): ?>
+                                        <div class="upload-box success shared-upload-box" id="drop-area">
+                                            <i class="bi bi-file-earmark-check fs-1"></i>
+                                            <p id="file-label"><?= htmlspecialchars($sharedFile['original_name'] ?? 'Arquivo recebido') ?></p>
+                                        </div>
 
-                                    <div id="file-info" class="mt-2 small text-muted"></div>
+                                        <div id="file-info" class="mt-2 small text-muted">
+                                            <?= htmlspecialchars(($sharedFile['size_label'] ?? '') . (!empty($sharedFile['page_label']) ? ' · ' . $sharedFile['page_label'] : '')) ?>
+                                        </div>
+
+                                        <?php if (!empty($sharedFile['page_warning'])): ?>
+                                            <div class="print-advice" id="pageAdvice">
+                                                <i class="bi bi-exclamation-triangle"></i>
+                                                <span><?= htmlspecialchars($sharedFile['page_warning']) ?></span>
+                                            </div>
+                                        <?php elseif (!empty($sharedFile['page_advice'])): ?>
+                                            <div class="print-advice" id="pageAdvice">
+                                                <i class="bi bi-lightbulb"></i>
+                                                <span><?= htmlspecialchars($sharedFile['page_advice']) ?></span>
+                                            </div>
+                                        <?php elseif (!empty($sharedFile['page_error'])): ?>
+                                            <div class="text-muted small mt-2" id="pageAdvice">
+                                                <?= htmlspecialchars($sharedFile['page_error']) ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <div class="upload-box" id="drop-area">
+                                            <i class="bi bi-cloud-upload fs-1"></i>
+                                            <p id="file-label">Clique ou arraste o arquivo</p>
+                                            <input type="file" name="arquivo" id="fileInput" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,text/plain" hidden required>
+                                        </div>
+
+                                        <div id="file-info" class="mt-2 small text-muted"></div>
+                                    <?php endif; ?>
 
                                     <!-- PREVIEW -->
                                     <div id="preview" class="mt-3"></div>
@@ -126,9 +161,11 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                                         <div class="progress-bar" role="progressbar" style="width: 0%"></div>
                                     </div>
 
-                                    <small class="text-muted">
-                                        PDF, DOC, DOCX, TXT ou imagem (máx <?= (int) ($maxUploadMb ?? 20) ?>MB)
-                                    </small>
+                                    <?php if (!$sharedMode): ?>
+                                        <small class="text-muted">
+                                            PDF, DOC, DOCX, TXT ou imagem (máx <?= (int) ($maxUploadMb ?? 20) ?>MB)
+                                        </small>
+                                    <?php endif; ?>
 
                                 </div>
 
@@ -230,12 +267,28 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                                     </div>
                                 <?php endif; ?>
 
-                                <button id="btnPrint" class="btn btn-primary w-100" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
-                                    <span class="text">Imprimir</span>
-                                    <span class="spinner-border spinner-border-sm d-none"></span>
-                                </button>
+                                <div class="<?= $sharedMode ? 'print-actions' : '' ?>">
+                                    <button id="btnPrint" class="btn btn-primary w-100" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
+                                        <span class="text"><?= $sharedMode ? 'Confirmar impressão' : 'Imprimir' ?></span>
+                                        <span class="spinner-border spinner-border-sm d-none"></span>
+                                    </button>
+
+                                    <?php if ($sharedMode): ?>
+                                        <button type="submit" form="shareCancelForm" class="btn btn-outline-danger w-100">
+                                            <i class="bi bi-x-circle"></i> Cancelar
+                                        </button>
+                                    <?php endif; ?>
+                                </div>
 
                             </form>
+
+                            <?php if ($sharedMode): ?>
+                                <form id="shareCancelForm" method="post" action="/share-target.php" class="d-none">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                    <input type="hidden" name="share_token" value="<?= htmlspecialchars($shareToken) ?>">
+                                    <input type="hidden" name="share_action" value="cancel">
+                                </form>
+                            <?php endif; ?>
 
                         </div>
                     </div>
@@ -313,6 +366,9 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
         const btnPrint = document.getElementById('btnPrint');
         const resultBox = document.getElementById('printResult');
         const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
+        const sharedMode = <?= json_encode($sharedMode) ?>;
+        const sharedFile = <?= json_encode($sharedFile, JSON_UNESCAPED_UNICODE) ?>;
+        const shareToken = <?= json_encode($shareToken) ?>;
         const adminUsers = <?= json_encode($userList ?? [], JSON_UNESCAPED_UNICODE) ?>;
         let printerStatus = <?= json_encode($printerStatus ?? [], JSON_UNESCAPED_UNICODE) ?>;
         let pageCountToken = 0;
@@ -320,6 +376,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
         let previewObjectUrl = '';
         let currentPageAdvice = '';
         let printingActive = false;
+        let sharedPrintCompleted = false;
         let postPrintWatchTimer = null;
         let postPrintWatchUntil = 0;
         const scaleSelect = document.querySelector('[name="scale"]');
@@ -385,7 +442,9 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
         }
 
         // clique
-        dropArea.onclick = () => input.click();
+        if (!sharedMode && dropArea && input) {
+            dropArea.onclick = () => input.click();
+        }
 
         // tipos permitidos
         const allowed = <?= json_encode(array_values($allowedExtensions ?? ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'webp', 'txt'])) ?>;
@@ -413,7 +472,8 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
         }
 
         // validação + preview
-        input.addEventListener('change', () => {
+        if (!sharedMode && input) {
+            input.addEventListener('change', () => {
             const file = input.files[0];
             if (!file) return;
 
@@ -473,7 +533,8 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                 preview.innerHTML = `<p class="text-muted">Gerando pré-visualização em PDF...</p>`;
                 loadDocumentPreview(file, ++previewToken);
             }
-        });
+            });
+        }
 
         function appendPreviewOptions(formData) {
             formData.append('paper', document.querySelector('[name="paper"]').value);
@@ -563,6 +624,53 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                 });
         }
 
+        function loadSharedPageCount(token) {
+            if (!sharedMode || !shareToken) return;
+
+            const formData = new FormData();
+            formData.append('csrf_token', csrfToken);
+            formData.append('share_token', shareToken);
+            formData.append('share_action', 'page_count');
+            formData.append('paper', document.querySelector('[name="paper"]').value);
+            formData.append('orientation', document.querySelector('[name="orientation"]').value);
+
+            fetch('/share-target.php', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (token !== pageCountToken) return;
+
+                    if (data.success) {
+                        const pagesLabel = data.pages === 1 ? '1 página' : `${data.pages} páginas`;
+                        const converted = data.original_pages && data.converted_pages && data.original_pages !== data.converted_pages
+                            ? ' após conversão'
+                            : '';
+                        const warning = data.warning ? ` · atenção: ${data.warning}` : '';
+                        const sizeLabel = sharedFile.size_label || '';
+                        info.textContent = `${sizeLabel}${sizeLabel ? ' · ' : ''}${pagesLabel}${converted}${warning}`;
+                        currentPageAdvice = data.advice || '';
+                        renderPageAdvice();
+                    } else {
+                        const sizeLabel = sharedFile.size_label || '';
+                        info.textContent = `${sizeLabel}${sizeLabel ? ' · ' : ''}${data.message || 'não foi possível contar as páginas'}`;
+                        currentPageAdvice = '';
+                        renderPageAdvice();
+                    }
+                })
+                .catch(() => {
+                    if (token !== pageCountToken) return;
+                    const sizeLabel = sharedFile.size_label || '';
+                    info.textContent = `${sizeLabel}${sizeLabel ? ' · ' : ''}não foi possível contar as páginas`;
+                    currentPageAdvice = '';
+                    renderPageAdvice();
+                });
+        }
+
         function renderPageAdvice() {
             const existing = document.getElementById('pageAdvice');
             if (existing) existing.remove();
@@ -577,6 +685,13 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
 
         ['paper', 'orientation'].forEach(name => {
             document.querySelector(`[name="${name}"]`).addEventListener('change', () => {
+                if (sharedMode) {
+                    const sizeLabel = sharedFile.size_label || '';
+                    info.textContent = `${sizeLabel}${sizeLabel ? ' · ' : ''}recalculando páginas...`;
+                    loadSharedPageCount(++pageCountToken);
+                    return;
+                }
+
                 const file = input.files[0];
                 if (file) {
                     const ext = file.name.split('.').pop().toLowerCase();
@@ -632,7 +747,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
             if (!notice) {
                 printerStatusBox.classList.add('d-none');
                 if (!printingActive) {
-                    btnPrint.disabled = false;
+                    btnPrint.disabled = sharedMode && sharedPrintCompleted;
                 }
                 return;
             }
@@ -642,7 +757,7 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
             printerStatusBox.innerHTML = `<i class="bi bi-printer"></i><span>${escapeHtml(notice)}</span>`;
             printerStatusBox.classList.remove('d-none');
             if (!printingActive) {
-                btnPrint.disabled = printerStatus.can_print === false;
+                btnPrint.disabled = printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
             }
         }
 
@@ -684,8 +799,8 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
             printingActive = active;
             const text = btnPrint.querySelector('.text');
             const spinner = btnPrint.querySelector('.spinner-border');
-            btnPrint.disabled = active || printerStatus.can_print === false;
-            text.textContent = active ? 'Enviando...' : 'Imprimir';
+            btnPrint.disabled = active || printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
+            text.textContent = active ? 'Enviando...' : (sharedMode && sharedPrintCompleted ? 'Enviado' : (sharedMode ? 'Confirmar impressão' : 'Imprimir'));
             spinner.classList.toggle('d-none', !active);
             progress.classList.toggle('d-none', !active);
             if (!active) {
@@ -737,6 +852,9 @@ $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
                 .then(data => {
                     showPrintResult(data.message || 'Impressão enviada', !!data.success);
                     if (data.success) {
+                        if (sharedMode) {
+                            sharedPrintCompleted = true;
+                        }
                         bar.style.width = '100%';
                         startPostPrintStatusWatch();
                     }

@@ -54,6 +54,16 @@
     background: #f0fdf4;
 }
 
+.shared-upload-box {
+    cursor: default;
+}
+
+.shared-upload-box:hover {
+    background: #f0fdf4;
+    border-color: var(--app-success);
+    box-shadow: none;
+}
+
 .option-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -141,6 +151,12 @@
     height: 8px;
 }
 
+.print-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
 .printer-status-alert {
     display: flex;
     align-items: flex-start;
@@ -201,6 +217,10 @@
     font-weight: 650;
 }
 
+.share-page-note {
+    margin-top: 12px;
+}
+
 .share-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -237,6 +257,10 @@
     }
 
     .share-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .print-actions {
         grid-template-columns: 1fr;
     }
 
