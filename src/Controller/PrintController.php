@@ -89,6 +89,7 @@ class PrintController
                 'original_pages' => $originalPages,
                 'converted_pages' => $convertedPages,
                 'warning' => $warning,
+                'large_document' => $this->isLargeDocument($pages),
                 'advice' => $this->largeDocumentAdvice($pages),
             ];
         } catch (Throwable $e) {
@@ -487,6 +488,11 @@ class PrintController
                     $jobService->updateOrientation($jobId, $orientation);
                 }
             }
+            if ($this->shouldApplyLargeDocumentLayout($pages, $numberUp, $sides)) {
+                $numberUp = 2;
+                $jobService->updateLayout($jobId, $numberUp, $sides);
+                $printer->log('Documento grande: aplicado automaticamente 2 por folha. paginas=' . $pages . ' arquivo=' . $printedFile);
+            }
             $billableSourcePages = $this->selectedPageCount($pages, $extraOptions);
             $printedPagesLabel = $this->printedPagesLabel($pages, $extraOptions, $billableSourcePages);
             $jobService->updateSelection($jobId, $printedPagesLabel, $billableSourcePages);
@@ -637,6 +643,7 @@ class PrintController
                 'original_pages' => $originalPages,
                 'converted_pages' => $convertedPages,
                 'warning' => $warning,
+                'large_document' => $this->isLargeDocument($pages),
                 'advice' => $advice,
             ]);
         } catch (Throwable $e) {
@@ -852,12 +859,30 @@ class PrintController
     private function largeDocumentAdvice($pages)
     {
         $pages = (int) $pages;
-        $threshold = max(2, (int) ($_ENV['LARGE_DOCUMENT_PAGE_WARNING'] ?? 4));
-        if ($pages < $threshold) {
+        if (!$this->isLargeDocument($pages)) {
             return '';
         }
 
-        return 'Documento com muitas páginas. Tente imprimir em frente e verso ou 2 por folha.';
+        return 'Documento com muitas páginas. O sistema selecionou 2 por folha. Se preferir, altere para 1 por folha ou escolha frente e verso antes de imprimir.';
+    }
+
+    private function isLargeDocument($pages)
+    {
+        $threshold = max(2, (int) ($_ENV['LARGE_DOCUMENT_PAGE_WARNING'] ?? 2));
+
+        return (int) $pages >= $threshold;
+    }
+
+    private function shouldApplyLargeDocumentLayout($pages, $numberUp, $sides)
+    {
+        $layoutChoice = (string) ($_POST['large_document_layout'] ?? 'auto');
+        if ($layoutChoice === 'manual') {
+            return false;
+        }
+
+        return $this->isLargeDocument($pages)
+            && (int) $numberUp === 1
+            && (string) $sides === 'one-sided';
     }
 
     private function normalizeOrientation($orientation)

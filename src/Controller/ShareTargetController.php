@@ -165,6 +165,7 @@ class ShareTargetController
             'size' => (int) $entry['size'],
             'size_label' => $this->formatBytes((int) $entry['size']),
             'page_label' => $pageLabel,
+            'large_document' => (bool) ($pageInfo['large_document'] ?? false),
             'page_warning' => (string) ($pageInfo['warning'] ?? ''),
             'page_advice' => (string) ($pageInfo['advice'] ?? ''),
             'page_error' => (($pageInfo['success'] ?? false) === true) ? '' : (string) ($pageInfo['message'] ?? 'Não foi possível contar as páginas.'),

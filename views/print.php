@@ -209,6 +209,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                                             <option value="4">4 por folha</option>
                                             <option value="8">8 por folha</option>
                                         </select>
+                                        <input type="hidden" name="large_document_layout" value="auto">
                                     </div>
 
                                     <div>
@@ -384,6 +385,10 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         const targetUserSearch = document.getElementById('targetUserSearch');
         const targetUserCpf = document.getElementById('targetUserCpf');
         const printerStatusBox = document.getElementById('printerStatusBox');
+        const numberUpSelect = document.querySelector('[name="number_up"]');
+        const sidesSelect = document.querySelector('[name="sides"]');
+        const largeDocumentLayout = document.querySelector('[name="large_document_layout"]');
+        let layoutChangedByUser = false;
 
         scaleSelect.addEventListener('change', () => {
             scaleCustomBox.classList.toggle('d-none', scaleSelect.value !== 'custom');
@@ -441,6 +446,16 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             targetUserSearch.addEventListener('change', syncTargetUserCpf);
         }
 
+        [numberUpSelect, sidesSelect].forEach(select => {
+            if (!select) return;
+            select.addEventListener('change', () => {
+                layoutChangedByUser = true;
+                if (largeDocumentLayout) {
+                    largeDocumentLayout.value = 'manual';
+                }
+            });
+        });
+
         // clique
         if (!sharedMode && dropArea && input) {
             dropArea.onclick = () => input.click();
@@ -482,6 +497,10 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             preview.innerHTML = '';
             preview.onclick = null;
             currentPageAdvice = '';
+            layoutChangedByUser = false;
+            if (largeDocumentLayout) {
+                largeDocumentLayout.value = 'auto';
+            }
             dropArea.classList.remove('error', 'success');
             if (previewObjectUrl) {
                 URL.revokeObjectURL(previewObjectUrl);
@@ -609,6 +628,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                         const warning = data.warning ? ` · atenção: ${data.warning}` : '';
                         info.textContent = `${formatSize(file.size)} · ${pagesLabel}${converted}${warning}`;
                         currentPageAdvice = data.advice || '';
+                        applyLargeDocumentLayout(data);
                         renderPageAdvice();
                     } else {
                         info.textContent = `${formatSize(file.size)} · ${data.message}`;
@@ -654,6 +674,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                         const sizeLabel = sharedFile.size_label || '';
                         info.textContent = `${sizeLabel}${sizeLabel ? ' · ' : ''}${pagesLabel}${converted}${warning}`;
                         currentPageAdvice = data.advice || '';
+                        applyLargeDocumentLayout(data);
                         renderPageAdvice();
                     } else {
                         const sizeLabel = sharedFile.size_label || '';
@@ -681,6 +702,19 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             box.className = 'print-advice';
             box.innerHTML = `<i class="bi bi-lightbulb"></i><span>${escapeHtml(currentPageAdvice)}</span>`;
             info.insertAdjacentElement('afterend', box);
+        }
+
+        function applyLargeDocumentLayout(data) {
+            if (!data || !data.large_document || !numberUpSelect || !sidesSelect || layoutChangedByUser) {
+                return;
+            }
+
+            if (numberUpSelect.value === '1' && sidesSelect.value === 'one-sided') {
+                numberUpSelect.value = '2';
+                if (largeDocumentLayout) {
+                    largeDocumentLayout.value = 'auto_applied';
+                }
+            }
         }
 
         ['paper', 'orientation'].forEach(name => {
@@ -878,6 +912,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         });
 
         renderPrinterStatus(printerStatus);
+        if (sharedMode && sharedFile.large_document) {
+            applyLargeDocumentLayout(sharedFile);
+        }
         refreshPrinterStatus();
         setInterval(refreshPrinterStatus, 30000);
 

@@ -145,6 +145,27 @@ class PrintJobService
         $stmt->execute();
     }
 
+    public function updateLayout($id, $numberUp, $sides)
+    {
+        $numberUp = in_array((int) $numberUp, [1, 2, 4, 8], true) ? (int) $numberUp : 1;
+        $sides = in_array((string) $sides, ['one-sided', 'two-sided-long-edge', 'two-sided-short-edge'], true)
+            ? (string) $sides
+            : 'one-sided';
+
+        $stmt = $this->db->prepare("
+            UPDATE print_jobs
+            SET number_up = :number_up,
+                sides = :sides,
+                updated_at = :updated_at
+            WHERE id = :id
+        ");
+        $stmt->bindValue(':number_up', $numberUp, SQLITE3_INTEGER);
+        $stmt->bindValue(':sides', $sides, SQLITE3_TEXT);
+        $stmt->bindValue(':updated_at', date('Y-m-d H:i:s'), SQLITE3_TEXT);
+        $stmt->bindValue(':id', (int) $id, SQLITE3_INTEGER);
+        $stmt->execute();
+    }
+
     public function listForUser($user, $isAdmin = false, $status = '', $limit = 100, $filters = [])
     {
         $where = [];
