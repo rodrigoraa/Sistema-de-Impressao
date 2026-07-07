@@ -548,7 +548,12 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                 preview.onclick = () => openModal(url, ext);
             }
 
-            if (['doc', 'docx', 'txt'].includes(ext)) {
+            if (['doc', 'docx'].includes(ext)) {
+                previewToken++;
+                preview.innerHTML = `<p class="text-muted">Aguardando contagem para decidir a pré-visualização...</p>`;
+            }
+
+            if (ext === 'txt') {
                 preview.innerHTML = `<p class="text-muted">Gerando pré-visualização em PDF...</p>`;
                 loadDocumentPreview(file, ++previewToken);
             }
@@ -629,10 +634,12 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                         info.textContent = `${formatSize(file.size)} · ${pagesLabel}${converted}${warning}`;
                         currentPageAdvice = data.advice || '';
                         applyLargeDocumentLayout(data);
+                        updateOfficePreviewAfterCount(file, data);
                         renderPageAdvice();
                     } else {
                         info.textContent = `${formatSize(file.size)} · ${data.message}`;
                         currentPageAdvice = '';
+                        skipOfficePreview(file, 'Pré-visualização não gerada porque não foi possível confirmar a contagem de páginas.');
                         renderPageAdvice();
                     }
                 })
@@ -640,6 +647,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                     if (token !== pageCountToken) return;
                     info.textContent = `${formatSize(file.size)} · não foi possível contar as páginas`;
                     currentPageAdvice = '';
+                    skipOfficePreview(file, 'Pré-visualização não gerada porque a contagem de páginas falhou.');
                     renderPageAdvice();
                 });
         }
@@ -717,6 +725,39 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             }
         }
 
+        function isOfficeDocument(file) {
+            const ext = String((file && file.name) || '').split('.').pop().toLowerCase();
+            return ['doc', 'docx'].includes(ext);
+        }
+
+        function updateOfficePreviewAfterCount(file, data) {
+            if (!isOfficeDocument(file)) {
+                return;
+            }
+
+            if (data.large_document) {
+                skipOfficePreview(file, 'Documento grande. A pré-visualização automática foi desativada para evitar demora. Confira a contagem de páginas e envie para impressão.');
+                return;
+            }
+
+            preview.innerHTML = `<p class="text-muted">Gerando pré-visualização em PDF...</p>`;
+            loadDocumentPreview(file, ++previewToken);
+        }
+
+        function skipOfficePreview(file, message) {
+            if (!isOfficeDocument(file)) {
+                return;
+            }
+
+            previewToken++;
+            if (previewObjectUrl) {
+                URL.revokeObjectURL(previewObjectUrl);
+                previewObjectUrl = '';
+            }
+            preview.onclick = null;
+            preview.innerHTML = `<p class="text-muted">${escapeHtml(message)}</p>`;
+        }
+
         ['paper', 'orientation'].forEach(name => {
             document.querySelector(`[name="${name}"]`).addEventListener('change', () => {
                 if (sharedMode) {
@@ -731,7 +772,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                     const ext = file.name.split('.').pop().toLowerCase();
                     info.textContent = `${formatSize(file.size)} · recalculando páginas...`;
                     loadPageCount(file, ++pageCountToken);
-                    if (['doc', 'docx', 'txt'].includes(ext)) {
+                    if (['doc', 'docx'].includes(ext)) {
+                        previewToken++;
+                        preview.innerHTML = `<p class="text-muted">Aguardando contagem para decidir a pré-visualização...</p>`;
+                    }
+                    if (ext === 'txt') {
                         preview.innerHTML = `<p class="text-muted">Atualizando pré-visualização em PDF...</p>`;
                         loadDocumentPreview(file, ++previewToken);
                     }
