@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../Service/AuthService.php';
+require_once __DIR__ . '/../Service/CupsService.php';
 require_once __DIR__ . '/../Service/PrintJobService.php';
 require_once __DIR__ . '/../Service/PrintService.php';
 require_once __DIR__ . '/../Service/PageCounter.php';
@@ -28,6 +29,14 @@ class PrintJobController
             'error' => $_GET['error'] ?? '',
         ]);
         $stats = $service->statsForUser($_SESSION['user'], $isAdmin);
+        $cupsQueue = null;
+        $cupsQueueJobsById = [];
+        if ($isAdmin && $status === 'active') {
+            $cupsQueue = (new CupsService())->activeQueue();
+            $cupsIds = array_column($cupsQueue['jobs'] ?? [], 'job_id');
+            $cupsQueueJobsById = $service->listByCupsJobIds($cupsIds);
+            $stats['active'] = max((int) ($stats['active'] ?? 0), count($cupsQueue['jobs'] ?? []));
+        }
 
         require __DIR__ . '/../../views/print_jobs.php';
     }
@@ -121,6 +130,64 @@ class PrintJobController
         }
     }
 
+    public function cancel()
+    {
+        if (!isset($_SESSION['user'])) {
+            header('Location: /login');
+            exit;
+        }
+        if (!AuthService::isAdmin()) {
+            http_response_code(403);
+            exit('Acesso negado');
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            exit('Método inválido');
+        }
+
+        $token = $_POST['csrf_token'] ?? '';
+        if (!is_string($token) || !hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
+            $this->finish('Token CSRF inválido', false, '/prints?status=active');
+        }
+
+        $service = new PrintJobService();
+        $cupsJobId = trim((string) ($_POST['cups_job_id'] ?? ''));
+        $job = null;
+        if ($cupsJobId !== '') {
+            $job = $service->findByCupsJobId($cupsJobId);
+        } else {
+            $job = $service->findVisible((int) ($_POST['id'] ?? 0), $_SESSION['user'], true);
+            if ($job === null || !empty($job['legacy_usage'])) {
+                $this->finish('Impressão não encontrada para cancelamento.', false, '/prints?status=active');
+            }
+            $cupsJobId = trim((string) ($job['cups_job_id'] ?? ''));
+        }
+
+        if ($cupsJobId === '') {
+            $this->finish('Esta impressão ainda não tem número no CUPS. Atualize a fila em alguns segundos e tente novamente.', false, '/prints?status=active');
+        }
+
+        $result = (new CupsService($job['printer'] ?? null))->cancelJob($cupsJobId);
+        if ($job !== null) {
+            $service->updateCupsResult((int) $job['id'], $result);
+        }
+        if (!empty($result['success'])) {
+            if ($job !== null) {
+                try {
+                    $service->markCanceled((int) $job['id'], $_SESSION['user'], 'Trabalho cancelado pelo administrador.');
+                    $this->finish('Impressão cancelada na fila do CUPS.', true, '/prints?status=active');
+                } catch (Throwable $e) {
+                    $this->finish('Cancelamento enviado ao CUPS, mas o registro local já havia mudado. Atualize a fila para conferir o estado atual.', true, '/prints?status=active');
+                }
+            }
+
+            $this->finish('Impressão cancelada no CUPS. Não havia registro local vinculado a esse trabalho.', true, '/prints?status=active');
+        }
+
+        $message = trim((string) (($result['error_message'] ?? '') ?: ($result['stderr'] ?? '') ?: ($result['stdout'] ?? '')));
+        $this->finish('Não foi possível cancelar a impressão' . ($message !== '' ? ': ' . $this->safeOutputMessage($message) : '.'), false, '/prints?status=active');
+    }
+
     private function hasPartialSelection($job)
     {
         $pages = max(0, (int) ($job['pages'] ?? 0));
@@ -186,6 +253,14 @@ class PrintJobController
         return $name !== '' ? $name : 'arquivo';
     }
 
+    private function safeOutputMessage($message)
+    {
+        $message = trim(strip_tags((string) $message));
+        $message = preg_replace('/\s+/', ' ', $message);
+
+        return substr((string) $message, 0, 220);
+    }
+
     private function cupsConfirmationMessage($statusCups)
     {
         return match ((string) $statusCups) {
@@ -199,7 +274,7 @@ class PrintJobController
         };
     }
 
-    private function finish($message, $success)
+    private function finish($message, $success, $redirect = '/prints')
     {
         if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
             header('Content-Type: application/json; charset=utf-8');
@@ -209,7 +284,7 @@ class PrintJobController
 
         $_SESSION['flash'] = $message;
         $_SESSION['flash_type'] = $success ? 'success' : 'error';
-        header('Location: /prints');
+        header('Location: ' . $redirect);
         exit;
     }
 }

@@ -119,6 +119,7 @@ $enableAttemptLabel = function ($attempt) {
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2 class="panel-title">Painel de saúde da impressora</h2>
                     <div class="d-flex gap-2 flex-wrap">
+                        <a href="/prints?status=active" class="btn btn-outline-primary btn-sm"><i class="bi bi-list-task"></i> Abrir fila</a>
                         <a href="/admin?month=<?= htmlspecialchars($month) ?>&cpf=<?= htmlspecialchars($cpf ?? '') ?>" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise"></i> Atualizar</a>
                         <form method="post" action="/admin/printer/enable">
                             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">

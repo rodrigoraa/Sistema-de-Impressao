@@ -87,6 +87,49 @@ class PrintJobService
         $this->updateStatus($id, 'failed', null, 0, 0, $errorMessage, true, false);
     }
 
+    public function markCanceled($id, $adminCpf, $errorMessage = 'Trabalho cancelado pelo administrador.')
+    {
+        $job = $this->findVisible((int) $id, '', true);
+        if ($job === null || !in_array((string) ($job['status'] ?? ''), ['queued', 'processing', 'completed'], true)) {
+            throw new RuntimeException('Impressão não encontrada ou já finalizada');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $entry = sprintf(
+            '[%s] Cancelada por %s',
+            $now,
+            preg_replace('/\D+/', '', (string) $adminCpf)
+        );
+        $observations = trim((string) ($job['observations'] ?? ''));
+        $observations = trim($observations . ($observations !== '' ? "\n" : '') . $entry);
+
+        $stmt = $this->db->prepare("
+            UPDATE print_jobs
+            SET status = 'failed',
+                status_cups = 'failed_or_canceled',
+                error_message = :error_message,
+                error_category = 'job cancelado',
+                charged_pages = 0,
+                confirmed_pages = 0,
+                entered_accumulator = 0,
+                observations = :observations,
+                updated_at = :updated_at,
+                completed_at = :completed_at
+            WHERE id = :id
+              AND status IN ('queued', 'processing', 'completed')
+        ");
+        $stmt->bindValue(':error_message', substr((string) $errorMessage, 0, 500), SQLITE3_TEXT);
+        $stmt->bindValue(':observations', substr($observations, -4000), SQLITE3_TEXT);
+        $stmt->bindValue(':updated_at', $now, SQLITE3_TEXT);
+        $stmt->bindValue(':completed_at', $now, SQLITE3_TEXT);
+        $stmt->bindValue(':id', (int) $id, SQLITE3_INTEGER);
+        $stmt->execute();
+
+        if ($this->db->changes() < 1) {
+            throw new RuntimeException('Impressão já foi finalizada');
+        }
+    }
+
     public function updateCupsResult($id, $cupsResult)
     {
         $diagnostics = $cupsResult['diagnostics'] ?? [];
@@ -251,6 +294,73 @@ class PrintJobService
         $row = $result ? $result->fetchArray(SQLITE3_ASSOC) : false;
 
         return $row ?: null;
+    }
+
+    public function findByCupsJobId($cupsJobId)
+    {
+        $cupsJobId = trim((string) $cupsJobId);
+        if ($cupsJobId === '') {
+            return null;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT pj.*, u.name AS user_name
+            FROM print_jobs pj
+            LEFT JOIN users u ON u.cpf = pj.user
+            WHERE pj.cups_job_id = :cups_job_id
+            ORDER BY pj.id DESC
+            LIMIT 1
+        ");
+        $stmt->bindValue(':cups_job_id', $cupsJobId, SQLITE3_TEXT);
+        $result = $stmt->execute();
+        $row = $result ? $result->fetchArray(SQLITE3_ASSOC) : false;
+
+        return $row ?: null;
+    }
+
+    public function listByCupsJobIds(array $cupsJobIds)
+    {
+        $ids = [];
+        foreach ($cupsJobIds as $id) {
+            $id = trim((string) $id);
+            if ($id !== '') {
+                $ids[$id] = true;
+            }
+        }
+        $ids = array_keys($ids);
+        if (empty($ids)) {
+            return [];
+        }
+
+        $placeholders = [];
+        $params = [];
+        foreach ($ids as $index => $id) {
+            $key = ':id' . $index;
+            $placeholders[] = $key;
+            $params[$key] = $id;
+        }
+
+        $stmt = $this->db->prepare("
+            SELECT pj.*, u.name AS user_name
+            FROM print_jobs pj
+            LEFT JOIN users u ON u.cpf = pj.user
+            WHERE pj.cups_job_id IN (" . implode(',', $placeholders) . ")
+            ORDER BY pj.id DESC
+        ");
+        foreach ($params as $key => $id) {
+            $stmt->bindValue($key, $id, SQLITE3_TEXT);
+        }
+
+        $result = $stmt->execute();
+        $rows = [];
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $jobId = (string) ($row['cups_job_id'] ?? '');
+            if ($jobId !== '' && !isset($rows[$jobId])) {
+                $rows[$jobId] = $row;
+            }
+        }
+
+        return $rows;
     }
 
     public function adjustAccounting($id, $chargedPages, $reason, $adminCpf)

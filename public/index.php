@@ -352,6 +352,11 @@ if ($uri === '/prints/reprint') {
     exit;
 }
 
+if ($uri === '/prints/cancel') {
+    (new PrintJobController())->cancel();
+    exit;
+}
+
 if ($uri === '/prints/accounting') {
     (new PrintJobController())->adjustAccounting();
     exit;

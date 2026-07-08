@@ -56,6 +56,23 @@ if ($cups->classifyReason('printer-state-reasons=media-empty-warning', "printer-
 
 echo "IPP com papel: OK\n";
 
+$parseQueue = new ReflectionMethod(CupsService::class, 'parseActiveQueueOutput');
+$parseQueue->setAccessible(true);
+$queueRows = $parseQueue->invoke($cups, implode("\n", [
+    'kyocera-escola-123 professor 2048 Wed Jul 08 10:20:00 2026',
+    '        Title: prova-matematica.pdf',
+    '        Rank: active',
+    'kyocera-escola-124 secretaria 4096 Wed Jul 08 10:21:00 2026',
+    '        Status: pending',
+]));
+
+if (count($queueRows) !== 2 || $queueRows[0]['job_id'] !== 'kyocera-escola-123' || $queueRows[0]['title'] !== 'prova-matematica.pdf') {
+    fwrite(STDERR, "Parser da fila ativa do CUPS inesperado\n");
+    exit(1);
+}
+
+echo "Fila ativa CUPS: OK\n";
+
 $pdf = (new PdfReportService())->monthlyReport('Relatório mensal de impressões', [
     'month' => '2026-05',
     'cpf' => '',

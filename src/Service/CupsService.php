@@ -359,6 +359,174 @@ class CupsService
         ];
     }
 
+    public function activeQueue()
+    {
+        if ($this->printerName === '') {
+            return [
+                'success' => false,
+                'jobs' => [],
+                'stdout' => '',
+                'stderr' => 'PRINTER_NAME nao configurada',
+                'return_code' => 1,
+                'error_message' => 'PRINTER_NAME não configurada',
+            ];
+        }
+        if ($this->isWindows()) {
+            return [
+                'success' => false,
+                'jobs' => [],
+                'stdout' => '',
+                'stderr' => 'Fila CUPS indisponivel no Windows',
+                'return_code' => 1,
+                'error_message' => 'Fila CUPS indisponível no Windows',
+            ];
+        }
+
+        $lpstat = $this->findExecutable(['/usr/bin/lpstat', '/bin/lpstat', 'lpstat']);
+        if ($lpstat === null) {
+            return [
+                'success' => false,
+                'jobs' => [],
+                'stdout' => '',
+                'stderr' => 'lpstat nao encontrado',
+                'return_code' => 127,
+                'error_message' => 'lpstat não encontrado',
+            ];
+        }
+
+        $result = $this->run(escapeshellarg($lpstat) . ' -W not-completed -l -o ' . escapeshellarg($this->printerName) . ' 2>&1');
+        $text = trim($result['stdout'] . "\n" . $result['stderr']);
+        $noEntries = stripos($text, 'no entries') !== false || stripos($text, 'sem entradas') !== false;
+        $success = (int) $result['return_code'] === 0 || $noEntries;
+
+        return [
+            'success' => $success,
+            'jobs' => $success ? $this->parseActiveQueueOutput($result['stdout']) : [],
+            'stdout' => $this->truncate($result['stdout'], 4000),
+            'stderr' => $this->truncate($result['stderr'], 4000),
+            'return_code' => (int) $result['return_code'],
+            'error_message' => $success ? '' : ($text !== '' ? $this->truncate($text, 500) : 'Falha ao consultar fila do CUPS'),
+        ];
+    }
+
+    public function cancelJob($jobId)
+    {
+        $jobId = trim((string) $jobId);
+        if ($jobId === '' || !preg_match('/^[A-Za-z0-9_.:@-]+-\d+$/', $jobId)) {
+            return [
+                'success' => false,
+                'job_id' => $jobId !== '' ? $jobId : null,
+                'stdout' => '',
+                'stderr' => 'ID de trabalho CUPS inválido',
+                'return_code' => 1,
+                'status_cups' => 'cancel_failed',
+                'error_category' => 'cancelamento invalido',
+                'error_message' => 'ID de trabalho CUPS inválido',
+            ];
+        }
+        if ($this->isWindows()) {
+            return [
+                'success' => false,
+                'job_id' => $jobId,
+                'stdout' => '',
+                'stderr' => 'Cancelamento CUPS indisponivel no Windows',
+                'return_code' => 1,
+                'status_cups' => 'cancel_failed',
+                'error_category' => 'cancelamento indisponivel',
+                'error_message' => 'Cancelamento CUPS indisponível no Windows',
+            ];
+        }
+
+        $cancel = $this->findExecutable(['/usr/bin/cancel', '/bin/cancel', 'cancel']);
+        if ($cancel === null) {
+            return [
+                'success' => false,
+                'job_id' => $jobId,
+                'stdout' => '',
+                'stderr' => 'cancel nao encontrado',
+                'return_code' => 127,
+                'status_cups' => 'cancel_failed',
+                'error_category' => 'cancel nao encontrado',
+                'error_message' => 'Comando cancel não encontrado no servidor',
+            ];
+        }
+
+        $result = $this->run(escapeshellarg($cancel) . ' ' . escapeshellarg($jobId) . ' 2>&1');
+        $usedSudo = false;
+        if ((int) $result['return_code'] !== 0 && $this->looksLikePermissionDenied($result['stdout'] . "\n" . $result['stderr'])) {
+            $sudo = $this->findExecutable(['/usr/bin/sudo', '/bin/sudo', 'sudo']);
+            if ($sudo !== null) {
+                $direct = $result;
+                $result = $this->run(escapeshellarg($sudo) . ' -n ' . escapeshellarg($cancel) . ' ' . escapeshellarg($jobId) . ' 2>&1');
+                $result['direct_return_code'] = $direct['return_code'];
+                $result['direct_stdout'] = $direct['stdout'];
+                $result['direct_stderr'] = $direct['stderr'];
+                $usedSudo = true;
+            }
+        }
+
+        $text = trim($result['stdout'] . "\n" . $result['stderr']);
+        $success = (int) $result['return_code'] === 0;
+
+        return [
+            'success' => $success,
+            'job_id' => $jobId,
+            'stdout' => $this->truncate($result['stdout'], 4000),
+            'stderr' => $this->truncate($result['stderr'], 4000),
+            'return_code' => (int) $result['return_code'],
+            'status_cups' => $success ? 'failed_or_canceled' : 'cancel_failed',
+            'error_category' => $success ? 'job cancelado' : ($this->classifyReason($text) ?: 'falha ao cancelar'),
+            'error_message' => $success ? 'Trabalho cancelado' : ($text !== '' ? $this->truncate($text, 500) : 'Falha ao cancelar trabalho no CUPS'),
+            'used_sudo' => $usedSudo,
+        ];
+    }
+
+    private function parseActiveQueueOutput($output)
+    {
+        $jobs = [];
+        $current = null;
+        foreach (preg_split('/\R/', (string) $output) as $line) {
+            $trimmed = trim($line);
+            if ($trimmed === '') {
+                continue;
+            }
+
+            if (preg_match('/^(\S+-\d+)\s+(\S+)\s+(\d+)\s+(.+)$/', $trimmed, $match)) {
+                if ($current !== null) {
+                    $jobs[] = $current;
+                }
+                $current = [
+                    'job_id' => $match[1],
+                    'owner' => $match[2],
+                    'size' => (int) $match[3],
+                    'submitted_at' => trim($match[4]),
+                    'title' => '',
+                    'state' => '',
+                    'raw' => $trimmed,
+                ];
+                continue;
+            }
+
+            if ($current === null) {
+                continue;
+            }
+            $current['raw'] .= "\n" . $trimmed;
+            if (preg_match('/^(title|document-name)\s*:\s*(.+)$/i', $trimmed, $match)) {
+                $current['title'] = trim($match[2], " \t\r\n\"");
+            } elseif (preg_match('/^(rank|status)\s*:\s*(.+)$/i', $trimmed, $match)) {
+                $current['state'] = trim($match[2], " \t\r\n\"");
+            } elseif ($current['state'] === '' && preg_match('/\b(active|held|pending|processing|printing|stopped|paused|queued)\b/i', $trimmed, $match)) {
+                $current['state'] = $match[1];
+            }
+        }
+
+        if ($current !== null) {
+            $jobs[] = $current;
+        }
+
+        return $jobs;
+    }
+
     private function monitorPrinterAfterJobLeavesQueue($seen)
     {
         $monitorSeconds = max(0, (int) ($_ENV['PRINT_JOB_AFTER_QUEUE_MONITOR_SECONDS'] ?? 45));

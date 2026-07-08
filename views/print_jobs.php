@@ -36,6 +36,7 @@ $cupsLabels = [
     'accepted_unidentified' => ['label' => 'Aceito, sem número na fila', 'class' => 'text-bg-warning'],
     'completed' => ['label' => 'Conclusão confirmada', 'class' => 'text-bg-success'],
     'failed_or_canceled' => ['label' => 'Falhou ou foi cancelado', 'class' => 'text-bg-danger'],
+    'cancel_failed' => ['label' => 'Falha ao cancelar', 'class' => 'text-bg-danger'],
     'printer_fault' => ['label' => 'Falha detectada na impressora', 'class' => 'text-bg-danger'],
     'left_queue' => ['label' => 'Saiu da fila, sem confirmação final', 'class' => 'text-bg-warning'],
     'timeout' => ['label' => 'Tempo esgotado', 'class' => 'text-bg-danger'],
@@ -185,6 +186,104 @@ if ($currentStatus === 'active') {
                 <div class="metric"><span>Folhas contabilizadas</span><strong><?= (int) $stats['charged'] ?></strong></div>
             </section>
 
+            <?php if ($isAdmin && $currentStatus === 'active' && is_array($cupsQueue)): ?>
+                <section class="panel history-table-panel">
+                    <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-3">
+                        <div>
+                            <h2 class="panel-title">Fila real do CUPS</h2>
+                            <p class="text-muted mb-0">Trabalhos que ainda estão pendentes no servidor de impressão.</p>
+                        </div>
+                        <a href="/prints?status=active" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise"></i> Atualizar fila</a>
+                    </div>
+                    <?php if (empty($cupsQueue['success'])): ?>
+                        <div class="alert alert-warning mb-0">
+                            Não foi possível consultar a fila do CUPS: <?= htmlspecialchars($cupsQueue['error_message'] ?? 'erro não informado') ?>
+                        </div>
+                    <?php elseif (empty($cupsQueue['jobs'])): ?>
+                        <div class="text-center text-muted py-3">Nenhum trabalho ativo no CUPS agora.</div>
+                    <?php else: ?>
+                        <div class="table-responsive history-table-wrap">
+                            <table class="table table-hover align-middle data-table history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Arquivo</th>
+                                        <th>Professor</th>
+                                        <th>Situação</th>
+                                        <th>Resumo da impressão</th>
+                                        <th>Folhas</th>
+                                        <th>Data</th>
+                                        <th class="text-end">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach (($cupsQueue['jobs'] ?? []) as $queueJob): ?>
+                                        <?php
+                                            $cupsJobId = (string) ($queueJob['job_id'] ?? '');
+                                            $localJob = $cupsQueueJobsById[$cupsJobId] ?? null;
+                                            $title = trim((string) ($queueJob['title'] ?? ''));
+                                            $fileName = $localJob['original_name'] ?? ($title !== '' ? $title : $cupsJobId);
+                                            $queueState = trim((string) ($queueJob['state'] ?? ''));
+                                            $selected = is_array($localJob) ? $selectedCount($localJob) : 0;
+                                            $sheetsPerCopy = is_array($localJob)
+                                                ? max(1, (int) ceil(max(1, $selected) / max(1, (int) ($localJob['number_up'] ?? 1))))
+                                                : 0;
+                                        ?>
+                                        <tr>
+                                            <td data-label="Arquivo">
+                                                <div class="fw-semibold text-truncate file-name"><?= htmlspecialchars($fileName) ?></div>
+                                                <small class="d-block text-muted">CUPS: <?= htmlspecialchars($cupsJobId) ?> · <?= (int) ($queueJob['size'] ?? 0) ?> bytes</small>
+                                                <?php if (!is_array($localJob)): ?>
+                                                    <small class="d-block text-muted">Sem vínculo encontrado no histórico local</small>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td data-label="Professor">
+                                                <?php if (is_array($localJob)): ?>
+                                                    <?= htmlspecialchars($localJob['user_name'] ?: $localJob['user']) ?><br><small class="text-muted"><?= htmlspecialchars($localJob['user']) ?></small>
+                                                <?php else: ?>
+                                                    <?= htmlspecialchars($queueJob['owner'] ?? 'não informado') ?>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td data-label="Situação">
+                                                <span class="badge text-bg-info"><i class="bi bi-list-task"></i> No CUPS</span>
+                                                <?php if ($queueState !== ''): ?><small class="d-block text-muted"><?= htmlspecialchars($traduzDiagnostico($queueState)) ?></small><?php endif; ?>
+                                            </td>
+                                            <td data-label="Resumo">
+                                                <?php if (is_array($localJob)): ?>
+                                                    <div class="history-summary">
+                                                        <span><strong>Documento:</strong> <?= (int) $localJob['pages'] ?> pág.</span>
+                                                        <span><strong>Seleção:</strong> <?= htmlspecialchars($selectionLabel($localJob)) ?><?= $selected > 0 ? ' · ' . (int) $selected . ' pág. usadas' : '' ?></span>
+                                                        <span><strong>Cópias:</strong> <?= (int) $localJob['copies'] ?> · <strong>Por folha:</strong> <?= (int) $localJob['number_up'] ?></span>
+                                                        <span><strong>Modo:</strong> <?= htmlspecialchars($modoImpressao($localJob['sides'] ?? '')) ?></span>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <span class="text-muted">Dados detalhados indisponíveis no registro local.</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td data-label="Folhas">
+                                                <?php if (is_array($localJob)): ?>
+                                                    <span class="badge text-bg-primary"><?= (int) $localJob['charged_pages'] ?></span>
+                                                    <small class="d-block text-muted"><?= (int) $sheetsPerCopy ?> por cópia</small>
+                                                <?php else: ?>
+                                                    <span class="text-muted">-</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td data-label="Data"><small><?= htmlspecialchars($queueJob['submitted_at'] ?? '') ?></small></td>
+                                            <td data-label="Ações" class="text-end">
+                                                <form method="post" action="/prints/cancel" class="d-inline">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                                    <input type="hidden" name="cups_job_id" value="<?= htmlspecialchars($cupsJobId) ?>">
+                                                    <button class="btn btn-outline-danger btn-sm" title="Cancelar na fila" onclick="return confirm('Cancelar esta impressão na fila do CUPS?')"><i class="bi bi-x-circle"></i></button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </section>
+            <?php endif; ?>
+
             <section class="panel">
                 <form method="get" class="row g-3 align-items-end">
                     <div class="col-md-3">
@@ -231,7 +330,7 @@ if ($currentStatus === 'active') {
                         </thead>
                         <tbody>
                             <?php if (empty($jobs)): ?>
-                                <tr><td colspan="<?= $isAdmin ? 7 : 6 ?>" class="text-center text-muted py-4">Nenhuma impressão encontrada</td></tr>
+                                <tr><td colspan="<?= $isAdmin ? 7 : 6 ?>" class="text-center text-muted py-4"><?= ($isAdmin && $currentStatus === 'active') ? 'Nenhum registro local ainda marcado como fila. A fila real do CUPS aparece acima.' : 'Nenhuma impressão encontrada' ?></td></tr>
                             <?php else: ?>
                                 <?php foreach ($jobs as $job): ?>
                                     <?php
@@ -242,6 +341,8 @@ if ($currentStatus === 'active') {
                                         $selected = $selectedCount($job);
                                         $partialSelection = $hasPartialSelection($job);
                                         $sheetsPerCopy = max(1, (int) ceil(max(1, $selected) / max(1, (int) ($job['number_up'] ?? 1))));
+                                        $canCancel = $isAdmin && !$isLegacyUsage && in_array((string) ($job['status'] ?? ''), ['queued', 'processing'], true);
+                                        $hasCupsJob = trim((string) ($job['cups_job_id'] ?? '')) !== '';
                                     ?>
                                     <tr>
                                         <td data-label="Arquivo">
@@ -301,6 +402,15 @@ if ($currentStatus === 'active') {
                                                 <?php if (!$isLegacyUsage): ?>
                                                     <div class="job-action-buttons">
                                                         <a class="btn btn-outline-secondary btn-sm" title="Baixar arquivo" href="/prints/download?id=<?= (int) $job['id'] ?>"><i class="bi bi-download"></i></a>
+                                                        <?php if ($canCancel && $hasCupsJob): ?>
+                                                            <form method="post" action="/prints/cancel" class="d-inline">
+                                                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                                                <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
+                                                                <button class="btn btn-outline-danger btn-sm" title="Cancelar na fila" onclick="return confirm('Cancelar esta impressão na fila?')"><i class="bi bi-x-circle"></i></button>
+                                                            </form>
+                                                        <?php elseif ($canCancel): ?>
+                                                            <button class="btn btn-outline-danger btn-sm" disabled title="Aguardando número no CUPS para cancelar"><i class="bi bi-x-circle"></i></button>
+                                                        <?php endif; ?>
                                                         <?php if ($partialSelection): ?>
                                                             <button class="btn btn-outline-secondary btn-sm" disabled title="Faça uma nova impressão para repetir a seleção de páginas"><i class="bi bi-arrow-repeat"></i></button>
                                                         <?php else: ?>
