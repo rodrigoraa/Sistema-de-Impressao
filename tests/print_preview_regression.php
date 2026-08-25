@@ -49,6 +49,20 @@ if (!str_contains($cupsSource, "number-up-layout=lrtb") || !str_contains($cupsSo
     exit(1);
 }
 
+$printSource = (string) file_get_contents(__DIR__ . '/../src/Service/PrintService.php');
+foreach (["'-i', 'application/pdf'", "'-m', 'application/vnd.cups-pdf'"] as $needle) {
+    if (!str_contains($printSource, $needle)) {
+        fwrite(STDERR, "A pré-visualização deixou de forçar o filtro CUPS pdftopdf: {$needle}\n");
+        exit(1);
+    }
+}
+
+if (!str_contains($cupsSource, '$this->truncate(trim($stdout), 4000)')
+    || !str_contains($cupsSource, '$this->truncate(trim($stderr), 4000)')) {
+    fwrite(STDERR, "O log CUPS deixou de limitar stdout/stderr.\n");
+    exit(1);
+}
+
 $viewSource = (string) file_get_contents(__DIR__ . '/../views/print.php');
 foreach (["fetch('/print/upload'", "printData.delete('arquivo')", 'new AbortController()', "'number_up'"] as $needle) {
     if (!str_contains($viewSource, $needle)) {

@@ -324,7 +324,10 @@ class PrintService
 
             $command = [
                 $cupsfilter,
-                '-m', 'application/pdf',
+                '-i', 'application/pdf',
+                // application/pdf pode ser devolvido sem alterações. O MIME
+                // específico do CUPS força o pdftopdf e aplica number-up/escala.
+                '-m', 'application/vnd.cups-pdf',
             ];
             if ($this->printerName !== '') {
                 $command[] = '-d';

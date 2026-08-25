@@ -1037,7 +1037,12 @@ class CupsService
         fclose($pipes[2]);
         $code = proc_close($process);
 
-        $this->log('CUPS CMD: ' . $command . ' | code=' . $code . ' | stdout=' . trim($stdout) . ' | stderr=' . trim($stderr));
+        $this->log(
+            'CUPS CMD: ' . $this->truncate($command, 2000)
+            . ' | code=' . $code
+            . ' | stdout=' . $this->truncate(trim($stdout), 4000)
+            . ' | stderr=' . $this->truncate(trim($stderr), 4000)
+        );
 
         return [
             'stdout' => (string) $stdout,

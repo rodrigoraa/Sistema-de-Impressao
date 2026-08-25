@@ -63,7 +63,7 @@ sudo install -d -o www-data -g www-data -m 0700 /var/www/impressao/storage/print
 `qpdf` pode ser substituído por `ghostscript`; não é necessário instalar ambos. Depois do deploy, valide uma amostra sem enviar trabalho físico:
 
 ```bash
-sudo -u www-data /usr/sbin/cupsfilter -m application/pdf -d kyocera-escola -o number-up=2 -o number-up-layout=lrtb arquivo-teste.pdf > /tmp/preview-teste.pdf
+sudo -u www-data /usr/sbin/cupsfilter -i application/pdf -m application/vnd.cups-pdf -d kyocera-escola -o number-up=2 -o number-up-layout=lrtb arquivo-teste.pdf > /tmp/preview-teste.pdf
 pdfinfo /tmp/preview-teste.pdf
 ```
 
