@@ -64,7 +64,7 @@ if (!str_contains($cupsSource, '$this->truncate(trim($stdout), 4000)')
 }
 
 $viewSource = (string) file_get_contents(__DIR__ . '/../views/print.php');
-foreach (["fetch('/print/upload'", "printData.delete('arquivo')", 'new AbortController()', "'number_up'"] as $needle) {
+foreach (["fetch('/print/upload'", 'const text = await response.text()', 'friendlyServerError(text, response)', 'previousLayoutWasAutomatic', 'renderPageAdvice()', "printData.delete('arquivo')", 'new AbortController()', "'number_up'"] as $needle) {
     if (!str_contains($viewSource, $needle)) {
         fwrite(STDERR, "Proteção de upload/concorrência ausente na interface: {$needle}\n");
         exit(1);

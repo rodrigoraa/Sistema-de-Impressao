@@ -588,7 +588,13 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                     body: formData,
                     signal: controller.signal
                 });
-                const data = await response.json();
+                const text = await response.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch {
+                    throw new Error(friendlyServerError(text, response));
+                }
                 if (!response.ok || !data.success) throw new Error(data.message || 'Não foi possível enviar o arquivo.');
                 uploadToken = data.upload_token;
                 uploadTokenInput.value = uploadToken;
@@ -697,9 +703,14 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                 if (!file) return;
                 const ext = file.name.split('.').pop().toLowerCase();
                 resetPreviewObjectUrl();
+                const previousLayoutWasAutomatic = largeDocumentLayout && largeDocumentLayout.value === 'auto_applied';
                 currentPageAdvice = '';
                 layoutChangedByUser = false;
+                if (previousLayoutWasAutomatic && numberUpSelect && numberUpSelect.value === '2') {
+                    numberUpSelect.value = '1';
+                }
                 if (largeDocumentLayout) largeDocumentLayout.value = 'auto';
+                renderPageAdvice();
                 dropArea.classList.remove('error', 'success');
                 if (!allowed.includes(ext)) {
                     label.textContent = 'Tipo não permitido';
@@ -799,8 +810,14 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             const raw = String(text || '').trim();
             const lower = raw.toLowerCase();
 
+            if (response && response.redirected && String(response.url || '').includes('/login')) {
+                return 'Sua sessão expirou. Entre novamente no sistema e repita o envio.';
+            }
             if (response && response.status === 413) {
                 return 'O arquivo é maior que o limite aceito pelo servidor. Avise a equipe de TI para ajustar o limite de upload.';
+            }
+            if ((response && response.status === 502) || lower.includes('502 bad gateway')) {
+                return 'O serviço de conversão não respondeu corretamente. Tente novamente; se continuar, avise a equipe de TI.';
             }
             if ((response && response.status === 504) || lower.includes('gateway time-out') || lower.includes('error code 504')) {
                 return 'O envio demorou mais que o esperado. Verifique a fila de impressão; se o problema continuar, avise a equipe de TI.';
