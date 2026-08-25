@@ -95,6 +95,9 @@ class ShareTargetController
         }
 
         if ($action === 'cancel') {
+            if (!empty($entry['print_upload_token'])) {
+                $printController->destroyTemporaryUpload($entry['print_upload_token']);
+            }
             $this->deleteSharedFile($entry);
             unset($_SESSION['shared_files'][$token]);
             $this->flashAndRedirect('Impressão cancelada. O arquivo compartilhado temporário foi removido.', true, '/');
@@ -148,7 +151,35 @@ class ShareTargetController
         $printerStatus = $context['printerStatus'] ?? [];
         $maxUploadMb = $context['maxUploadMb'] ?? $printController->maxUploadMegabytes();
         $allowedExtensions = $context['allowedExtensions'] ?? $printController->allowedExtensions();
-        $pageInfo = $printController->savedFilePageInfo($entry['stored_file'], $entry['extension']);
+        $printUploadToken = (string) ($entry['print_upload_token'] ?? '');
+        try {
+            if ($printUploadToken !== '') {
+                try {
+                    $pageInfo = array_merge(['success' => true], $printController->temporaryPageInfo($printUploadToken));
+                } catch (Throwable $e) {
+                    $printController->destroyTemporaryUpload($printUploadToken);
+                    $printUploadToken = '';
+                }
+            }
+            if ($printUploadToken === '') {
+                $temporaryEntry = $printController->createTemporaryCopyForSavedFile(
+                    $entry['stored_file'],
+                    $entry['original_name'],
+                    $entry['extension'],
+                    (int) $entry['size'],
+                    (string) $entry['mime_type']
+                );
+                $printUploadToken = (string) $temporaryEntry['token'];
+                $_SESSION['shared_files'][$token]['print_upload_token'] = $printUploadToken;
+                $entry['print_upload_token'] = $printUploadToken;
+                $pageInfo = array_merge(['success' => true], $printController->temporaryPageInfo($printUploadToken));
+            }
+        } catch (Throwable $e) {
+            $pageInfo = [
+                'success' => false,
+                'message' => 'Não foi possível preparar a contagem de páginas.',
+            ];
+        }
         $pageLabel = 'Não calculado';
         if (($pageInfo['success'] ?? false) === true) {
             $pages = (int) ($pageInfo['pages'] ?? 0);
@@ -165,10 +196,12 @@ class ShareTargetController
             'size' => (int) $entry['size'],
             'size_label' => $this->formatBytes((int) $entry['size']),
             'page_label' => $pageLabel,
+            'pages' => (int) ($pageInfo['pages'] ?? 0),
             'large_document' => (bool) ($pageInfo['large_document'] ?? false),
             'page_warning' => (string) ($pageInfo['warning'] ?? ''),
             'page_advice' => (string) ($pageInfo['advice'] ?? ''),
             'page_error' => (($pageInfo['success'] ?? false) === true) ? '' : (string) ($pageInfo['message'] ?? 'Não foi possível contar as páginas.'),
+            'upload_token' => $printUploadToken,
         ];
         $sharedMode = true;
 
@@ -177,12 +210,19 @@ class ShareTargetController
 
     private function respondSharedPageCount(PrintController $printController, $entry)
     {
-        $pageInfo = $printController->savedFilePageInfo(
-            $entry['stored_file'],
-            $entry['extension'],
-            $_POST['paper'] ?? 'A4',
-            $_POST['orientation'] ?? 'auto'
-        );
+        try {
+            $uploadToken = (string) ($entry['print_upload_token'] ?? '');
+            if ($uploadToken === '') {
+                throw new RuntimeException('Pré-visualização temporária não disponível.');
+            }
+            $pageInfo = array_merge(['success' => true], $printController->temporaryPageInfo(
+                $uploadToken,
+                $_POST['paper'] ?? 'A4',
+                $_POST['orientation'] ?? 'auto'
+            ));
+        } catch (Throwable $e) {
+            $pageInfo = ['success' => false, 'message' => 'Não foi possível contar as páginas.'];
+        }
 
         $this->respondJson($pageInfo, ($pageInfo['success'] ?? false) === true ? 200 : 400);
     }

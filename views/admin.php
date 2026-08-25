@@ -255,20 +255,28 @@ $enableAttemptLabel = function ($attempt) {
                     };
                     $uploads = $storageStats['uploads'] ?? ['files' => 0, 'bytes' => 0, 'path' => '', 'exists' => false];
                     $debug = $storageStats['debug'] ?? ['files' => 0, 'bytes' => 0, 'path' => '', 'exists' => false];
+                    $temporary = $storageStats['temporary'] ?? ['files' => 0, 'bytes' => 0, 'path' => '', 'exists' => false];
                 ?>
                 <div class="row g-3 mb-3">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <div class="metric">
                             <span>Uploads</span>
                             <strong><?= (int) $uploads['files'] ?> arquivo(s)</strong>
                             <small class="text-muted"><?= htmlspecialchars($formatBytes($uploads['bytes'])) ?></small>
                         </div>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <div class="metric">
                             <span>Diagnósticos</span>
                             <strong><?= (int) $debug['files'] ?> arquivo(s)</strong>
                             <small class="text-muted"><?= htmlspecialchars($formatBytes($debug['bytes'])) ?></small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="metric">
+                            <span>Pré-visualizações temporárias</span>
+                            <strong><?= (int) $temporary['files'] ?> arquivo(s)</strong>
+                            <small class="text-muted"><?= htmlspecialchars($formatBytes($temporary['bytes'])) ?></small>
                         </div>
                     </div>
                 </div>
@@ -294,6 +302,10 @@ $enableAttemptLabel = function ($attempt) {
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="areas[]" value="debug" id="clean_debug" checked>
                                 <label class="form-check-label" for="clean_debug">Diagnósticos</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="areas[]" value="temporary" id="clean_temporary">
+                                <label class="form-check-label" for="clean_temporary">Pré-visualizações temporárias</label>
                             </div>
                         </div>
                     </div>

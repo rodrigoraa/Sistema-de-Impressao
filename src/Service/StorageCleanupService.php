@@ -6,10 +6,12 @@ class StorageCleanupService
     {
         $uploadDir = $this->uploadDir();
         $debugDir = $this->debugDir();
+        $temporaryDir = $this->temporaryDir();
 
         return [
             'uploads' => $this->directoryStats($uploadDir),
             'debug' => $this->directoryStats($debugDir),
+            'temporary' => $this->directoryStats($temporaryDir),
         ];
     }
 
@@ -18,6 +20,7 @@ class StorageCleanupService
         $allowedAreas = [
             'uploads' => $this->uploadDir(),
             'debug' => $this->debugDir(),
+            'temporary' => $this->temporaryDir(),
         ];
         $areas = array_values(array_intersect((array) $areas, array_keys($allowedAreas)));
         $cutoff = $olderThanDays > 0 ? time() - ((int) $olderThanDays * 86400) : null;
@@ -65,6 +68,11 @@ class StorageCleanupService
     private function debugDir()
     {
         return dirname(__DIR__, 2) . '/storage/print-debug';
+    }
+
+    private function temporaryDir()
+    {
+        return $_ENV['PRINT_TEMP_PATH'] ?? dirname(__DIR__, 2) . '/storage/print-temp';
     }
 
     private function directoryStats($dir)

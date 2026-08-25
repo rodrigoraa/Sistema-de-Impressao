@@ -26,7 +26,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20260511">
-    <link rel="stylesheet" href="/css/print.css?v=20260623">
+    <link rel="stylesheet" href="/css/print.css?v=20260825">
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </head>
@@ -107,6 +107,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
 
                             <form id="printForm" method="post" enctype="multipart/form-data" <?= $printFormAction !== '' ? 'action="' . htmlspecialchars($printFormAction) . '"' : '' ?>>
                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                <input type="hidden" name="upload_token" id="uploadTokenInput" value="<?= htmlspecialchars((string) ($sharedFile['upload_token'] ?? '')) ?>">
                                 <?php if ($sharedMode): ?>
                                     <input type="hidden" name="share_token" value="<?= htmlspecialchars($shareToken) ?>">
                                     <input type="hidden" name="share_action" value="print">
@@ -154,6 +155,13 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                                     <?php endif; ?>
 
                                     <!-- PREVIEW -->
+                                    <div id="previewSummary" class="preview-summary mt-3 d-none">
+                                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                            <strong>Pré-visualização da impressão</strong>
+                                            <span id="previewConfiguration" class="text-muted small"></span>
+                                        </div>
+                                        <div id="previewCoverage" class="small text-muted mt-1"></div>
+                                    </div>
                                     <div id="preview" class="mt-3"></div>
 
                                     <!-- PROGRESS -->
@@ -361,6 +369,10 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         const label = document.getElementById('file-label');
         const info = document.getElementById('file-info');
         const preview = document.getElementById('preview');
+        const previewSummary = document.getElementById('previewSummary');
+        const previewConfiguration = document.getElementById('previewConfiguration');
+        const previewCoverage = document.getElementById('previewCoverage');
+        const uploadTokenInput = document.getElementById('uploadTokenInput');
         const progress = document.getElementById('progressBar');
         const bar = progress.querySelector('.progress-bar');
         const printForm = document.getElementById('printForm');
@@ -375,6 +387,13 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         let pageCountToken = 0;
         let previewToken = 0;
         let previewObjectUrl = '';
+        let uploadToken = uploadTokenInput.value || '';
+        let uploadController = null;
+        let pageCountController = null;
+        let previewController = null;
+        let previewDebounceTimer = null;
+        let currentPageData = null;
+        let currentFileMeta = sharedMode ? sharedFile : null;
         let currentPageAdvice = '';
         let printingActive = false;
         let sharedPrintCompleted = false;
@@ -486,218 +505,218 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             modal.show();
         }
 
-        // validação + preview
+        function appendPreviewOptions(formData) {
+            ['paper', 'orientation', 'number_up', 'scale', 'scale_percent', 'page_ranges', 'page_set'].forEach(name => {
+                const element = document.querySelector(`[name="${name}"]`);
+                if (element && element.value !== '') formData.append(name, element.value);
+            });
+            ['top', 'right', 'bottom', 'left'].forEach(side => {
+                const element = document.querySelector(`[name="margin_${side}"]`);
+                if (element && element.value !== '') formData.append(`margin_${side}`, element.value);
+            });
+            if (uploadToken) formData.append('upload_token', uploadToken);
+            formData.append('csrf_token', csrfToken);
+        }
+
+        function resetPreviewObjectUrl() {
+            if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+            previewObjectUrl = '';
+            preview.onclick = null;
+        }
+
+        function pageInfoText(data) {
+            const size = currentFileMeta && currentFileMeta.size_label
+                ? currentFileMeta.size_label
+                : (currentFileMeta && currentFileMeta.size ? formatSize(currentFileMeta.size) : '');
+            const pages = data.pages === 1 ? '1 página' : `${data.pages} páginas`;
+            const converted = data.original_pages && data.converted_pages && data.original_pages !== data.converted_pages
+                ? ' após conversão'
+                : '';
+            return `${size}${size ? ' · ' : ''}${pages}${converted}${data.warning ? ` · atenção: ${data.warning}` : ''}`;
+        }
+
+        function renderPreviewSummary(metadata = null) {
+            if (!uploadToken) {
+                previewSummary.classList.add('d-none');
+                return;
+            }
+            const numberUp = Number(numberUpSelect.value || 1);
+            const paper = document.querySelector('[name="paper"]').value === 'Letter' ? 'Carta' : 'A4';
+            const orientationValue = document.querySelector('[name="orientation"]').value;
+            const orientation = orientationValue === 'portrait' ? 'Retrato' : (orientationValue === 'landscape' ? 'Paisagem' : 'Automática');
+            const sides = sidesSelect.value === 'one-sided' ? 'Impressão simples' : 'Frente e verso';
+            previewConfiguration.textContent = `${numberUp} ${numberUp === 1 ? 'página' : 'páginas'} por folha • ${paper} • ${orientation} • ${sides}`;
+
+            if (metadata) {
+                const shown = Number(metadata.previewSheets || 0);
+                const total = Number(metadata.totalSheets || 0);
+                const documentPages = Number(metadata.documentPages || (currentPageData && currentPageData.pages) || 0);
+                const selectedPages = Number(metadata.selectedPages || documentPages);
+                const pageText = selectedPages === documentPages
+                    ? `${documentPages} ${documentPages === 1 ? 'página do documento' : 'páginas do documento'}`
+                    : `${selectedPages} de ${documentPages} páginas selecionadas`;
+                previewCoverage.textContent = `Exibindo ${shown === 1 ? 'o primeiro lado' : `os primeiros ${shown} lados`} de ${total}. ${pageText} → ${total} ${total === 1 ? 'lado impresso' : 'lados impressos'} por cópia.`;
+            } else {
+                previewCoverage.textContent = 'A prévia é uma amostra limitada dos primeiros lados da impressão.';
+            }
+            previewSummary.classList.remove('d-none');
+        }
+
+        async function uploadSelectedFile(file) {
+            if (uploadController) uploadController.abort();
+            if (pageCountController) pageCountController.abort();
+            if (previewController) previewController.abort();
+            previewToken++;
+            const controller = new AbortController();
+            uploadController = controller;
+            uploadToken = '';
+            uploadTokenInput.value = '';
+            currentPageData = null;
+            currentFileMeta = { original_name: file.name, extension: file.name.split('.').pop().toLowerCase(), size: file.size };
+            info.textContent = `${formatSize(file.size)} · enviando e contando páginas...`;
+            preview.innerHTML = '<div class="preview-loading"><span class="spinner-border spinner-border-sm"></span><span>Preparando o arquivo...</span></div>';
+            previewSummary.classList.add('d-none');
+            btnPrint.disabled = true;
+
+            const formData = new FormData();
+            formData.append('arquivo', file);
+            appendPreviewOptions(formData);
+            try {
+                const response = await fetch('/print/upload', {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData,
+                    signal: controller.signal
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.message || 'Não foi possível enviar o arquivo.');
+                uploadToken = data.upload_token;
+                uploadTokenInput.value = uploadToken;
+                currentPageData = data;
+                currentFileMeta = { ...currentFileMeta, ...data };
+                info.textContent = pageInfoText(data);
+                currentPageAdvice = data.advice || '';
+                applyLargeDocumentLayout(data);
+                renderPageAdvice();
+                renderPreviewSummary();
+                schedulePreview(0);
+            } catch (error) {
+                if (error.name === 'AbortError') return;
+                dropArea.classList.remove('success');
+                dropArea.classList.add('error');
+                preview.innerHTML = `<p class="text-danger">${escapeHtml(error.message)}</p>`;
+                info.textContent = `${formatSize(file.size)} · falha no envio`;
+            } finally {
+                if (uploadController === controller) uploadController = null;
+                if (!printingActive) renderPrinterStatus(printerStatus);
+            }
+        }
+
+        async function loadDocumentPreview(token) {
+            if (!uploadToken) return;
+            if (previewController) previewController.abort();
+            const controller = new AbortController();
+            previewController = controller;
+            preview.innerHTML = '<div class="preview-loading"><span class="spinner-border spinner-border-sm"></span><span>Gerando pré-visualização da impressão...</span></div>';
+            renderPreviewSummary();
+            const formData = new FormData();
+            appendPreviewOptions(formData);
+
+            try {
+                const response = await fetch('/print/preview', {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData,
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error(await response.text() || 'Não foi possível gerar a pré-visualização.');
+                const metadata = {
+                    documentPages: response.headers.get('X-Preview-Document-Pages'),
+                    selectedPages: response.headers.get('X-Preview-Selected-Pages'),
+                    totalSheets: response.headers.get('X-Preview-Total-Sheets'),
+                    previewSheets: response.headers.get('X-Preview-Sheets')
+                };
+                const blob = await response.blob();
+                if (token !== previewToken) return;
+                resetPreviewObjectUrl();
+                previewObjectUrl = URL.createObjectURL(blob);
+                preview.innerHTML = `<iframe src="${previewObjectUrl}" title="Pré-visualização da impressão"></iframe>`;
+                preview.onclick = () => openModal(previewObjectUrl, 'pdf');
+                renderPreviewSummary(metadata);
+            } catch (error) {
+                if (error.name === 'AbortError' || token !== previewToken) return;
+                resetPreviewObjectUrl();
+                preview.innerHTML = `<div class="alert alert-warning mb-0">${escapeHtml(error.message || 'Não foi possível gerar a pré-visualização, mas o arquivo pode ser enviado para impressão.')}</div>`;
+            } finally {
+                if (previewController === controller) previewController = null;
+            }
+        }
+
+        function schedulePreview(delay = 350) {
+            clearTimeout(previewDebounceTimer);
+            if (previewController) previewController.abort();
+            const token = ++previewToken;
+            previewDebounceTimer = setTimeout(() => loadDocumentPreview(token), delay);
+        }
+
+        async function loadPageCount(token) {
+            if (!uploadToken) return;
+            if (pageCountController) pageCountController.abort();
+            const controller = new AbortController();
+            pageCountController = controller;
+            const formData = new FormData();
+            appendPreviewOptions(formData);
+            try {
+                const response = await fetch('/print/page-count', {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    body: formData,
+                    signal: controller.signal
+                });
+                const data = await response.json();
+                if (token !== pageCountToken) return;
+                if (!response.ok || !data.success) throw new Error(data.message || 'não foi possível contar as páginas');
+                currentPageData = data;
+                info.textContent = pageInfoText(data);
+                currentPageAdvice = data.advice || '';
+                applyLargeDocumentLayout(data);
+                renderPageAdvice();
+                schedulePreview();
+            } catch (error) {
+                if (error.name === 'AbortError' || token !== pageCountToken) return;
+                info.textContent = `${currentFileMeta && currentFileMeta.size_label ? currentFileMeta.size_label : ''} · não foi possível recalcular as páginas`;
+                schedulePreview();
+            } finally {
+                if (pageCountController === controller) pageCountController = null;
+            }
+        }
+
         if (!sharedMode && input) {
             input.addEventListener('change', () => {
-            const file = input.files[0];
-            if (!file) return;
-
-            const ext = file.name.split('.').pop().toLowerCase();
-
-            preview.innerHTML = '';
-            preview.onclick = null;
-            currentPageAdvice = '';
-            layoutChangedByUser = false;
-            if (largeDocumentLayout) {
-                largeDocumentLayout.value = 'auto';
-            }
-            dropArea.classList.remove('error', 'success');
-            if (previewObjectUrl) {
-                URL.revokeObjectURL(previewObjectUrl);
-                previewObjectUrl = '';
-            }
-
-            // valida tipo
-            if (!allowed.includes(ext)) {
-                label.textContent = "Tipo não permitido";
-                dropArea.classList.add('error');
-                input.value = '';
-                return;
-            }
-
-            // valida tamanho
-            if (file.size > maxUploadMb * 1024 * 1024) {
-                label.textContent = `Arquivo muito grande (máx ${maxUploadMb}MB)`;
-                dropArea.classList.add('error');
-                input.value = '';
-                return;
-            }
-
-            // sucesso
-            label.textContent = file.name;
-            info.textContent = ['jpg', 'jpeg', 'png', 'webp'].includes(ext)
-                ? `${formatSize(file.size)} · 1 página`
-                : `${formatSize(file.size)} · calculando páginas...`;
-            dropArea.classList.add('success');
-            if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
-                pageCountToken++;
-            } else {
-                loadPageCount(file, ++pageCountToken);
-            }
-
-            const url = URL.createObjectURL(file);
-
-            // preview pequeno + clique
-            if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
-                preview.innerHTML = `<img src="${url}" style="cursor:pointer;">`;
-                preview.onclick = () => openModal(url, ext);
-            }
-
-            if (ext === 'pdf') {
-                preview.innerHTML = `<iframe src="${url}" style="cursor:pointer;"></iframe>`;
-                preview.onclick = () => openModal(url, ext);
-            }
-
-            if (['doc', 'docx'].includes(ext)) {
-                previewToken++;
-                preview.innerHTML = `<p class="text-muted">Aguardando contagem para decidir a pré-visualização...</p>`;
-            }
-
-            if (ext === 'txt') {
-                preview.innerHTML = `<p class="text-muted">Gerando pré-visualização em PDF...</p>`;
-                loadDocumentPreview(file, ++previewToken);
-            }
+                const file = input.files[0];
+                if (!file) return;
+                const ext = file.name.split('.').pop().toLowerCase();
+                resetPreviewObjectUrl();
+                currentPageAdvice = '';
+                layoutChangedByUser = false;
+                if (largeDocumentLayout) largeDocumentLayout.value = 'auto';
+                dropArea.classList.remove('error', 'success');
+                if (!allowed.includes(ext)) {
+                    label.textContent = 'Tipo não permitido';
+                    dropArea.classList.add('error');
+                    input.value = '';
+                    return;
+                }
+                if (file.size > maxUploadMb * 1024 * 1024) {
+                    label.textContent = `Arquivo muito grande (máx ${maxUploadMb}MB)`;
+                    dropArea.classList.add('error');
+                    input.value = '';
+                    return;
+                }
+                label.textContent = file.name;
+                dropArea.classList.add('success');
+                uploadSelectedFile(file);
             });
-        }
-
-        function appendPreviewOptions(formData) {
-            formData.append('paper', document.querySelector('[name="paper"]').value);
-            formData.append('orientation', document.querySelector('[name="orientation"]').value);
-            ['top', 'right', 'bottom', 'left'].forEach(side => {
-                const el = document.querySelector(`[name="margin_${side}"]`);
-                if (el && el.value !== '') formData.append(`margin_${side}`, el.value);
-            });
-            formData.append('csrf_token', csrfToken);
-        }
-
-        function loadDocumentPreview(file, token) {
-            const formData = new FormData();
-            formData.append('arquivo', file);
-            appendPreviewOptions(formData);
-
-            fetch('/print/preview', {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: formData
-            })
-                .then(async response => {
-                    if (!response.ok) {
-                        throw new Error(await response.text() || 'Não foi possível gerar a pré-visualização');
-                    }
-                    return response.blob();
-                })
-                .then(blob => {
-                    if (token !== previewToken) return;
-                    if (previewObjectUrl) {
-                        URL.revokeObjectURL(previewObjectUrl);
-                    }
-                    previewObjectUrl = URL.createObjectURL(blob);
-                    preview.innerHTML = `<iframe src="${previewObjectUrl}" style="cursor:pointer;"></iframe>`;
-                    preview.onclick = () => openModal(previewObjectUrl, 'pdf');
-                })
-                .catch(error => {
-                    if (token !== previewToken) return;
-                    preview.innerHTML = `<p class="text-danger">${error.message}</p>`;
-                });
-        }
-
-        function loadPageCount(file, token) {
-            const ext = file.name.split('.').pop().toLowerCase();
-            if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
-                info.textContent = `${formatSize(file.size)} · 1 página`;
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('arquivo', file);
-            appendPreviewOptions(formData);
-
-            fetch('/print/page-count', {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: formData
-            })
-                .then(r => r.json())
-                .then(data => {
-                    if (token !== pageCountToken) return;
-
-                    if (data.success) {
-                        const pagesLabel = data.pages === 1 ? '1 página' : `${data.pages} páginas`;
-                        const converted = data.original_pages && data.converted_pages && data.original_pages !== data.converted_pages
-                            ? ' após conversão'
-                            : '';
-                        const warning = data.warning ? ` · atenção: ${data.warning}` : '';
-                        info.textContent = `${formatSize(file.size)} · ${pagesLabel}${converted}${warning}`;
-                        currentPageAdvice = data.advice || '';
-                        applyLargeDocumentLayout(data);
-                        updateOfficePreviewAfterCount(file, data);
-                        renderPageAdvice();
-                    } else {
-                        info.textContent = `${formatSize(file.size)} · ${data.message}`;
-                        currentPageAdvice = '';
-                        skipOfficePreview(file, 'Pré-visualização não gerada porque não foi possível confirmar a contagem de páginas.');
-                        renderPageAdvice();
-                    }
-                })
-                .catch(() => {
-                    if (token !== pageCountToken) return;
-                    info.textContent = `${formatSize(file.size)} · não foi possível contar as páginas`;
-                    currentPageAdvice = '';
-                    skipOfficePreview(file, 'Pré-visualização não gerada porque a contagem de páginas falhou.');
-                    renderPageAdvice();
-                });
-        }
-
-        function loadSharedPageCount(token) {
-            if (!sharedMode || !shareToken) return;
-
-            const formData = new FormData();
-            formData.append('csrf_token', csrfToken);
-            formData.append('share_token', shareToken);
-            formData.append('share_action', 'page_count');
-            formData.append('paper', document.querySelector('[name="paper"]').value);
-            formData.append('orientation', document.querySelector('[name="orientation"]').value);
-
-            fetch('/share-target.php', {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: formData
-            })
-                .then(r => r.json())
-                .then(data => {
-                    if (token !== pageCountToken) return;
-
-                    if (data.success) {
-                        const pagesLabel = data.pages === 1 ? '1 página' : `${data.pages} páginas`;
-                        const converted = data.original_pages && data.converted_pages && data.original_pages !== data.converted_pages
-                            ? ' após conversão'
-                            : '';
-                        const warning = data.warning ? ` · atenção: ${data.warning}` : '';
-                        const sizeLabel = sharedFile.size_label || '';
-                        info.textContent = `${sizeLabel}${sizeLabel ? ' · ' : ''}${pagesLabel}${converted}${warning}`;
-                        currentPageAdvice = data.advice || '';
-                        applyLargeDocumentLayout(data);
-                        renderPageAdvice();
-                    } else {
-                        const sizeLabel = sharedFile.size_label || '';
-                        info.textContent = `${sizeLabel}${sizeLabel ? ' · ' : ''}${data.message || 'não foi possível contar as páginas'}`;
-                        currentPageAdvice = '';
-                        renderPageAdvice();
-                    }
-                })
-                .catch(() => {
-                    if (token !== pageCountToken) return;
-                    const sizeLabel = sharedFile.size_label || '';
-                    info.textContent = `${sizeLabel}${sizeLabel ? ' · ' : ''}não foi possível contar as páginas`;
-                    currentPageAdvice = '';
-                    renderPageAdvice();
-                });
         }
 
         function renderPageAdvice() {
@@ -714,7 +733,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
 
         function applyLargeDocumentLayout(data) {
             if (!data || !data.large_document || !numberUpSelect || !sidesSelect || layoutChangedByUser) {
-                return;
+                return false;
             }
 
             if (numberUpSelect.value === '1' && sidesSelect.value === 'one-sided') {
@@ -722,66 +741,42 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                 if (largeDocumentLayout) {
                     largeDocumentLayout.value = 'auto_applied';
                 }
+                return true;
             }
-        }
-
-        function isOfficeDocument(file) {
-            const ext = String((file && file.name) || '').split('.').pop().toLowerCase();
-            return ['doc', 'docx'].includes(ext);
-        }
-
-        function updateOfficePreviewAfterCount(file, data) {
-            if (!isOfficeDocument(file)) {
-                return;
-            }
-
-            if (data.large_document) {
-                skipOfficePreview(file, 'Documento grande. A pré-visualização automática foi desativada para evitar demora. Confira a contagem de páginas e envie para impressão.');
-                return;
-            }
-
-            preview.innerHTML = `<p class="text-muted">Gerando pré-visualização em PDF...</p>`;
-            loadDocumentPreview(file, ++previewToken);
-        }
-
-        function skipOfficePreview(file, message) {
-            if (!isOfficeDocument(file)) {
-                return;
-            }
-
-            previewToken++;
-            if (previewObjectUrl) {
-                URL.revokeObjectURL(previewObjectUrl);
-                previewObjectUrl = '';
-            }
-            preview.onclick = null;
-            preview.innerHTML = `<p class="text-muted">${escapeHtml(message)}</p>`;
+            return false;
         }
 
         ['paper', 'orientation'].forEach(name => {
-            document.querySelector(`[name="${name}"]`).addEventListener('change', () => {
-                if (sharedMode) {
-                    const sizeLabel = sharedFile.size_label || '';
-                    info.textContent = `${sizeLabel}${sizeLabel ? ' · ' : ''}recalculando páginas...`;
-                    loadSharedPageCount(++pageCountToken);
-                    return;
-                }
-
-                const file = input.files[0];
-                if (file) {
-                    const ext = file.name.split('.').pop().toLowerCase();
-                    info.textContent = `${formatSize(file.size)} · recalculando páginas...`;
-                    loadPageCount(file, ++pageCountToken);
-                    if (['doc', 'docx'].includes(ext)) {
-                        previewToken++;
-                        preview.innerHTML = `<p class="text-muted">Aguardando contagem para decidir a pré-visualização...</p>`;
-                    }
-                    if (ext === 'txt') {
-                        preview.innerHTML = `<p class="text-muted">Atualizando pré-visualização em PDF...</p>`;
-                        loadDocumentPreview(file, ++previewToken);
-                    }
-                }
+            const element = document.querySelector(`[name="${name}"]`);
+            if (!element) return;
+            element.addEventListener('change', () => {
+                if (!uploadToken) return;
+                previewToken++;
+                if (previewController) previewController.abort();
+                info.textContent = `${currentFileMeta && currentFileMeta.size_label ? currentFileMeta.size_label : ''} · recalculando páginas...`;
+                renderPreviewSummary();
+                loadPageCount(++pageCountToken);
             });
+        });
+
+        ['number_up', 'scale'].forEach(name => {
+            const element = document.querySelector(`[name="${name}"]`);
+            if (!element) return;
+            element.addEventListener('change', () => {
+                renderPreviewSummary();
+                schedulePreview();
+            });
+        });
+
+        if (sidesSelect) {
+            sidesSelect.addEventListener('change', () => renderPreviewSummary());
+        }
+
+        ['scale_percent', 'page_ranges', 'page_set', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left'].forEach(name => {
+            const element = document.querySelector(`[name="${name}"]`);
+            if (!element) return;
+            const eventName = element.tagName === 'SELECT' ? 'change' : 'input';
+            element.addEventListener(eventName, () => schedulePreview(500));
         });
 
         function escapeHtml(value) {
@@ -823,10 +818,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         function renderPrinterStatus(status) {
             printerStatus = status || {};
             const notice = printerStatus.notice || '';
+            const awaitingUpload = !sharedMode && input && input.files.length > 0 && !uploadToken;
             if (!notice) {
                 printerStatusBox.classList.add('d-none');
                 if (!printingActive) {
-                    btnPrint.disabled = sharedMode && sharedPrintCompleted;
+                    btnPrint.disabled = awaitingUpload || (sharedMode && sharedPrintCompleted);
                 }
                 return;
             }
@@ -836,7 +832,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             printerStatusBox.innerHTML = `<i class="bi bi-printer"></i><span>${escapeHtml(notice)}</span>`;
             printerStatusBox.classList.remove('d-none');
             if (!printingActive) {
-                btnPrint.disabled = printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
+                btnPrint.disabled = awaitingUpload || printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
             }
         }
 
@@ -878,7 +874,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             printingActive = active;
             const text = btnPrint.querySelector('.text');
             const spinner = btnPrint.querySelector('.spinner-border');
-            btnPrint.disabled = active || printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
+            const awaitingUpload = !sharedMode && input && input.files.length > 0 && !uploadToken;
+            btnPrint.disabled = active || awaitingUpload || printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
             text.textContent = active ? 'Enviando...' : (sharedMode && sharedPrintCompleted ? 'Enviado' : (sharedMode ? 'Confirmar impressão' : 'Imprimir'));
             spinner.classList.toggle('d-none', !active);
             progress.classList.toggle('d-none', !active);
@@ -890,6 +887,10 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         // envio AJAX para exibir erros sem deixar a pagina presa carregando
         printForm.addEventListener('submit', (event) => {
             event.preventDefault();
+            if (!sharedMode && !uploadToken) {
+                showPrintResult('Aguarde o término do envio e da validação do arquivo antes de imprimir.', false);
+                return;
+            }
             if (!syncTargetUserCpf()) {
                 printForm.reportValidity();
                 return;
@@ -899,6 +900,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                 refreshPrinterStatus();
                 return;
             }
+            clearTimeout(previewDebounceTimer);
+            if (previewController) previewController.abort();
+            if (pageCountController) pageCountController.abort();
+            previewToken++;
+            pageCountToken++;
             resultBox.classList.add('d-none');
             progress.classList.remove('d-none');
             setPrintingState(true);
@@ -912,12 +918,18 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 300000);
 
+            const printData = new FormData(printForm);
+            if (uploadToken) {
+                printData.delete('arquivo');
+                printData.set('upload_token', uploadToken);
+            }
+
             fetch(printForm.action || window.location.href, {
                 method: 'POST',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest'
                 },
-                body: new FormData(printForm),
+                body: printData,
                 signal: controller.signal
             })
                 .then(async response => {
@@ -933,6 +945,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                     if (data.success) {
                         if (sharedMode) {
                             sharedPrintCompleted = true;
+                        } else {
+                            uploadToken = '';
+                            uploadTokenInput.value = '';
                         }
                         bar.style.width = '100%';
                         startPostPrintStatusWatch();
@@ -957,8 +972,12 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         });
 
         renderPrinterStatus(printerStatus);
-        if (sharedMode && sharedFile.large_document) {
-            applyLargeDocumentLayout(sharedFile);
+        if (sharedMode && uploadToken) {
+            currentPageData = sharedFile;
+            currentPageAdvice = sharedFile.page_advice || '';
+            if (sharedFile.large_document) applyLargeDocumentLayout(sharedFile);
+            renderPreviewSummary();
+            schedulePreview(0);
         }
         refreshPrinterStatus();
         setInterval(refreshPrinterStatus, 30000);

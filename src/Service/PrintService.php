@@ -261,6 +261,273 @@ class PrintService
         return null;
     }
 
+    public function previewPlan($totalPages, $numberUp, $maxSheets, $extraOptions = [])
+    {
+        $totalPages = max(1, (int) $totalPages);
+        $numberUp = in_array((int) $numberUp, [1, 2, 4, 8], true) ? (int) $numberUp : 1;
+        $maxSheets = max(1, min(10, (int) $maxSheets));
+        $selectedPages = $this->selectedPdfPages($totalPages, $extraOptions);
+        if (empty($selectedPages)) {
+            throw new RuntimeException('A seleção informada não contém páginas do documento.');
+        }
+
+        $previewPages = array_slice($selectedPages, 0, $maxSheets * $numberUp);
+        $totalSheets = (int) ceil(count($selectedPages) / $numberUp);
+        $previewSheets = (int) ceil(count($previewPages) / $numberUp);
+
+        return [
+            'document_pages' => $totalPages,
+            'selected_pages' => $selectedPages,
+            'selected_page_count' => count($selectedPages),
+            'preview_pages' => $previewPages,
+            'preview_page_count' => count($previewPages),
+            'number_up' => $numberUp,
+            'total_sheets' => $totalSheets,
+            'preview_sheets' => $previewSheets,
+            'additional_sheets' => max(0, $totalSheets - $previewSheets),
+        ];
+    }
+
+    public function generatePreviewPdf($pdfFile, $targetFile, $totalPages, $numberUp, $paper, $orientation, $extraOptions = [])
+    {
+        if (!is_file($pdfFile) || strtolower(pathinfo($pdfFile, PATHINFO_EXTENSION)) !== 'pdf') {
+            throw new RuntimeException('PDF de origem da pré-visualização não encontrado.');
+        }
+
+        $maxSheets = max(1, (int) ($_ENV['PRINT_PREVIEW_MAX_SHEETS'] ?? 3));
+        $timeoutSeconds = max(5, (int) ($_ENV['PRINT_PREVIEW_TIMEOUT_SECONDS'] ?? 30));
+        $deadline = microtime(true) + $timeoutSeconds;
+        $plan = $this->previewPlan($totalPages, $numberUp, $maxSheets, $extraOptions);
+        $workspace = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR . 'print_preview_' . bin2hex(random_bytes(10));
+        if (!mkdir($workspace, 0700, true)) {
+            throw new RuntimeException('Não foi possível preparar a área temporária da pré-visualização.');
+        }
+
+        $samplePdf = $pdfFile;
+        try {
+            if (count($plan['preview_pages']) < (int) $totalPages
+                || $plan['preview_pages'] !== range(1, (int) $totalPages)) {
+                $samplePdf = $workspace . DIRECTORY_SEPARATOR . 'sample.pdf';
+                $this->extractPreviewPages($pdfFile, $samplePdf, $plan['preview_pages'], $timeoutSeconds, $workspace);
+            }
+
+            $cupsfilter = $this->findExecutable([
+                $_ENV['CUPSFILTER_PATH'] ?? null,
+                '/usr/sbin/cupsfilter',
+                '/usr/bin/cupsfilter',
+                'cupsfilter',
+            ]);
+            if ($cupsfilter === null) {
+                throw new RuntimeException('Ferramenta cupsfilter não encontrada no servidor.');
+            }
+
+            $command = [
+                $cupsfilter,
+                '-m', 'application/pdf',
+            ];
+            if ($this->printerName !== '') {
+                $command[] = '-d';
+                $command[] = $this->printerName;
+            }
+            array_push(
+                $command,
+                '-o', 'number-up=' . $plan['number_up'],
+                '-o', 'number-up-layout=lrtb',
+                '-o', 'media=' . ($paper === 'Letter' ? 'Letter' : 'A4')
+            );
+            if ($orientation === 'portrait' || $orientation === 'landscape') {
+                $command[] = '-o';
+                $command[] = 'orientation-requested=' . ($orientation === 'landscape' ? '4' : '3');
+            }
+            foreach ($this->cupsExtraOptions($extraOptions) as $key => $value) {
+                if (in_array($key, ['page-ranges', 'page-set', 'media'], true)) {
+                    continue;
+                }
+                $command[] = '-o';
+                $command[] = $key . '=' . $value;
+            }
+            $command[] = $samplePdf;
+
+            $remaining = (int) ceil($deadline - microtime(true));
+            if ($remaining < 1) {
+                throw new RuntimeException('A pré-visualização está demorando mais que o esperado.');
+            }
+            $result = $this->runCommandWithTimeout($command, $remaining, $targetFile);
+            if ($result['timed_out']) {
+                throw new RuntimeException('A pré-visualização está demorando mais que o esperado.');
+            }
+            if ($result['exit_code'] !== 0 || !is_file($targetFile) || filesize($targetFile) < 1) {
+                $this->log('cupsfilter preview falhou: status=' . $result['exit_code'] . ' | ' . $result['stderr']);
+                throw new RuntimeException('Não foi possível montar a pré-visualização da impressão.');
+            }
+
+            $renderedPages = $this->countPdfPages($targetFile);
+            if ($renderedPages > 0 && $renderedPages !== $plan['preview_sheets']) {
+                @unlink($targetFile);
+                $this->log('cupsfilter preview retornou quantidade inesperada: esperado=' . $plan['preview_sheets'] . ' obtido=' . $renderedPages);
+                throw new RuntimeException('A ferramenta de pré-visualização não aplicou a composição solicitada.');
+            }
+
+            return $plan;
+        } finally {
+            $this->removePreviewDirectory($workspace);
+        }
+    }
+
+    private function extractPreviewPages($source, $target, $pages, $timeoutSeconds, $workspace)
+    {
+        $deadline = microtime(true) + max(1, (int) $timeoutSeconds);
+        $ranges = $this->compactPageRanges($pages);
+        $qpdf = $this->findExecutable([$_ENV['QPDF_PATH'] ?? null, '/usr/bin/qpdf', 'qpdf']);
+        if ($qpdf !== null) {
+            $remaining = max(1, (int) ceil($deadline - microtime(true)));
+            $result = $this->runCommandWithTimeout([
+                $qpdf, '--empty', '--pages', $source, $ranges, '--', $target,
+            ], $remaining);
+            if (!$result['timed_out'] && $result['exit_code'] === 0 && is_file($target)) {
+                return;
+            }
+            if ($result['timed_out']) {
+                throw new RuntimeException('A pré-visualização está demorando mais que o esperado.');
+            }
+            @unlink($target);
+        }
+
+        $gs = $this->findExecutable([$_ENV['GHOSTSCRIPT_PATH'] ?? null, '/usr/bin/gs', 'gs']);
+        if ($gs !== null) {
+            $remaining = (int) ceil($deadline - microtime(true));
+            if ($remaining < 1) {
+                throw new RuntimeException('A pré-visualização está demorando mais que o esperado.');
+            }
+            $result = $this->runCommandWithTimeout([
+                $gs, '-q', '-dNOPAUSE', '-dBATCH', '-dSAFER', '-sDEVICE=pdfwrite',
+                '-sPageList=' . $ranges, '-sOutputFile=' . $target, $source,
+            ], $remaining);
+            if (!$result['timed_out'] && $result['exit_code'] === 0 && is_file($target)) {
+                return;
+            }
+            if ($result['timed_out']) {
+                throw new RuntimeException('A pré-visualização está demorando mais que o esperado.');
+            }
+            @unlink($target);
+        }
+
+        $pdfseparate = $this->findExecutable([$_ENV['PDFSEPARATE_PATH'] ?? null, '/usr/bin/pdfseparate', 'pdfseparate']);
+        $pdfunite = $this->findExecutable([$_ENV['PDFUNITE_PATH'] ?? null, '/usr/bin/pdfunite', 'pdfunite']);
+        if ($pdfseparate !== null && $pdfunite !== null) {
+            $parts = [];
+            foreach (array_values($pages) as $index => $page) {
+                $remaining = (int) ceil($deadline - microtime(true));
+                if ($remaining < 1) {
+                    throw new RuntimeException('A pré-visualização está demorando mais que o esperado.');
+                }
+                $pattern = $workspace . DIRECTORY_SEPARATOR . 'page-' . ($index + 1) . '-%d.pdf';
+                $part = $workspace . DIRECTORY_SEPARATOR . 'page-' . ($index + 1) . '-' . $page . '.pdf';
+                $result = $this->runCommandWithTimeout([
+                    $pdfseparate, '-f', (string) $page, '-l', (string) $page, $source, $pattern,
+                ], $remaining);
+                if ($result['timed_out'] || $result['exit_code'] !== 0 || !is_file($part)) {
+                    if ($result['timed_out']) {
+                        throw new RuntimeException('A pré-visualização está demorando mais que o esperado.');
+                    }
+                    $parts = [];
+                    break;
+                }
+                $parts[] = $part;
+            }
+
+            if (!empty($parts)) {
+                $remaining = (int) ceil($deadline - microtime(true));
+                if ($remaining < 1) {
+                    throw new RuntimeException('A pré-visualização está demorando mais que o esperado.');
+                }
+                $result = $this->runCommandWithTimeout(array_merge([$pdfunite], $parts, [$target]), $remaining);
+                if (!$result['timed_out'] && $result['exit_code'] === 0 && is_file($target)) {
+                    return;
+                }
+            }
+            @unlink($target);
+        }
+
+        throw new RuntimeException('Não foi possível separar as páginas da amostra. Instale qpdf, Ghostscript ou poppler-utils.');
+    }
+
+    private function runCommandWithTimeout($command, $timeoutSeconds, $stdoutFile = null)
+    {
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => $stdoutFile !== null ? ['file', $stdoutFile, 'wb'] : ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        $process = @proc_open($command, $descriptors, $pipes);
+        if (!is_resource($process)) {
+            return ['exit_code' => 127, 'timed_out' => false, 'stdout' => '', 'stderr' => 'processo não iniciado'];
+        }
+
+        fclose($pipes[0]);
+        if ($stdoutFile === null) {
+            stream_set_blocking($pipes[1], false);
+        }
+        stream_set_blocking($pipes[2], false);
+        $stdout = '';
+        $stderr = '';
+        $deadline = microtime(true) + max(1, (int) $timeoutSeconds);
+        $timedOut = false;
+        $lastStatus = null;
+
+        do {
+            $lastStatus = proc_get_status($process);
+            if ($stdoutFile === null) {
+                $stdout .= (string) stream_get_contents($pipes[1]);
+            }
+            $stderr .= (string) stream_get_contents($pipes[2]);
+            if (!$lastStatus['running']) {
+                break;
+            }
+            if (microtime(true) >= $deadline) {
+                $timedOut = true;
+                proc_terminate($process);
+                break;
+            }
+            usleep(100000);
+        } while (true);
+
+        if ($stdoutFile === null) {
+            $stdout .= (string) stream_get_contents($pipes[1]);
+            fclose($pipes[1]);
+        }
+        $stderr .= (string) stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+        $closedCode = proc_close($process);
+        $exitCode = is_array($lastStatus) && isset($lastStatus['exitcode']) && $lastStatus['exitcode'] >= 0
+            ? (int) $lastStatus['exitcode']
+            : (int) $closedCode;
+
+        return [
+            'exit_code' => $timedOut ? 124 : $exitCode,
+            'timed_out' => $timedOut,
+            'stdout' => substr($stdout, 0, 4000),
+            'stderr' => substr($stderr, 0, 4000),
+        ];
+    }
+
+    private function removePreviewDirectory($dir)
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($iterator as $item) {
+            $item->isDir() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
+        }
+        @rmdir($dir);
+    }
+
     private function printCups($filePath, $copies, $sides, $orientation, $quality, $numberUp, $extraOptions, $sourceExt = '')
     {
         if (in_array($sourceExt, ['jpg', 'jpeg', 'png', 'webp'], true)) {

@@ -149,7 +149,11 @@ $config = is_file($projectRoot . '/config/config.php')
 $_ENV['PRINTER_NAME'] = $_ENV['PRINTER_NAME'] ?? ($config['printer_name'] ?? '');
 $_ENV['UPLOAD_PATH'] = $_ENV['UPLOAD_PATH'] ?? ($config['upload_path'] ?? ($projectRoot . '/storage/uploads/'));
 $_ENV['SHARE_TARGET_PATH'] = $_ENV['SHARE_TARGET_PATH'] ?? ($config['share_target_path'] ?? ($projectRoot . '/storage/share-target/'));
-$_ENV['MAX_UPLOAD_BYTES'] = $_ENV['MAX_UPLOAD_BYTES'] ?? (string) ($config['max_upload_bytes'] ?? (20 * 1024 * 1024));
+$_ENV['PRINT_TEMP_PATH'] = $_ENV['PRINT_TEMP_PATH'] ?? ($config['print_temp_path'] ?? ($projectRoot . '/storage/print-temp/'));
+$_ENV['MAX_UPLOAD_BYTES'] = $_ENV['MAX_UPLOAD_BYTES'] ?? (string) ($config['max_upload_bytes'] ?? (100 * 1024 * 1024));
+$_ENV['PRINT_PREVIEW_MAX_SHEETS'] = $_ENV['PRINT_PREVIEW_MAX_SHEETS'] ?? (string) ($config['print_preview_max_sheets'] ?? 3);
+$_ENV['PRINT_PREVIEW_TTL_SECONDS'] = $_ENV['PRINT_PREVIEW_TTL_SECONDS'] ?? (string) ($config['print_preview_ttl_seconds'] ?? 1800);
+$_ENV['PRINT_PREVIEW_TIMEOUT_SECONDS'] = $_ENV['PRINT_PREVIEW_TIMEOUT_SECONDS'] ?? (string) ($config['print_preview_timeout_seconds'] ?? 30);
 $_ENV['LOG_PATH'] = $_ENV['LOG_PATH'] ?? ($config['log_path'] ?? ($projectRoot . '/storage/logs/app.log'));
 $_ENV['APP_TIMEZONE'] = $_ENV['APP_TIMEZONE'] ?? ($config['app_timezone'] ?? 'America/Cuiaba');
 @date_default_timezone_set($_ENV['APP_TIMEZONE']);
@@ -200,6 +204,11 @@ if ($uploadDir && !is_dir($uploadDir)) {
 $shareTargetDir = rtrim((string) ($_ENV['SHARE_TARGET_PATH'] ?? ''), '/');
 if ($shareTargetDir && !is_dir($shareTargetDir)) {
     @mkdir($shareTargetDir, 0775, true);
+}
+
+$printTempDir = rtrim((string) ($_ENV['PRINT_TEMP_PATH'] ?? ''), '/');
+if ($printTempDir && !is_dir($printTempDir)) {
+    @mkdir($printTempDir, 0700, true);
 }
 
 $logPath = (string) ($_ENV['LOG_PATH'] ?? '');
@@ -324,6 +333,11 @@ if (!isset($_SESSION['user'])) {
 
 if ($uri === '/print/page-count') {
     (new PrintController())->pageCount();
+    exit;
+}
+
+if ($uri === '/print/upload') {
+    (new PrintController())->uploadTemporary();
     exit;
 }
 

@@ -5,4 +5,5 @@ storage/sessions/
 storage/logs/
 storage/uploads/
 storage/share-target/
+storage/print-temp/
 storage/print-debug/

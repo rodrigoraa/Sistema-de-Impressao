@@ -2,7 +2,7 @@
 
 ## Requisitos
 - PHP 8+ com extensão `sqlite3` habilitada
-- Linux: `lp`/CUPS, `libreoffice`, fontes compatíveis com Microsoft Office e ImageMagick recomendado para imagens/PNG
+- Linux: `lp`/CUPS com `cupsfilter`, `libreoffice`, fontes compatíveis com Microsoft Office e ImageMagick recomendado para imagens/PNG
 - Windows: SumatraPDF para enviar PDFs à impressora e LibreOffice para DOC/DOCX
 - Permissão de escrita em `storage/`
 
@@ -21,7 +21,12 @@ Você pode configurar via `config/config.php` ou criando um arquivo `.env` na ra
 PRINTER_NAME=kyocera-escola
 UPLOAD_PATH=/var/www/impressao/storage/uploads
 SHARE_TARGET_PATH=/var/www/impressao/storage/share-target
-MAX_UPLOAD_BYTES=20971520
+PRINT_TEMP_PATH=/var/www/impressao/storage/print-temp
+MAX_UPLOAD_BYTES=104857600
+PRINT_PREVIEW_MAX_SHEETS=3
+PRINT_PREVIEW_TTL_SECONDS=1800
+PRINT_PREVIEW_TIMEOUT_SECONDS=30
+CUPSFILTER_PATH=/usr/sbin/cupsfilter
 LOG_PATH=/var/www/impressao/storage/logs/app.log
 APP_TIMEZONE=America/Cuiaba
 LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
@@ -31,6 +36,35 @@ PRINT_JOB_WAIT_FOR_COMPLETION=0
 PRINT_JOB_WAIT_SECONDS=120
 PRINT_JOB_AFTER_QUEUE_MONITOR_SECONDS=45
 PRINT_JOB_IDLE_CONFIRM_SECONDS=6
+```
+
+## Pré-visualização fiel da impressão
+
+O arquivo é enviado uma única vez para uma pasta temporária fora de `public/`. O navegador recebe somente um token aleatório associado ao usuário e à sessão; contagem de páginas, mudanças de configuração e prévias seguintes usam esse token, sem reenviar o arquivo completo. O token não contém caminho de arquivo e expira por padrão em 30 minutos.
+
+A prévia é um PDF de amostra montado pela pilha de filtros do CUPS com a mesma ordem `number-up-layout=lrtb` usada pela impressão. Ela respeita 1, 2, 4 ou 8 páginas por folha e processa, por padrão, no máximo as primeiras 3 folhas. Seleções como `1,3-5` são aplicadas antes do N-up. A interface informa páginas do documento, lados impressos por cópia e quantas folhas da amostra estão visíveis.
+
+DOC/DOCX, TXT e imagens reutilizam o PDF convertido enquanto papel, orientação e margens de conversão permanecerem iguais. Os arquivos ficam em `PRINT_TEMP_PATH`, possuem nomes imprevisíveis, são removidos após a impressão ou por TTL e também podem ser limpos no painel administrativo. Nenhum arquivo temporário fica em sessão ou em diretório público.
+
+A prévia é assíncrona e não altera o documento da impressão física. A impressão continua enviando o PDF preparado ao CUPS e aplicando `number-up` somente no comando `lp`; portanto não há dupla aplicação de N-up. Se a prévia falhar ou atingir o timeout, o usuário recebe um aviso amigável e ainda pode imprimir depois que upload e validações obrigatórias terminarem.
+
+Não foi introduzida biblioteca ou framework novo. `cupsfilter` pertence ao pacote `cups`, que já é requisito do servidor. Para limitar PDFs grandes às páginas da amostra, o sistema usa o primeiro mecanismo disponível entre `qpdf`, Ghostscript e `pdfseparate`/`pdfunite` do Poppler.
+
+Verificação recomendada no Ubuntu:
+
+```bash
+command -v lp cupsfilter libreoffice pdfinfo pdfseparate pdfunite
+command -v qpdf || command -v gs
+sudo apt update
+sudo apt install cups libreoffice poppler-utils qpdf
+sudo install -d -o www-data -g www-data -m 0700 /var/www/impressao/storage/print-temp
+```
+
+`qpdf` pode ser substituído por `ghostscript`; não é necessário instalar ambos. Depois do deploy, valide uma amostra sem enviar trabalho físico:
+
+```bash
+sudo -u www-data /usr/sbin/cupsfilter -m application/pdf -d kyocera-escola -o number-up=2 -o number-up-layout=lrtb arquivo-teste.pdf > /tmp/preview-teste.pdf
+pdfinfo /tmp/preview-teste.pdf
 ```
 
 ## Compartilhar arquivos direto do WhatsApp, iPhone e Android
@@ -155,6 +189,9 @@ systemctl list-timers impressao-printer-health.timer
 ## Simulações locais
 ```bash
 php tests/print_diagnostics_simulation.php
+php tests/security_regression.php
+php tests/print_preview_regression.php
+php tests/temporary_print_storage_regression.php
 ```
 
 ## Limite de envio no nginx/PHP
@@ -162,7 +199,7 @@ Se aparecer `413 Request Entity Too Large`, o nginx bloqueou o arquivo antes de 
 
 ```nginx
 server {
-    client_max_body_size 25M;
+    client_max_body_size 110M;
 }
 ```
 
@@ -173,19 +210,19 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-O PHP também precisa permitir tamanho maior que o limite interno do sistema. O projeto limita o envio a 20 MB em `MAX_UPLOAD_BYTES`, então deixe o PHP acima disso:
+O PHP também precisa permitir tamanho maior que o limite interno do sistema. O projeto limita o envio a 100 MB em `MAX_UPLOAD_BYTES`, então deixe o PHP um pouco acima disso:
 
 ```ini
-upload_max_filesize = 25M
-post_max_size = 30M
-max_input_time = 120
+upload_max_filesize = 105M
+post_max_size = 110M
+max_input_time = 300
 memory_limit = 256M
 ```
 
 O arquivo `public/.user.ini` já traz esses valores para servidores com PHP-FPM/CGI que leem `.user.ini`. Em alguns servidores é preciso ajustar o `php.ini` ou o pool do PHP-FPM e reiniciar o serviço:
 
 ```bash
-sudo systemctl restart php8.2-fpm
+sudo systemctl restart php8.3-fpm
 sudo systemctl reload nginx
 ```
 

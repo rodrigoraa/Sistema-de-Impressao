@@ -102,6 +102,25 @@
     background: #fff;
 }
 
+.preview-summary {
+    padding: 12px 14px;
+    border: 1px solid var(--app-line);
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.preview-loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 72px;
+    padding: 16px;
+    color: #64748b;
+    border: 1px dashed var(--app-line);
+    border-radius: 8px;
+    background: #fff;
+}
+
 .info-panel {
     position: sticky;
     top: 18px;

@@ -5,6 +5,7 @@ require_once __DIR__ . '/../Service/QuotaService.php';
 require_once __DIR__ . '/../Service/Database.php';
 require_once __DIR__ . '/../Service/PrintJobService.php';
 require_once __DIR__ . '/../Service/CupsService.php';
+require_once __DIR__ . '/../Service/TemporaryPrintFileService.php';
 
 class UploadValidationException extends RuntimeException
 {
@@ -25,7 +26,7 @@ class UploadValidationException extends RuntimeException
 class PrintController
 {
     private $allowedExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'webp', 'txt'];
-    private $maxUploadBytes = 20 * 1024 * 1024;
+    private $maxUploadBytes = 100 * 1024 * 1024;
 
     public function allowedExtensions()
     {
@@ -344,6 +345,37 @@ class PrintController
         $user = $this->resolvePrintUser($isAdmin, $userList);
         $jobService = new PrintJobService();
 
+        $uploadToken = trim((string) ($_POST['upload_token'] ?? ''));
+        if ($uploadToken !== '') {
+            try {
+                $temporary = new TemporaryPrintFileService();
+                $entry = $temporary->entry($uploadToken);
+                $orientation = $this->normalizeOrientation($_POST['orientation'] ?? 'auto');
+                $paper = $this->normalizedPaper($_POST['paper'] ?? 'A4');
+                $extraOptions = $this->requestExtraOptions();
+                $preparedHint = $temporary->existingPreparedPdf($uploadToken, $orientation, $paper, $extraOptions);
+                $dest = $this->targetPathForOriginalName($_ENV['UPLOAD_PATH'] ?? '', $entry['original_name']);
+                $temporary->moveSourceTo($uploadToken, $dest);
+                register_shutdown_function(static function () use ($temporary, $uploadToken) {
+                    $temporary->destroy($uploadToken);
+                });
+                $this->processSavedFile(
+                    $dest,
+                    $entry['original_name'],
+                    $entry['extension'],
+                    (int) $entry['size'],
+                    (string) $entry['mime_type'],
+                    $user,
+                    $jobService,
+                    $preparedHint
+                );
+                return $context;
+            } catch (Throwable $e) {
+                $this->registerFailedAttempt($jobService, $user, 'arquivo_temporario', $e->getMessage());
+                $this->fail('O arquivo temporário expirou ou não está mais disponível. Selecione-o novamente.');
+            }
+        }
+
         try {
             $fileInfo = $this->storeUploadedFile($_FILES['arquivo'] ?? null, $_ENV['UPLOAD_PATH'] ?? '');
         } catch (UploadValidationException $e) {
@@ -385,10 +417,28 @@ class PrintController
         $userList = $context['userList'] ?? [];
         $isAdmin = (($_SESSION['role'] ?? '') === 'admin');
         $user = $this->resolvePrintUser($isAdmin, $userList);
-        $this->processSavedFile($dest, $origName, $ext, $size, $mimeType, $user, new PrintJobService());
+        $preparedHint = null;
+        $uploadToken = trim((string) ($_POST['upload_token'] ?? ''));
+        if ($uploadToken !== '') {
+            try {
+                $temporary = new TemporaryPrintFileService();
+                $preparedHint = $temporary->existingPreparedPdf(
+                    $uploadToken,
+                    $this->normalizeOrientation($_POST['orientation'] ?? 'auto'),
+                    $this->normalizedPaper($_POST['paper'] ?? 'A4'),
+                    $this->requestExtraOptions()
+                );
+                register_shutdown_function(static function () use ($temporary, $uploadToken) {
+                    $temporary->destroy($uploadToken);
+                });
+            } catch (Throwable $e) {
+                $preparedHint = null;
+            }
+        }
+        $this->processSavedFile($dest, $origName, $ext, $size, $mimeType, $user, new PrintJobService(), $preparedHint);
     }
 
-    private function processSavedFile($dest, $origName, $ext, $size, $mimeType, $user, $jobService)
+    private function processSavedFile($dest, $origName, $ext, $size, $mimeType, $user, $jobService, $preparedFileHint = null)
     {
 
         // Parâmetros de impressão vindos do formulário
@@ -402,45 +452,7 @@ class PrintController
             $numberUp = 1;
         }
 
-        // Coleta opções extras (opt_*)
-        $extraOptions = [];
-        foreach ($_POST as $key => $val) {
-            if (strpos($key, 'opt_') === 0) {
-                $optKey = substr($key, 4);
-                $extraOptions[$optKey] = $val;
-            }
-        }
-        if (!empty($_POST['paper'])) {
-            $extraOptions['media'] = $_POST['paper'];
-        }
-        if (!empty($_POST['scale'])) {
-            if ($_POST['scale'] === 'fit') {
-                $extraOptions['fit-to-page'] = 'true';
-            } elseif ($_POST['scale'] === 'custom') {
-                $scalePercent = (int) ($_POST['scale_percent'] ?? 100);
-                if ($scalePercent >= 10 && $scalePercent <= 400) {
-                    $extraOptions['scaling'] = (string) $scalePercent;
-                }
-            } elseif (is_numeric($_POST['scale'])) {
-                $scalePercent = (int) $_POST['scale'];
-                if ($scalePercent >= 10 && $scalePercent <= 400) {
-                    $extraOptions['scaling'] = (string) $scalePercent;
-                }
-            }
-        }
-        if (!empty($_POST['page_ranges']) && $this->isValidPageRanges($_POST['page_ranges'])) {
-            $extraOptions['page-ranges'] = preg_replace('/\s+/', '', $_POST['page_ranges']);
-        }
-        if (in_array($_POST['page_set'] ?? '', ['odd', 'even'], true)) {
-            $extraOptions['page-set'] = $_POST['page_set'];
-        }
-        foreach (['top', 'right', 'bottom', 'left'] as $side) {
-            $field = 'margin_' . $side;
-            if (isset($_POST[$field]) && $_POST[$field] !== '' && is_numeric($_POST[$field])) {
-                $mm = max(0, min(100, (float) $_POST[$field]));
-                $extraOptions['page-' . $side] = (string) (int) round($mm * 72 / 25.4);
-            }
-        }
+        $extraOptions = $this->requestExtraOptions();
 
         // Prepara, conta paginas e envia para impressao usando o mesmo arquivo convertido.
         $sourceExt = strtolower(pathinfo($dest, PATHINFO_EXTENSION));
@@ -471,7 +483,9 @@ class PrintController
         $printedPagesLabel = '';
         try {
             $originalPages = $sourceExt === 'docx' ? PageCounter::countDocxPages($dest) : 0;
-            $printedFile = $printer->prepareFile($dest, $orientation, $paper, $extraOptions);
+            $printedFile = is_string($preparedFileHint) && is_file($preparedFileHint)
+                ? $preparedFileHint
+                : $printer->prepareFile($dest, $orientation, $paper, $extraOptions);
             $convertedPages = PageCounter::count($printedFile);
             $pages = $convertedPages;
             if ($pages < 1) {
@@ -567,6 +581,102 @@ class PrintController
         }
     }
 
+    public function uploadTemporary()
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            session_start();
+        }
+        if (!isset($_SESSION['user'])) {
+            $this->respond('Sessão expirada. Faça login novamente.', false);
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->respond('Método inválido', false);
+        }
+        $this->validateCsrfOrFail();
+
+        $temporary = new TemporaryPrintFileService();
+        try {
+            $temporary->cleanupExpired();
+            $fileInfo = $this->validateUploadFile($_FILES['arquivo'] ?? null);
+            $entry = $temporary->createFromUpload($fileInfo);
+            $pageInfo = $this->temporaryPageInfo(
+                $entry['token'],
+                $_POST['paper'] ?? 'A4',
+                $_POST['orientation'] ?? 'auto',
+                $this->requestExtraOptions()
+            );
+            $this->respond('Arquivo recebido e validado.', true, array_merge($pageInfo, [
+                'upload_token' => $entry['token'],
+                'original_name' => $entry['original_name'],
+                'extension' => $entry['extension'],
+                'size' => (int) $entry['size'],
+                'expires_in' => max(60, (int) ($_ENV['PRINT_PREVIEW_TTL_SECONDS'] ?? 1800)),
+            ]));
+        } catch (UploadValidationException $e) {
+            $this->respond($e->getMessage(), false);
+        } catch (Throwable $e) {
+            $this->logUploadFailure('Falha no upload temporário: ' . $e->getMessage());
+            $this->respond('Não foi possível preparar o arquivo. Tente selecioná-lo novamente.', false);
+        }
+    }
+
+    public function createTemporaryCopyForSavedFile($filePath, $originalName, $extension, $size, $mimeType)
+    {
+        $temporary = new TemporaryPrintFileService();
+        $temporary->cleanupExpired();
+
+        return $temporary->createFromExisting($filePath, [
+            'original_name' => $originalName,
+            'extension' => $extension,
+            'size' => (int) $size,
+            'mime_type' => $mimeType,
+        ]);
+    }
+
+    public function destroyTemporaryUpload($token)
+    {
+        (new TemporaryPrintFileService())->destroy((string) $token);
+    }
+
+    public function temporaryPageInfo($token, $paper = 'A4', $orientation = 'auto', $extraOptions = [])
+    {
+        $temporary = new TemporaryPrintFileService();
+        $entry = $temporary->entry((string) $token);
+        $paper = $this->normalizedPaper($paper);
+        $orientation = $this->normalizeOrientation($orientation);
+        $printer = new PrintService();
+        $preparationOrientation = $this->preparationOrientation($printer, $entry['source_path'], $entry['extension'], $orientation);
+        if (in_array($entry['extension'], ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            return [
+                'pages' => 1,
+                'original_pages' => 0,
+                'converted_pages' => 1,
+                'warning' => '',
+                'large_document' => false,
+                'advice' => '',
+                'resolved_orientation' => $preparationOrientation,
+            ];
+        }
+        $originalPages = $entry['extension'] === 'docx' ? PageCounter::countDocxPages($entry['source_path']) : 0;
+        $preparedFile = $temporary->preparedPdf((string) $token, $preparationOrientation, $paper, is_array($extraOptions) ? $extraOptions : []);
+        $convertedPages = PageCounter::count($preparedFile);
+        $pages = $convertedPages > 0 ? $convertedPages : ($originalPages > 0 ? $originalPages : 1);
+        $warning = '';
+        if ($originalPages > 0 && $convertedPages > $originalPages) {
+            $warning = "O DOCX declara {$originalPages} " . ($originalPages === 1 ? 'página' : 'páginas') . ", mas a conversão gerou {$convertedPages}.";
+        }
+
+        return [
+            'pages' => $pages,
+            'original_pages' => $originalPages,
+            'converted_pages' => $convertedPages,
+            'warning' => $warning,
+            'large_document' => $this->isLargeDocument($pages),
+            'advice' => $this->largeDocumentAdvice($pages),
+            'resolved_orientation' => $preparationOrientation,
+        ];
+    }
+
     public function pageCount()
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -581,6 +691,22 @@ class PrintController
             $this->respond('Método inválido', false);
         }
         $this->validateCsrfOrFail();
+
+        $uploadToken = trim((string) ($_POST['upload_token'] ?? ''));
+        if ($uploadToken !== '') {
+            try {
+                $info = $this->temporaryPageInfo(
+                    $uploadToken,
+                    $_POST['paper'] ?? 'A4',
+                    $_POST['orientation'] ?? 'auto',
+                    $this->requestExtraOptions()
+                );
+                $pages = (int) ($info['pages'] ?? 1);
+                $this->respond("Documento com {$pages} " . ($pages === 1 ? 'página' : 'páginas'), true, $info);
+            } catch (Throwable $e) {
+                $this->respond('Não foi possível contar as páginas do arquivo temporário.', false);
+            }
+        }
 
         if (!isset($_FILES['arquivo']) || ($_FILES['arquivo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             $this->respond('Arquivo não enviado. Verifique upload_max_filesize e post_max_size no servidor.', false);
@@ -674,68 +800,88 @@ class PrintController
 
         $this->validateCsrfOrFail();
 
-        if (!isset($_FILES['arquivo']) || ($_FILES['arquivo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            http_response_code(400);
-            exit('Arquivo não enviado. Verifique upload_max_filesize e post_max_size no servidor.');
-        }
-
-        $file = $_FILES['arquivo'];
-        $ext = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
-        if (!in_array($ext, ['pdf', 'doc', 'docx', 'txt'], true)) {
-            http_response_code(400);
-            exit('Pré-visualização disponível apenas para PDF, DOC, DOCX e TXT.');
-        }
-
-        $size = intval($file['size'] ?? 0);
-        if ($size < 1 || $size > $this->maxUploadBytes()) {
-            http_response_code(400);
-            exit('Arquivo inválido ou acima de ' . $this->maxUploadMegabytes() . 'MB.');
-        }
-
-        if (!$this->hasAllowedMimeType($file['tmp_name'], $ext)) {
-            http_response_code(400);
-            exit('Formato de arquivo não reconhecido para pré-visualização.');
-        }
-
-        $tempFile = tempnam(sys_get_temp_dir(), 'preview_') . '.' . $ext;
-        if (!move_uploaded_file($file['tmp_name'], $tempFile)) {
-            http_response_code(500);
-            exit('Erro ao preparar arquivo para pré-visualização.');
-        }
-
-        $previewFile = $tempFile;
+        $temporary = new TemporaryPrintFileService();
+        $ephemeralToken = '';
         try {
-            if (in_array($ext, ['doc', 'docx', 'txt'], true)) {
-                $printer = new PrintService();
-                $paper = $_POST['paper'] ?? 'A4';
-                $orientation = $this->normalizeOrientation($_POST['orientation'] ?? 'auto');
-                $extraOptions = [];
-                foreach (['top', 'right', 'bottom', 'left'] as $side) {
-                    $field = 'margin_' . $side;
-                    if (isset($_POST[$field]) && $_POST[$field] !== '' && is_numeric($_POST[$field])) {
-                        $mm = max(0, min(100, (float) $_POST[$field]));
-                        $extraOptions['page-' . $side] = (string) (int) round($mm * 72 / 25.4);
-                    }
-                }
-                $previewFile = $printer->prepareFile($tempFile, $orientation, $paper, $extraOptions);
+            $uploadToken = trim((string) ($_POST['upload_token'] ?? ''));
+            if ($uploadToken === '') {
+                $fileInfo = $this->validateUploadFile($_FILES['arquivo'] ?? null);
+                $created = $temporary->createFromUpload($fileInfo);
+                $uploadToken = $created['token'];
+                $ephemeralToken = $uploadToken;
             }
 
-            if (!is_file($previewFile)) {
-                throw new RuntimeException('PDF de pré-visualização não foi gerado.');
+            $entry = $temporary->entry($uploadToken);
+            $paper = $this->normalizedPaper($_POST['paper'] ?? 'A4');
+            $orientation = $this->normalizeOrientation($_POST['orientation'] ?? 'auto');
+            $numberUp = (int) ($_POST['number_up'] ?? 1);
+            $numberUp = in_array($numberUp, [1, 2, 4, 8], true) ? $numberUp : 1;
+            $extraOptions = $this->requestExtraOptions();
+            $printer = new PrintService();
+            $preparationOrientation = $this->preparationOrientation($printer, $entry['source_path'], $entry['extension'], $orientation);
+            $preparedFile = $temporary->preparedPdf($uploadToken, $preparationOrientation, $paper, $extraOptions);
+            $totalPages = PageCounter::count($preparedFile);
+            if ($totalPages < 1) {
+                $totalPages = 1;
             }
+
+            $cacheParameters = [
+                'paper' => $paper,
+                'orientation' => $orientation,
+                'resolved_orientation' => $preparationOrientation,
+                'number_up' => $numberUp,
+                'options' => $extraOptions,
+                'max_sheets' => max(1, (int) ($_ENV['PRINT_PREVIEW_MAX_SHEETS'] ?? 3)),
+            ];
+            $previewFile = $temporary->previewCachePath($uploadToken, $cacheParameters);
+            $plan = $printer->previewPlan(
+                $totalPages,
+                $numberUp,
+                max(1, (int) ($_ENV['PRINT_PREVIEW_MAX_SHEETS'] ?? 3)),
+                $extraOptions
+            );
+            if (!is_file($previewFile) || filesize($previewFile) < 1) {
+                $buildingFile = $previewFile . '.building-' . bin2hex(random_bytes(6)) . '.pdf';
+                try {
+                    $plan = $printer->generatePreviewPdf(
+                        $preparedFile,
+                        $buildingFile,
+                        $totalPages,
+                        $numberUp,
+                        $paper,
+                        $orientation,
+                        $extraOptions
+                    );
+                    if (!@rename($buildingFile, $previewFile)) {
+                        throw new RuntimeException('Não foi possível finalizar o cache da pré-visualização.');
+                    }
+                } finally {
+                    @unlink($buildingFile);
+                }
+            }
+
+            header('X-Preview-Document-Pages: ' . $plan['document_pages']);
+            header('X-Preview-Selected-Pages: ' . $plan['selected_page_count']);
+            header('X-Preview-Total-Sheets: ' . $plan['total_sheets']);
+            header('X-Preview-Sheets: ' . $plan['preview_sheets']);
+            header('X-Preview-Additional-Sheets: ' . $plan['additional_sheets']);
+            header('X-Preview-Number-Up: ' . $plan['number_up']);
 
             header('Content-Type: application/pdf');
             header('Content-Length: ' . filesize($previewFile));
-            header('Content-Disposition: inline; filename="' . $this->previewPdfName($file['name'] ?? 'documento.pdf') . '"');
+            header('Content-Disposition: inline; filename="' . $this->previewPdfName($entry['original_name'] ?? 'documento.pdf') . '"');
             header('Cache-Control: no-store, private');
             readfile($previewFile);
         } catch (Throwable $e) {
+            (new PrintService())->log('Falha ao gerar preview: ' . $e->getMessage());
             http_response_code(500);
-            echo 'Não foi possível gerar a pré-visualização: ' . $this->safeErrorMessage($e->getMessage());
+            $message = str_contains(strtolower($e->getMessage()), 'demorando')
+                ? 'A pré-visualização está demorando mais que o esperado. Você ainda pode imprimir o documento.'
+                : 'Não foi possível gerar a pré-visualização, mas o arquivo pode ser enviado para impressão.';
+            echo $message;
         } finally {
-            @unlink($tempFile);
-            if ($previewFile !== $tempFile) {
-                @unlink($previewFile);
+            if ($ephemeralToken !== '') {
+                $temporary->destroy($ephemeralToken);
             }
         }
 
@@ -889,6 +1035,67 @@ class PrintController
     {
         $orientation = (string) $orientation;
         return in_array($orientation, ['auto', 'portrait', 'landscape'], true) ? $orientation : 'auto';
+    }
+
+    private function normalizedPaper($paper)
+    {
+        return in_array((string) $paper, ['A4', 'Letter'], true) ? (string) $paper : 'A4';
+    }
+
+    private function preparationOrientation($printer, $filePath, $extension, $orientation)
+    {
+        if ($orientation !== 'auto') {
+            return $orientation;
+        }
+
+        if (in_array((string) $extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            return $printer->detectImageOrientation($filePath) ?: 'portrait';
+        }
+
+        return $orientation;
+    }
+
+    private function requestExtraOptions()
+    {
+        $extraOptions = [];
+        foreach ($_POST as $key => $value) {
+            if (strpos((string) $key, 'opt_') !== 0 || is_array($value)) {
+                continue;
+            }
+            $extraOptions[substr((string) $key, 4)] = (string) $value;
+        }
+
+        $extraOptions['media'] = $this->normalizedPaper($_POST['paper'] ?? 'A4');
+        $scale = (string) ($_POST['scale'] ?? 'fit');
+        if ($scale === 'fit') {
+            $extraOptions['fit-to-page'] = 'true';
+        } elseif ($scale === 'custom') {
+            $scalePercent = (int) ($_POST['scale_percent'] ?? 100);
+            if ($scalePercent >= 10 && $scalePercent <= 400) {
+                $extraOptions['scaling'] = (string) $scalePercent;
+            }
+        } elseif (is_numeric($scale)) {
+            $scalePercent = (int) $scale;
+            if ($scalePercent >= 10 && $scalePercent <= 400) {
+                $extraOptions['scaling'] = (string) $scalePercent;
+            }
+        }
+
+        if (!empty($_POST['page_ranges']) && $this->isValidPageRanges($_POST['page_ranges'])) {
+            $extraOptions['page-ranges'] = preg_replace('/\s+/', '', (string) $_POST['page_ranges']);
+        }
+        if (in_array($_POST['page_set'] ?? '', ['odd', 'even'], true)) {
+            $extraOptions['page-set'] = (string) $_POST['page_set'];
+        }
+        foreach (['top', 'right', 'bottom', 'left'] as $side) {
+            $field = 'margin_' . $side;
+            if (isset($_POST[$field]) && $_POST[$field] !== '' && is_numeric($_POST[$field])) {
+                $mm = max(0, min(100, (float) $_POST[$field]));
+                $extraOptions['page-' . $side] = (string) (int) round($mm * 72 / 25.4);
+            }
+        }
+
+        return $extraOptions;
     }
 
     private function resolvePrintUser($isAdmin, $userList)
