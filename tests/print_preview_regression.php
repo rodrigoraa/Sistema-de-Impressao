@@ -50,11 +50,38 @@ if (!str_contains($cupsSource, "number-up-layout=lrtb") || !str_contains($cupsSo
 }
 
 $printSource = (string) file_get_contents(__DIR__ . '/../src/Service/PrintService.php');
-foreach (["'-i', 'application/pdf'", "'-m', 'application/vnd.cups-pdf'"] as $needle) {
+foreach (["'/usr/lib/cups/filter/pdftopdf'", "'-i', 'application/pdf'", "'-m', 'application/vnd.cups-pdf'", "'-sNupControl=' . \$grid"] as $needle) {
     if (!str_contains($printSource, $needle)) {
-        fwrite(STDERR, "A pré-visualização deixou de forçar o filtro CUPS pdftopdf: {$needle}\n");
+        fwrite(STDERR, "A cadeia redundante da pré-visualização está incompleta: {$needle}\n");
         exit(1);
     }
+}
+
+$cupsOptionsMethod = new ReflectionMethod(PrintService::class, 'previewCupsOptions');
+$cupsOptionsMethod->setAccessible(true);
+$previewOptions = $cupsOptionsMethod->invoke($service, $twoUp, 'A4', 'auto', ['fit-to-page' => 'true']);
+assertSameValue(
+    ['number-up=2', 'number-up-layout=lrtb', 'media=A4', 'fit-to-page=true'],
+    $previewOptions,
+    'opções comuns da prévia preservam N-up, papel e escala'
+);
+
+$ghostscriptMethod = new ReflectionMethod(PrintService::class, 'ghostscriptPreviewCommand');
+$ghostscriptMethod->setAccessible(true);
+$ghostscriptTwoUp = $ghostscriptMethod->invoke($service, '/usr/bin/gs', 'origem-inexistente.pdf', 'destino.pdf', 2, 'A4', 'auto');
+if (!in_array('-sNupControl=2x1', $ghostscriptTwoUp, true)
+    || !in_array('-dDEVICEWIDTHPOINTS=841.89', $ghostscriptTwoUp, true)
+    || !in_array('-dDEVICEHEIGHTPOINTS=595.28', $ghostscriptTwoUp, true)) {
+    fwrite(STDERR, "Fallback Ghostscript 2-up deixou de gerar folha A4 paisagem.\n");
+    exit(1);
+}
+
+$ghostscriptFourUp = $ghostscriptMethod->invoke($service, '/usr/bin/gs', 'origem-inexistente.pdf', 'destino.pdf', 4, 'Letter', 'portrait');
+if (!in_array('-sNupControl=2x2', $ghostscriptFourUp, true)
+    || !in_array('-dDEVICEWIDTHPOINTS=612', $ghostscriptFourUp, true)
+    || !in_array('-dDEVICEHEIGHTPOINTS=792', $ghostscriptFourUp, true)) {
+    fwrite(STDERR, "Fallback Ghostscript 4-up deixou de gerar folha Letter retrato.\n");
+    exit(1);
 }
 
 if (!str_contains($cupsSource, '$this->truncate(trim($stdout), 4000)')

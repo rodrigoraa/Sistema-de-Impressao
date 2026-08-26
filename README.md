@@ -27,6 +27,7 @@ PRINT_PREVIEW_MAX_SHEETS=3
 PRINT_PREVIEW_TTL_SECONDS=1800
 PRINT_PREVIEW_TIMEOUT_SECONDS=30
 CUPSFILTER_PATH=/usr/sbin/cupsfilter
+PDFTOPDF_PATH=/usr/lib/cups/filter/pdftopdf
 LOG_PATH=/var/www/impressao/storage/logs/app.log
 APP_TIMEZONE=America/Cuiaba
 LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
@@ -42,28 +43,29 @@ PRINT_JOB_IDLE_CONFIRM_SECONDS=6
 
 O arquivo é enviado uma única vez para uma pasta temporária fora de `public/`. O navegador recebe somente um token aleatório associado ao usuário e à sessão; contagem de páginas, mudanças de configuração e prévias seguintes usam esse token, sem reenviar o arquivo completo. O token não contém caminho de arquivo e expira por padrão em 30 minutos.
 
-A prévia é um PDF de amostra montado pela pilha de filtros do CUPS com a mesma ordem `number-up-layout=lrtb` usada pela impressão. Ela respeita 1, 2, 4 ou 8 páginas por folha e processa, por padrão, no máximo as primeiras 3 folhas. Seleções como `1,3-5` são aplicadas antes do N-up. A interface informa páginas do documento, lados impressos por cópia e quantas folhas da amostra estão visíveis.
+A prévia é um PDF de amostra montado primeiro pelo filtro `pdftopdf`, com a mesma ordem `number-up-layout=lrtb` usada pela impressão. Se esse filtro não estiver disponível ou falhar, o sistema tenta `cupsfilter` e depois o N-up nativo do Ghostscript. Ela respeita 1, 2, 4 ou 8 páginas por folha e processa, por padrão, no máximo as primeiras 3 folhas. Seleções como `1,3-5` são aplicadas antes do N-up. A interface informa páginas do documento, lados impressos por cópia e quantas folhas da amostra estão visíveis.
 
 DOC/DOCX, TXT e imagens reutilizam o PDF convertido enquanto papel, orientação e margens de conversão permanecerem iguais. Os arquivos ficam em `PRINT_TEMP_PATH`, possuem nomes imprevisíveis, são removidos após a impressão ou por TTL e também podem ser limpos no painel administrativo. Nenhum arquivo temporário fica em sessão ou em diretório público.
 
 A prévia é assíncrona e não altera o documento da impressão física. A impressão continua enviando o PDF preparado ao CUPS e aplicando `number-up` somente no comando `lp`; portanto não há dupla aplicação de N-up. Se a prévia falhar ou atingir o timeout, o usuário recebe um aviso amigável e ainda pode imprimir depois que upload e validações obrigatórias terminarem.
 
-Não foi introduzida biblioteca ou framework novo. `cupsfilter` pertence ao pacote `cups`, que já é requisito do servidor. Para limitar PDFs grandes às páginas da amostra, o sistema usa o primeiro mecanismo disponível entre `qpdf`, Ghostscript e `pdfseparate`/`pdfunite` do Poppler.
+Não foi introduzida biblioteca ou framework novo. `cupsfilter` pertence ao pacote `cups`; `pdftopdf` é fornecido por `cups-filters`. Para limitar PDFs grandes às páginas da amostra, o sistema usa o primeiro mecanismo disponível entre `qpdf`, Ghostscript e `pdfseparate`/`pdfunite` do Poppler.
 
 Verificação recomendada no Ubuntu:
 
 ```bash
 command -v lp cupsfilter libreoffice pdfinfo pdfseparate pdfunite
+test -x /usr/lib/cups/filter/pdftopdf && echo "pdftopdf disponível"
 command -v qpdf || command -v gs
 sudo apt update
-sudo apt install cups libreoffice poppler-utils qpdf
+sudo apt install cups cups-filters libreoffice poppler-utils qpdf ghostscript
 sudo install -d -o www-data -g www-data -m 0700 /var/www/impressao/storage/print-temp
 ```
 
 `qpdf` pode ser substituído por `ghostscript`; não é necessário instalar ambos. Depois do deploy, valide uma amostra sem enviar trabalho físico:
 
 ```bash
-sudo -u www-data /usr/sbin/cupsfilter -i application/pdf -m application/vnd.cups-pdf -d kyocera-escola -o number-up=2 -o number-up-layout=lrtb arquivo-teste.pdf > /tmp/preview-teste.pdf
+sudo -u www-data /usr/lib/cups/filter/pdftopdf 1 www-data preview 1 "number-up=2 number-up-layout=lrtb media=A4 fit-to-page=true" arquivo-teste.pdf > /tmp/preview-teste.pdf
 pdfinfo /tmp/preview-teste.pdf
 ```
 

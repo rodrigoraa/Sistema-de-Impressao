@@ -312,70 +312,207 @@ class PrintService
                 $this->extractPreviewPages($pdfFile, $samplePdf, $plan['preview_pages'], $timeoutSeconds, $workspace);
             }
 
+            $options = $this->previewCupsOptions($plan, $paper, $orientation, $extraOptions);
+            $timedOut = false;
+
+            // Chamar pdftopdf diretamente evita que filas driverless devolvam o
+            // application/pdf original sem executar a composição number-up.
+            $pdftopdf = $this->findExecutable([
+                $_ENV['PDFTOPDF_PATH'] ?? null,
+                '/usr/lib/cups/filter/pdftopdf',
+                '/usr/libexec/cups/filter/pdftopdf',
+                '/usr/local/libexec/cups/filter/pdftopdf',
+                'pdftopdf',
+            ]);
+            if ($pdftopdf !== null) {
+                $attempt = $this->runPreviewAttempt(
+                    'pdftopdf',
+                    [$pdftopdf, '1', 'www-data', 'preview', '1', implode(' ', $options), $samplePdf],
+                    $targetFile,
+                    (int) $plan['preview_sheets'],
+                    $deadline,
+                    true,
+                    8
+                );
+                if ($attempt['success']) {
+                    return $plan;
+                }
+                $timedOut = $timedOut || $attempt['timed_out'];
+            }
+
             $cupsfilter = $this->findExecutable([
                 $_ENV['CUPSFILTER_PATH'] ?? null,
                 '/usr/sbin/cupsfilter',
                 '/usr/bin/cupsfilter',
                 'cupsfilter',
             ]);
-            if ($cupsfilter === null) {
-                throw new RuntimeException('Ferramenta cupsfilter não encontrada no servidor.');
-            }
-
-            $command = [
-                $cupsfilter,
-                '-i', 'application/pdf',
-                // application/pdf pode ser devolvido sem alterações. O MIME
-                // específico do CUPS força o pdftopdf e aplica number-up/escala.
-                '-m', 'application/vnd.cups-pdf',
-            ];
-            if ($this->printerName !== '') {
-                $command[] = '-d';
-                $command[] = $this->printerName;
-            }
-            array_push(
-                $command,
-                '-o', 'number-up=' . $plan['number_up'],
-                '-o', 'number-up-layout=lrtb',
-                '-o', 'media=' . ($paper === 'Letter' ? 'Letter' : 'A4')
-            );
-            if ($orientation === 'portrait' || $orientation === 'landscape') {
-                $command[] = '-o';
-                $command[] = 'orientation-requested=' . ($orientation === 'landscape' ? '4' : '3');
-            }
-            foreach ($this->cupsExtraOptions($extraOptions) as $key => $value) {
-                if (in_array($key, ['page-ranges', 'page-set', 'media'], true)) {
-                    continue;
+            if ($cupsfilter !== null) {
+                $command = [
+                    $cupsfilter,
+                    '-i', 'application/pdf',
+                    '-m', 'application/vnd.cups-pdf',
+                ];
+                if ($this->printerName !== '') {
+                    $command[] = '-d';
+                    $command[] = $this->printerName;
                 }
-                $command[] = '-o';
-                $command[] = $key . '=' . $value;
-            }
-            $command[] = $samplePdf;
+                foreach ($options as $option) {
+                    $command[] = '-o';
+                    $command[] = $option;
+                }
+                $command[] = $samplePdf;
 
-            $remaining = (int) ceil($deadline - microtime(true));
-            if ($remaining < 1) {
+                $attempt = $this->runPreviewAttempt(
+                    'cupsfilter',
+                    $command,
+                    $targetFile,
+                    (int) $plan['preview_sheets'],
+                    $deadline,
+                    true,
+                    8
+                );
+                if ($attempt['success']) {
+                    return $plan;
+                }
+                $timedOut = $timedOut || $attempt['timed_out'];
+            }
+
+            $ghostscript = $this->findExecutable([
+                $_ENV['GHOSTSCRIPT_PATH'] ?? null,
+                '/usr/bin/gs',
+                'gs',
+            ]);
+            if ($ghostscript !== null) {
+                $command = $this->ghostscriptPreviewCommand(
+                    $ghostscript,
+                    $samplePdf,
+                    $targetFile,
+                    (int) $plan['number_up'],
+                    $paper,
+                    $orientation
+                );
+                $attempt = $this->runPreviewAttempt(
+                    'ghostscript-nup',
+                    $command,
+                    $targetFile,
+                    (int) $plan['preview_sheets'],
+                    $deadline,
+                    false
+                );
+                if ($attempt['success']) {
+                    return $plan;
+                }
+                $timedOut = $timedOut || $attempt['timed_out'];
+            }
+
+            if ($timedOut || microtime(true) >= $deadline) {
                 throw new RuntimeException('A pré-visualização está demorando mais que o esperado.');
             }
-            $result = $this->runCommandWithTimeout($command, $remaining, $targetFile);
-            if ($result['timed_out']) {
-                throw new RuntimeException('A pré-visualização está demorando mais que o esperado.');
-            }
-            if ($result['exit_code'] !== 0 || !is_file($targetFile) || filesize($targetFile) < 1) {
-                $this->log('cupsfilter preview falhou: status=' . $result['exit_code'] . ' | ' . $result['stderr']);
-                throw new RuntimeException('Não foi possível montar a pré-visualização da impressão.');
-            }
 
-            $renderedPages = $this->countPdfPages($targetFile);
-            if ($renderedPages > 0 && $renderedPages !== $plan['preview_sheets']) {
-                @unlink($targetFile);
-                $this->log('cupsfilter preview retornou quantidade inesperada: esperado=' . $plan['preview_sheets'] . ' obtido=' . $renderedPages);
-                throw new RuntimeException('A ferramenta de pré-visualização não aplicou a composição solicitada.');
-            }
-
-            return $plan;
+            throw new RuntimeException('Não foi possível montar a pré-visualização da impressão.');
         } finally {
             $this->removePreviewDirectory($workspace);
         }
+    }
+
+    private function previewCupsOptions($plan, $paper, $orientation, $extraOptions)
+    {
+        $options = [
+            'number-up=' . (int) $plan['number_up'],
+            'number-up-layout=lrtb',
+            'media=' . ($paper === 'Letter' ? 'Letter' : 'A4'),
+        ];
+        if ($orientation === 'portrait' || $orientation === 'landscape') {
+            $options[] = 'orientation-requested=' . ($orientation === 'landscape' ? '4' : '3');
+        }
+        foreach ($this->cupsExtraOptions($extraOptions) as $key => $value) {
+            if (in_array($key, ['page-ranges', 'page-set', 'media'], true)) {
+                continue;
+            }
+            $options[] = $key . '=' . $value;
+        }
+
+        return $options;
+    }
+
+    private function runPreviewAttempt($label, $command, $targetFile, $expectedPages, $deadline, $stdoutIsPdf, $attemptMaxSeconds = null)
+    {
+        @unlink($targetFile);
+        $remaining = (int) ceil($deadline - microtime(true));
+        if ($remaining < 1) {
+            return ['success' => false, 'timed_out' => true];
+        }
+        if ($attemptMaxSeconds !== null) {
+            $remaining = min($remaining, max(1, (int) $attemptMaxSeconds));
+        }
+
+        $result = $this->runCommandWithTimeout(
+            $command,
+            $remaining,
+            $stdoutIsPdf ? $targetFile : null
+        );
+        if ($result['timed_out']) {
+            @unlink($targetFile);
+            $this->log($label . ' preview excedeu o tempo limite.');
+            return ['success' => false, 'timed_out' => true];
+        }
+        if ($result['exit_code'] !== 0 || !is_file($targetFile) || filesize($targetFile) < 1) {
+            @unlink($targetFile);
+            $this->log($label . ' preview falhou: status=' . $result['exit_code'] . ' | ' . $result['stderr']);
+            return ['success' => false, 'timed_out' => false];
+        }
+
+        $renderedPages = $this->countPdfPages($targetFile);
+        if ($renderedPages !== (int) $expectedPages) {
+            @unlink($targetFile);
+            $this->log($label . ' preview retornou quantidade inesperada: esperado=' . (int) $expectedPages . ' obtido=' . $renderedPages);
+            return ['success' => false, 'timed_out' => false];
+        }
+
+        return ['success' => true, 'timed_out' => false];
+    }
+
+    private function ghostscriptPreviewCommand($ghostscript, $source, $target, $numberUp, $paper, $orientation)
+    {
+        $sourceOrientation = $this->detectPdfOrientation($source) ?: 'portrait';
+        if ($orientation === 'portrait' || $orientation === 'landscape') {
+            $masterOrientation = $orientation;
+        } elseif (in_array($numberUp, [2, 8], true)) {
+            $masterOrientation = $sourceOrientation === 'landscape' ? 'portrait' : 'landscape';
+        } else {
+            $masterOrientation = $sourceOrientation;
+        }
+
+        if ($numberUp === 2) {
+            $grid = $masterOrientation === 'landscape' ? '2x1' : '1x2';
+        } elseif ($numberUp === 4) {
+            $grid = '2x2';
+        } elseif ($numberUp === 8) {
+            $grid = $masterOrientation === 'landscape' ? '4x2' : '2x4';
+        } else {
+            $grid = '1x1';
+        }
+
+        [$width, $height] = $this->paperSize($paper);
+        if ($masterOrientation === 'landscape') {
+            [$width, $height] = [$height, $width];
+        }
+
+        return [
+            $ghostscript,
+            '-q',
+            '-dSAFER',
+            '-dBATCH',
+            '-dNOPAUSE',
+            '-dFIXEDMEDIA',
+            '-dAutoRotatePages=/None',
+            '-sDEVICE=pdfwrite',
+            '-dDEVICEWIDTHPOINTS=' . round($width, 2),
+            '-dDEVICEHEIGHTPOINTS=' . round($height, 2),
+            '-sNupControl=' . $grid,
+            '-sOutputFile=' . $target,
+            $source,
+        ];
     }
 
     private function extractPreviewPages($source, $target, $pages, $timeoutSeconds, $workspace)
