@@ -802,6 +802,7 @@ class PrintController
 
         $temporary = new TemporaryPrintFileService();
         $ephemeralToken = '';
+        $preparingFile = false;
         try {
             $uploadToken = trim((string) ($_POST['upload_token'] ?? ''));
             if ($uploadToken === '') {
@@ -819,7 +820,9 @@ class PrintController
             $extraOptions = $this->requestExtraOptions();
             $printer = new PrintService();
             $preparationOrientation = $this->preparationOrientation($printer, $entry['source_path'], $entry['extension'], $orientation);
+            $preparingFile = true;
             $preparedFile = $temporary->preparedPdf($uploadToken, $preparationOrientation, $paper, $extraOptions);
+            $preparingFile = false;
             $totalPages = PageCounter::count($preparedFile);
             if ($totalPages < 1) {
                 $totalPages = 1;
@@ -875,9 +878,13 @@ class PrintController
         } catch (Throwable $e) {
             (new PrintService())->log('Falha ao gerar preview: ' . $e->getMessage());
             http_response_code(500);
-            $message = str_contains(strtolower($e->getMessage()), 'demorando')
-                ? 'A pré-visualização está demorando mais que o esperado. Você ainda pode imprimir o documento.'
-                : 'Não foi possível gerar a pré-visualização, mas o arquivo pode ser enviado para impressão.';
+            if ($preparingFile) {
+                $message = 'Não foi possível preparar o arquivo: a pré-visualização e a impressão dependem da conversão para PDF. Tente enviar o arquivo em PDF ou JPG.';
+            } else {
+                $message = str_contains(strtolower($e->getMessage()), 'demorando')
+                    ? 'A pré-visualização está demorando mais que o esperado. Você ainda pode imprimir o documento.'
+                    : 'Não foi possível gerar a pré-visualização, mas o arquivo pode ser enviado para impressão.';
+            }
             echo $message;
         } finally {
             if ($ephemeralToken !== '') {

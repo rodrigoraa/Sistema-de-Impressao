@@ -195,6 +195,7 @@ php tests/security_regression.php
 php tests/print_preview_regression.php
 php tests/temporary_print_storage_regression.php
 php tests/png_conversion_regression.php
+php tests/png_preview_regression.php
 ```
 
 ## Limite de envio no nginx/PHP
