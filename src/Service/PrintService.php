@@ -1066,8 +1066,8 @@ class PrintService
                 throw new RuntimeException('PNG nao pode ser convertido neste servidor. Instale ImageMagick ou habilite a extensao PHP GD.');
             }
 
-            $pdfFile = tempnam(sys_get_temp_dir(), 'pngpdf_') . '.pdf';
             $this->assertCanConvertPngInMemory($info[0], $info[1], filesize($filePath));
+            $pdfFile = tempnam(sys_get_temp_dir(), 'pngpdf_') . '.pdf';
 
             if ($this->writePngPdfWithGd($filePath, $pdfFile, $orientation, $paper)) {
                 $this->log('PNG convertido para PDF via GD: ' . $pdfFile);
@@ -1689,15 +1689,19 @@ class PrintService
 
     private function assertCanConvertPngInMemory($width, $height, $fileSize)
     {
-        if ((int) $width * (int) $height > 8000000 || (int) $fileSize > 3000000) {
-            throw new RuntimeException('PNG grande demais para converter sem ImageMagick no servidor. Envie em JPG ou instale ImageMagick.');
-        }
-
-        $estimatedBytes = (int) $width * (int) $height * 12;
+        // GD needs the decoded image, a white canvas and encoding buffers.
+        // Compressed file size alone does not indicate decoded memory usage.
+        $estimatedBytes = (float) $width * (float) $height * 12 + (float) $fileSize * 2;
         $limit = $this->memoryLimitBytes();
+        if ($limit <= 0) {
+            // An unlimited PHP setting does not mean unlimited server memory.
+            $limit = 256 * 1024 * 1024;
+        }
+        $reserve = max(16 * 1024 * 1024, $limit * 0.2);
+        $availableBytes = max(0, $limit - memory_get_usage(true) - $reserve);
 
-        if ($limit > 0 && $estimatedBytes > ($limit * 0.5)) {
-            throw new RuntimeException('Imagem PNG muito grande para converter sem ImageMagick no servidor');
+        if ($estimatedBytes > $availableBytes) {
+            throw new RuntimeException('Memoria disponivel insuficiente para converter este PNG com PHP GD. Reduza a resolucao da imagem, envie em JPG ou instale ImageMagick no servidor.');
         }
     }
 

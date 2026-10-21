@@ -194,6 +194,7 @@ php tests/print_diagnostics_simulation.php
 php tests/security_regression.php
 php tests/print_preview_regression.php
 php tests/temporary_print_storage_regression.php
+php tests/png_conversion_regression.php
 ```
 
 ## Limite de envio no nginx/PHP
@@ -242,5 +243,7 @@ Se a mensagem informar um tamanho muito pequeno, por exemplo `502 B`, o limite d
 
 ## PNG no Linux
 - Para imprimir PNG de forma confiável, instale ImageMagick (`imagemagick`) ou habilite a extensão PHP `gd`.
+- Com GD, PNGs acima de 3 MB ou 8 milhões de pixels são aceitos quando a estimativa de memória da conversão cabe no limite do PHP, descontando a memória já ocupada e uma reserva. Com `memory_limit=-1`, a verificação adota um orçamento conservador de 256 MB. Imagens que excedem esse orçamento continuam sendo recusadas antes da decodificação.
+- O teste `tests/png_conversion_regression.php` verifica a proteção de memória e, quando GD está habilitado, a conversão de PNGs grandes, incluindo transparência sobre fundo branco.
 - Sem ImageMagick/GD, o sistema retorna erro claro em vez de tentar conversão lenta em PHP puro.
 
