@@ -248,3 +248,22 @@ Se a mensagem informar um tamanho muito pequeno, por exemplo `502 B`, o limite d
 - O teste `tests/png_conversion_regression.php` verifica a proteção de memória e, quando GD está habilitado, a conversão de PNGs grandes, incluindo transparência sobre fundo branco.
 - Sem ImageMagick/GD, o sistema retorna erro claro em vez de tentar conversão lenta em PHP puro.
 
+
+## Fluxo do professor
+
+- A tela principal destaca arquivo, cópias e frente e verso. Papel, orientação, páginas por lado, qualidade e escala ficam em **Mais opções de impressão**.
+- O resumo mostra uma **estimativa de folhas físicas**, com arredondamento por cópia para frente e verso. Isso não muda o acumulado contabilizado pelo sistema.
+- **Salvar estas opções** guarda preferências somente neste navegador, sem arquivo, CPF, token, intervalo ou quantidade de cópias. Aplicá-las começa em 1 cópia.
+- Em **Meus envios**, busque pelo nome do arquivo. **Usar arquivo novamente** abre revisão com 1 cópia; não imprime automaticamente. Intervalos parciais íntegros são recuperados. Registros antigos com seleção truncada/especial exigem nova seleção para evitar páginas incorretas.
+- Após resultado incerto de rede, confira Meus envios antes de repetir. O envio fica bloqueado nessa tela; nenhuma repetição automática é executada.
+- Bootstrap 5.3.0 e Bootstrap Icons 1.11.1 são servidos localmente, com licenças em `public/css/vendor/`.
+
+Verificação adicional (PHP 8+, Node; Playwright e Chromium disponíveis para o teste de navegador):
+
+```bash
+for test in tests/*.php; do php "$test" || exit; done
+node --test tests/print_estimate.test.js
+node tests/teacher_workflow.cjs
+```
+
+O teste de navegador cria uma cópia temporária isolada, dados fictícios e intercepta envios de impressão. Não usa o banco da instalação nem envia trabalhos físicos. `CHROMIUM_PATH` pode apontar outro executável Chromium. Os caminhos de capturas e logs são informados no fim da execução.

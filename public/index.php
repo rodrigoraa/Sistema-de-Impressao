@@ -51,7 +51,7 @@ function servePublicAssetIfRequested($projectRoot)
 {
     $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
     $uri = str_replace('\\', '/', $uri);
-    $scriptName = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
+    $scriptName = PHP_SAPI === 'cli-server' ? '/index.php' : str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
     $basePath = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
     if ($basePath === '/') {
         $basePath = '';
@@ -230,7 +230,7 @@ require_once $projectRoot . '/src/Controller/ShareTargetController.php';
 $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
 // normaliza quando a app roda em subpasta (ex: /public)
-$scriptName = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
+$scriptName = PHP_SAPI === 'cli-server' ? '/index.php' : str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
 $basePath = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
 if ($basePath === '/') {
     $basePath = '';
@@ -358,6 +358,11 @@ if ($uri === '/prints') {
 
 if ($uri === '/prints/download') {
     (new PrintJobController())->download();
+    exit;
+}
+
+if ($uri === '/prints/reuse') {
+    (new PrintJobController())->reuse();
     exit;
 }
 

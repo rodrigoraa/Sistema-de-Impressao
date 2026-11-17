@@ -66,9 +66,9 @@ $simNao = function ($valor) {
 };
 $modoImpressao = function ($sides) {
     return [
-        'one-sided' => 'Simples',
-        'two-sided-long-edge' => 'Frente e verso - borda maior',
-        'two-sided-short-edge' => 'Frente e verso - borda menor',
+        'one-sided' => 'Frente apenas',
+        'two-sided-long-edge' => 'Frente e verso — como um livro',
+        'two-sided-short-edge' => 'Frente e verso — como um bloco',
     ][$sides] ?? ($sides ?: 'Simples');
 };
 $selectionLabel = function ($job) {
@@ -115,8 +115,8 @@ if ($isAdmin) {
     ];
 }
 $currentStatus = $_GET['status'] ?? '';
-$pageHeading = $isAdmin ? 'Histórico completo de impressão' : 'Meu histórico de impressão';
-$pageDescription = $isAdmin ? 'Todas as impressões de todos os professores' : 'Minhas impressões e tentativas';
+$pageHeading = $isAdmin ? 'Histórico completo de impressão' : 'Meus envios';
+$pageDescription = $isAdmin ? 'Todas as impressões de todos os professores' : 'Acompanhe seus envios e use um arquivo novamente quando precisar.';
 if ($currentStatus === 'active') {
     $pageHeading = 'Fila de impressão';
     $pageDescription = 'Pendentes e em envio';
@@ -136,9 +136,9 @@ if ($currentStatus === 'active') {
     <link rel="icon" type="image/png" href="/favicon.ico?v=2">
     <title><?= htmlspecialchars($pageHeading) ?></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="/css/base.css?v=20260601">
+    <link href="/css/vendor/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="/css/base.css?v=20261117">
     <link rel="stylesheet" href="/css/admin.css?v=20260602">
 </head>
 
@@ -147,12 +147,12 @@ if ($currentStatus === 'active') {
         <header class="app-header">
             <div class="container d-flex justify-content-between align-items-center">
                 <div class="d-flex align-items-center gap-2">
-                    <img src="/image/logo_escola.png" class="logo">
+                    <img src="/image/logo_escola.png" class="logo" alt="Emblema da escola">
                     <strong><?= htmlspecialchars($pageHeading) ?></strong>
                 </div>
                 <div class="d-flex align-items-center gap-3">
-                    <span class="user"><i class="bi bi-person-circle"></i> <?= htmlspecialchars($_SESSION['name'] ?? $_SESSION['user']) ?></span>
-                    <a href="/logout" class="btn btn-outline-danger btn-sm"><i class="bi bi-box-arrow-right"></i> Sair</a>
+                    <span class="user"><i aria-hidden="true" class="bi bi-person-circle"></i> <?= htmlspecialchars($_SESSION['name'] ?? $_SESSION['user']) ?></span>
+                    <a href="/logout" class="btn btn-outline-danger btn-sm"><i aria-hidden="true" class="bi bi-box-arrow-right"></i> Sair</a>
                 </div>
             </div>
         </header>
@@ -172,9 +172,9 @@ if ($currentStatus === 'active') {
                 </div>
                 <div class="d-flex gap-2">
                     <?php if ($isAdmin): ?>
-                        <a href="/admin" class="btn btn-outline-secondary"><i class="bi bi-speedometer2"></i> Painel</a>
+                        <a href="/admin" class="btn btn-outline-secondary"><i aria-hidden="true" class="bi bi-speedometer2"></i> Painel</a>
                     <?php endif; ?>
-                    <a href="/" class="btn btn-primary"><i class="bi bi-printer"></i> Nova impressão</a>
+                    <a href="/" class="btn btn-primary"><i aria-hidden="true" class="bi bi-printer"></i> Nova impressão</a>
                 </div>
             </section>
 
@@ -183,7 +183,7 @@ if ($currentStatus === 'active') {
                 <div class="metric"><span>Impressas</span><strong><?= (int) $stats['completed'] ?></strong></div>
                 <div class="metric"><span>Na fila</span><strong><?= (int) $stats['active'] ?></strong></div>
                 <div class="metric"><span>Erros</span><strong><?= (int) $stats['failed'] ?></strong></div>
-                <div class="metric"><span>Folhas contabilizadas</span><strong><?= (int) $stats['charged'] ?></strong></div>
+                <div class="metric"><span>Acumulado contabilizado</span><strong><?= (int) $stats['charged'] ?></strong></div>
             </section>
 
             <?php if ($isAdmin && $currentStatus === 'active' && is_array($cupsQueue)): ?>
@@ -193,7 +193,7 @@ if ($currentStatus === 'active') {
                             <h2 class="panel-title">Fila real do CUPS</h2>
                             <p class="text-muted mb-0">Trabalhos que ainda estão pendentes no servidor de impressão.</p>
                         </div>
-                        <a href="/prints?status=active" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-clockwise"></i> Atualizar fila</a>
+                        <a href="/prints?status=active" class="btn btn-outline-primary btn-sm"><i aria-hidden="true" class="bi bi-arrow-clockwise"></i> Atualizar fila</a>
                     </div>
                     <?php if (empty($cupsQueue['success'])): ?>
                         <div class="alert alert-warning mb-0">
@@ -210,7 +210,7 @@ if ($currentStatus === 'active') {
                                         <th>Professor</th>
                                         <th>Situação</th>
                                         <th>Resumo da impressão</th>
-                                        <th>Folhas</th>
+                                        <th>Acumulado</th>
                                         <th>Data</th>
                                         <th class="text-end">Ações</th>
                                     </tr>
@@ -244,7 +244,7 @@ if ($currentStatus === 'active') {
                                                 <?php endif; ?>
                                             </td>
                                             <td data-label="Situação">
-                                                <span class="badge text-bg-info"><i class="bi bi-list-task"></i> No CUPS</span>
+                                                <span class="badge text-bg-info"><i aria-hidden="true" class="bi bi-list-task"></i> No CUPS</span>
                                                 <?php if ($queueState !== ''): ?><small class="d-block text-muted"><?= htmlspecialchars($traduzDiagnostico($queueState)) ?></small><?php endif; ?>
                                             </td>
                                             <td data-label="Resumo">
@@ -252,27 +252,27 @@ if ($currentStatus === 'active') {
                                                     <div class="history-summary">
                                                         <span><strong>Documento:</strong> <?= (int) $localJob['pages'] ?> pág.</span>
                                                         <span><strong>Seleção:</strong> <?= htmlspecialchars($selectionLabel($localJob)) ?><?= $selected > 0 ? ' · ' . (int) $selected . ' pág. usadas' : '' ?></span>
-                                                        <span><strong>Cópias:</strong> <?= (int) $localJob['copies'] ?> · <strong>Por folha:</strong> <?= (int) $localJob['number_up'] ?></span>
+                                                        <span><strong>Cópias:</strong> <?= (int) $localJob['copies'] ?> · <strong>Por lado:</strong> <?= (int) $localJob['number_up'] ?></span>
                                                         <span><strong>Modo:</strong> <?= htmlspecialchars($modoImpressao($localJob['sides'] ?? '')) ?></span>
                                                     </div>
                                                 <?php else: ?>
                                                     <span class="text-muted">Dados detalhados indisponíveis no registro local.</span>
                                                 <?php endif; ?>
                                             </td>
-                                            <td data-label="Folhas">
+                                            <td data-label="Acumulado">
                                                 <?php if (is_array($localJob)): ?>
                                                     <span class="badge text-bg-primary"><?= (int) $localJob['charged_pages'] ?></span>
-                                                    <small class="d-block text-muted"><?= (int) $sheetsPerCopy ?> por cópia</small>
+                                                    <small class="d-block text-muted"><?= (int) $sheetsPerCopy ?> lado(s) por cópia</small>
                                                 <?php else: ?>
                                                     <span class="text-muted">-</span>
                                                 <?php endif; ?>
                                             </td>
                                             <td data-label="Data"><small><?= htmlspecialchars($queueJob['submitted_at'] ?? '') ?></small></td>
                                             <td data-label="Ações" class="text-end">
-                                                <form method="post" action="/prints/cancel" class="d-inline">
+                                                <form novalidate method="post" action="/prints/cancel" class="d-inline">
                                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                                     <input type="hidden" name="cups_job_id" value="<?= htmlspecialchars($cupsJobId) ?>">
-                                                    <button class="btn btn-outline-danger btn-sm" title="Cancelar na fila" onclick="return confirm('Cancelar esta impressão na fila do CUPS?')"><i class="bi bi-x-circle"></i></button>
+                                                    <button type="button" class="btn btn-outline-danger btn-sm" title="Cancelar na fila" data-confirm="Cancelar esta impressão na fila do CUPS?"><i aria-hidden="true" class="bi bi-x-circle"></i> Cancelar</button>
                                                 </form>
                                             </td>
                                         </tr>
@@ -285,10 +285,14 @@ if ($currentStatus === 'active') {
             <?php endif; ?>
 
             <section class="panel">
-                <form method="get" class="row g-3 align-items-end">
+                <form novalidate method="get" class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label" for="historySearch">Buscar arquivo</label>
+                        <div class="input-group"><input type="search" id="historySearch" name="search" maxlength="150" class="form-control" value="<?= htmlspecialchars(is_string($_GET['search'] ?? '') ? ($_GET['search'] ?? '') : '') ?>" placeholder="Nome da atividade ou documento"><button type="button" id="clearHistorySearch" class="btn btn-outline-secondary" aria-label="Limpar busca">Limpar</button></div>
+                    </div>
                     <div class="col-md-3">
-                        <label class="form-label">Situação</label>
-                        <select name="status" class="form-select">
+                        <label class="form-label" for="filter-status">Situação</label>
+                        <select id="filter-status" name="status" class="form-select">
                             <?php foreach ($statusFilters as $value => $label): ?>
                                 <option value="<?= $value ?>" <?= $currentStatus === $value ? 'selected' : '' ?>><?= $label ?></option>
                             <?php endforeach; ?>
@@ -296,25 +300,26 @@ if ($currentStatus === 'active') {
                     </div>
                     <?php if ($isAdmin): ?>
                         <div class="col-md-3">
-                            <label class="form-label">CPF</label>
-                            <input name="cpf" class="form-control" value="<?= htmlspecialchars($_GET['cpf'] ?? '') ?>" placeholder="Todos">
+                            <label class="form-label" for="filter-cpf">CPF</label>
+                            <input id="filter-cpf" name="cpf" class="form-control" value="<?= htmlspecialchars($_GET['cpf'] ?? '') ?>" placeholder="Todos">
                         </div>
                     <?php endif; ?>
                     <div class="col-md-3">
-                        <label class="form-label">Mês</label>
-                        <input type="month" name="month" class="form-control" value="<?= htmlspecialchars($_GET['month'] ?? '') ?>">
+                        <label class="form-label" for="filter-month">Mês</label>
+                        <input type="month" id="filter-month" name="month" class="form-control" value="<?= htmlspecialchars($_GET['month'] ?? '') ?>">
                     </div>
                     <div class="col-md-3">
-                        <label class="form-label">Erro</label>
-                        <input name="error" class="form-control" value="<?= htmlspecialchars($_GET['error'] ?? '') ?>" placeholder="papel, toner, tempo esgotado...">
+                        <label class="form-label" for="filter-error">Erro</label>
+                        <input id="filter-error" name="error" class="form-control" value="<?= htmlspecialchars($_GET['error'] ?? '') ?>" placeholder="papel, toner, tempo esgotado...">
                     </div>
                     <div class="col-md-2">
-                        <button class="btn btn-primary w-100"><i class="bi bi-search"></i> Filtrar</button>
+                        <button class="btn btn-primary w-100"><i aria-hidden="true" class="bi bi-search"></i> Filtrar</button>
                     </div>
                 </form>
             </section>
 
             <section class="panel history-table-panel">
+                <p class="small text-muted">Mostrando até 150 registros mais recentes. Use a busca e os filtros para encontrar envios anteriores. O acumulado segue a contabilização da escola.</p>
                 <div class="table-responsive history-table-wrap">
                     <table class="table table-hover align-middle data-table history-table">
                         <thead>
@@ -323,7 +328,7 @@ if ($currentStatus === 'active') {
                                 <?php if ($isAdmin): ?><th>Professor</th><?php endif; ?>
                                 <th>Situação</th>
                                 <th>Resumo da impressão</th>
-                                <th>Folhas</th>
+                                <th>Acumulado</th>
                                 <th>Data</th>
                                 <th class="text-end">Ações</th>
                             </tr>
@@ -374,7 +379,7 @@ if ($currentStatus === 'active') {
                                         <?php if ($isAdmin): ?>
                                             <td data-label="Professor"><?= htmlspecialchars($job['user_name'] ?: $job['user']) ?><br><small class="text-muted"><?= htmlspecialchars($job['user']) ?></small></td>
                                         <?php endif; ?>
-                                        <td data-label="Situação"><span class="badge <?= $meta['class'] ?>"><i class="bi <?= $meta['icon'] ?>"></i> <?= $meta['label'] ?></span></td>
+                                        <td data-label="Situação"><span class="badge <?= $meta['class'] ?>"><i aria-hidden="true" class="bi <?= $meta['icon'] ?>"></i> <?= $meta['label'] ?></span></td>
                                         <?php
                                             $orientationPt = [
                                                 'auto' => 'Automática',
@@ -387,50 +392,55 @@ if ($currentStatus === 'active') {
                                             <div class="history-summary">
                                                 <span><strong>Documento:</strong> <?= (int) $job['pages'] ?> pág.</span>
                                                 <span><strong>Seleção:</strong> <?= htmlspecialchars($selectionLabel($job)) ?><?= $selected > 0 ? ' · ' . (int) $selected . ' pág. usadas' : '' ?></span>
-                                                <span><strong>Cópias:</strong> <?= (int) $job['copies'] ?> · <strong>Por folha:</strong> <?= (int) $job['number_up'] ?></span>
+                                                <span><strong>Cópias:</strong> <?= (int) $job['copies'] ?> · <strong>Por lado:</strong> <?= (int) $job['number_up'] ?></span>
                                                 <span><strong>Modo:</strong> <?= htmlspecialchars($modoImpressao($job['sides'] ?? '')) ?></span>
                                                 <span><strong>Papel/orientação:</strong> <?= htmlspecialchars($paperPt) ?> · <?= htmlspecialchars($orientationPt) ?></span>
                                             </div>
                                         </td>
-                                        <td data-label="Folhas">
+                                        <td data-label="Acumulado">
                                             <span class="badge text-bg-primary"><?= (int) $job['charged_pages'] ?></span>
-                                            <small class="d-block text-muted"><?= (int) $sheetsPerCopy ?> por cópia</small>
+                                            <small class="d-block text-muted"><?= (int) $sheetsPerCopy ?> lado(s) por cópia</small>
                                         </td>
                                         <td data-label="Data"><small><?= htmlspecialchars($job['created_at']) ?></small></td>
                                         <td data-label="Ações" class="text-end">
                                             <div class="job-actions">
                                                 <?php if (!$isLegacyUsage): ?>
                                                     <div class="job-action-buttons">
-                                                        <a class="btn btn-outline-secondary btn-sm" title="Baixar arquivo" href="/prints/download?id=<?= (int) $job['id'] ?>"><i class="bi bi-download"></i></a>
+                                                        <a class="btn btn-outline-secondary btn-sm" title="Baixar arquivo" href="/prints/download?id=<?= (int) $job['id'] ?>"><i aria-hidden="true" class="bi bi-download"></i> Baixar</a>
                                                         <?php if ($canCancel && $hasCupsJob): ?>
-                                                            <form method="post" action="/prints/cancel" class="d-inline">
+                                                            <form novalidate method="post" action="/prints/cancel" class="d-inline">
                                                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                                                 <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
-                                                                <button class="btn btn-outline-danger btn-sm" title="Cancelar na fila" onclick="return confirm('Cancelar esta impressão na fila?')"><i class="bi bi-x-circle"></i></button>
+                                                                <button type="button" class="btn btn-outline-danger btn-sm" title="Cancelar na fila" data-confirm="Cancelar esta impressão na fila?"><i aria-hidden="true" class="bi bi-x-circle"></i> Cancelar</button>
                                                             </form>
                                                         <?php elseif ($canCancel): ?>
-                                                            <button class="btn btn-outline-danger btn-sm" disabled title="Aguardando número no CUPS para cancelar"><i class="bi bi-x-circle"></i></button>
+                                                            <button class="btn btn-outline-danger btn-sm" disabled title="Aguardando número no CUPS para cancelar"><i aria-hidden="true" class="bi bi-x-circle"></i> Cancelar</button>
                                                         <?php endif; ?>
+                                                        <form novalidate method="post" action="/prints/reuse" class="d-inline">
+                                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                                            <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
+                                                            <button class="btn btn-outline-primary btn-sm">Usar arquivo novamente</button>
+                                                        </form>
                                                         <?php if ($partialSelection): ?>
-                                                            <button class="btn btn-outline-secondary btn-sm" disabled title="Faça uma nova impressão para repetir a seleção de páginas"><i class="bi bi-arrow-repeat"></i></button>
+                                                            <button class="btn btn-outline-secondary btn-sm" disabled title="Faça uma nova impressão para repetir a seleção de páginas"><i aria-hidden="true" class="bi bi-arrow-repeat"></i> Reimprimir</button>
                                                         <?php else: ?>
-                                                            <form method="post" action="/prints/reprint" class="d-inline">
+                                                            <form novalidate method="post" action="/prints/reprint" class="d-inline">
                                                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                                                 <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
-                                                                <button class="btn btn-outline-primary btn-sm" title="Reimprimir" onclick="return confirm('Reimprimir este arquivo?')"><i class="bi bi-arrow-repeat"></i></button>
+                                                                <button type="button" class="btn btn-outline-primary btn-sm" title="Reimprimir" data-confirm="Reimprimir com as mesmas opções e quantidade de cópias?"><i aria-hidden="true" class="bi bi-arrow-repeat"></i> Reimprimir</button>
                                                             </form>
                                                         <?php endif; ?>
                                                     </div>
                                                     <?php if ($isAdmin && ($job['status'] ?? '') === 'completed'): ?>
                                                         <details class="accounting-adjust text-start">
                                                             <summary>Corrigir folhas</summary>
-                                                            <form method="post" action="/prints/accounting" class="mt-2">
+                                                            <form novalidate method="post" action="/prints/accounting" class="mt-2">
                                                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                                                 <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
-                                                                <label class="form-label small mb-1">Folhas contabilizadas</label>
+                                                                <label class="form-label small mb-1">Acumulado contabilizado</label>
                                                                 <input type="number" name="charged_pages" class="form-control form-control-sm mb-1" min="0" value="<?= (int) $job['charged_pages'] ?>" required>
                                                                 <input type="text" name="reason" class="form-control form-control-sm mb-1" maxlength="180" placeholder="Motivo da correção" required>
-                                                                <button class="btn btn-warning btn-sm w-100" onclick="return confirm('Confirmar correção da contabilização?')">Salvar correção</button>
+                                                                <button type="button" class="btn btn-warning btn-sm w-100" data-confirm="Confirmar correção da contabilização?">Salvar correção</button>
                                                             </form>
                                                         </details>
                                                     <?php endif; ?>
@@ -448,6 +458,15 @@ if ($currentStatus === 'active') {
             </section>
         </main>
     </div>
+    <div class="modal fade" id="historyConfirm" tabindex="-1" aria-labelledby="historyConfirmTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+            <div class="modal-header"><h2 id="historyConfirmTitle" class="modal-title h5">Confirme a ação</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar confirmação"></button></div>
+            <div class="modal-body"><p id="historyConfirmMessage"></p><p id="historyConfirmFile" class="fw-semibold text-break"></p><p id="historyConfirmOptions" class="small text-muted"></p></div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="historyKeep">Voltar</button><button type="button" class="btn btn-primary" id="historyProceed">Confirmar</button></div>
+        </div></div>
+    </div>
+    <script src="/js/vendor/bootstrap.bundle.min.js"></script>
+    <script src="/js/print-history.js?v=20261117"></script>
 </body>
 
 </html>

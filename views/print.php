@@ -1,10 +1,11 @@
 <?php
 $sessionRole = $_SESSION['role'] ?? 'user';
 $sessionName = $_SESSION['name'] ?? ($_SESSION['user'] ?? '');
+$reviewMode = !empty($reviewMode);
 $sharedMode = !empty($sharedMode);
 $shareToken = (string) ($shareToken ?? '');
 $sharedFile = is_array($sharedFile ?? null) ? $sharedFile : [];
-$printFormAction = $sharedMode ? '/share-target.php' : '';
+$printFormAction = $sharedMode ? '/share-target.php' : '/';
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -22,13 +23,12 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/css/vendor/bootstrap.min.css" rel="stylesheet">
+    <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
 
-    <link rel="stylesheet" href="/css/base.css?v=20260511">
-    <link rel="stylesheet" href="/css/print.css?v=20260825">
+    <link rel="stylesheet" href="/css/base.css?v=20261117">
+    <link rel="stylesheet" href="/css/print.css?v=20261117">
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </head>
 
 <body>
@@ -40,24 +40,24 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             <div class="container d-flex justify-content-between align-items-center">
 
                 <div class="d-flex align-items-center gap-2">
-                    <img src="/image/logo_escola.png" class="logo">
+                    <img src="/image/logo_escola.png" class="logo" alt="Emblema da escola">
                     <strong>Sistema de Impressão</strong>
                 </div>
 
                 <div class="d-flex align-items-center gap-3">
                     <span class="user">
-                        <i class="bi bi-person-circle"></i>
+                        <i aria-hidden="true" class="bi bi-person-circle"></i>
                         <?= htmlspecialchars($sessionName) ?>
                     </span>
 
                     <?php if ($sessionRole === 'admin'): ?>
                         <a href="/prints?status=active" class="btn btn-outline-light btn-sm">
-                            <i class="bi bi-list-task"></i> Fila
+                            <i aria-hidden="true" class="bi bi-list-task"></i> Fila
                         </a>
                     <?php endif; ?>
 
                     <a href="/logout" class="btn btn-outline-danger btn-sm">
-                        <i class="bi bi-box-arrow-right"></i> Sair
+                        <i aria-hidden="true" class="bi bi-box-arrow-right"></i> Sair
                     </a>
                 </div>
 
@@ -69,15 +69,15 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             <div class="page-title">
                 <div>
                     <h1>Nova impressão</h1>
-                    <p>Envie o arquivo, revise as opções e acompanhe pela fila quando precisar.</p>
+                    <p>Escolha o arquivo, confira as cópias e revise antes de enviar.</p>
                 </div>
                 <div class="d-flex gap-2">
                     <a href="/prints" class="btn btn-outline-secondary btn-sm">
-                        <i class="bi bi-clock-history"></i> Histórico
+                        <i aria-hidden="true" class="bi bi-clock-history"></i> Histórico
                     </a>
                     <?php if ($sessionRole === 'admin'): ?>
                         <a href="/admin" class="btn btn-outline-secondary btn-sm">
-                            <i class="bi bi-speedometer2"></i> Painel
+                            <i aria-hidden="true" class="bi bi-speedometer2"></i> Painel
                         </a>
                     <?php endif; ?>
                 </div>
@@ -90,7 +90,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                     unset($_SESSION['flash']); ?>
                 </div>
             <?php endif; ?>
-            <div id="printResult" class="alert d-none"></div>
+            <div id="printResult" class="alert d-none" role="status" aria-live="polite" tabindex="-1"></div>
             <div id="printerStatusBox" class="alert d-none" role="status"></div>
 
             <div class="row g-4">
@@ -102,10 +102,10 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                         <div class="card-body">
 
                             <div class="card-title-line">
-                                <h4><i class="bi bi-printer"></i> Configuração</h4>
+                                <h2 class="h5"><i aria-hidden="true" class="bi bi-printer"></i> Arquivo e cópias</h2>
                             </div>
 
-                            <form id="printForm" method="post" enctype="multipart/form-data" <?= $printFormAction !== '' ? 'action="' . htmlspecialchars($printFormAction) . '"' : '' ?>>
+                            <form novalidate id="printForm" method="post" enctype="multipart/form-data" <?= $printFormAction !== '' ? 'action="' . htmlspecialchars($printFormAction) . '"' : '' ?>>
                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                 <input type="hidden" name="upload_token" id="uploadTokenInput" value="<?= htmlspecialchars((string) ($sharedFile['upload_token'] ?? '')) ?>">
                                 <?php if ($sharedMode): ?>
@@ -115,13 +115,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
 
                                 <div class="mb-3 upload-wrapper">
 
-                                    <label class="form-label">
-                                        <i class="bi bi-file-earmark-arrow-up"></i> Arquivo
-                                    </label>
+                                    <p class="form-label"><i aria-hidden="true" class="bi bi-file-earmark-arrow-up"></i> Arquivo</p>
 
-                                    <?php if ($sharedMode): ?>
+                                    <?php if ($sharedMode || $reviewMode): ?>
                                         <div class="upload-box success shared-upload-box" id="drop-area">
-                                            <i class="bi bi-file-earmark-check fs-1"></i>
+                                            <i aria-hidden="true" class="bi bi-file-earmark-check fs-1"></i>
                                             <p id="file-label"><?= htmlspecialchars($sharedFile['original_name'] ?? 'Arquivo recebido') ?></p>
                                         </div>
 
@@ -131,12 +129,12 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
 
                                         <?php if (!empty($sharedFile['page_warning'])): ?>
                                             <div class="print-advice" id="pageAdvice">
-                                                <i class="bi bi-exclamation-triangle"></i>
+                                                <i aria-hidden="true" class="bi bi-exclamation-triangle"></i>
                                                 <span><?= htmlspecialchars($sharedFile['page_warning']) ?></span>
                                             </div>
                                         <?php elseif (!empty($sharedFile['page_advice'])): ?>
                                             <div class="print-advice" id="pageAdvice">
-                                                <i class="bi bi-lightbulb"></i>
+                                                <i aria-hidden="true" class="bi bi-lightbulb"></i>
                                                 <span><?= htmlspecialchars($sharedFile['page_advice']) ?></span>
                                             </div>
                                         <?php elseif (!empty($sharedFile['page_error'])): ?>
@@ -145,119 +143,71 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                                             </div>
                                         <?php endif; ?>
                                     <?php else: ?>
-                                        <div class="upload-box" id="drop-area">
-                                            <i class="bi bi-cloud-upload fs-1"></i>
-                                            <p id="file-label">Clique ou arraste o arquivo</p>
-                                            <input type="file" name="arquivo" id="fileInput" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,text/plain" hidden required>
-                                        </div>
+                                        <button type="button" class="upload-box w-100" id="drop-area" aria-describedby="file-help">
+                                            <i aria-hidden="true" class="bi bi-cloud-upload fs-1"></i>
+                                            <span id="file-label" class="d-block">Escolher arquivo ou arrastar aqui</span>
+
+                                        </button>
+                                            <input type="file" name="arquivo" id="fileInput" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,text/plain" hidden>
 
                                         <div id="file-info" class="mt-2 small text-muted"></div>
                                     <?php endif; ?>
 
-                                    <!-- PREVIEW -->
-                                    <div id="previewSummary" class="preview-summary mt-3 d-none">
-                                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-                                            <strong>Pré-visualização da impressão</strong>
-                                            <span id="previewConfiguration" class="text-muted small"></span>
-                                        </div>
-                                        <div id="previewCoverage" class="small text-muted mt-1"></div>
-                                    </div>
-                                    <div id="preview" class="mt-3"></div>
-
-                                    <!-- PROGRESS -->
-                                    <div class="progress mt-3 d-none" id="progressBar">
-                                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
-                                    </div>
-
+                                    <?php if ($reviewMode): ?>
+                                        <input type="file" name="arquivo" id="fileInput" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.txt" hidden>
+                                    <?php endif; ?>
                                     <?php if (!$sharedMode): ?>
-                                        <small class="text-muted">
+                                        <div class="file-actions mt-2 d-flex gap-2">
+                                            <button type="button" id="replaceFile" class="btn btn-outline-secondary btn-sm">Trocar arquivo</button>
+                                            <button type="button" id="removeFile" class="btn btn-outline-danger btn-sm">Remover arquivo</button>
+                                        </div>
+                                    <?php endif; ?>
+                                    <?php if (!$sharedMode): ?>
+                                        <small id="file-help" class="text-muted">
                                             PDF, DOC, DOCX, TXT ou imagem (máx <?= (int) ($maxUploadMb ?? 20) ?>MB)
                                         </small>
                                     <?php endif; ?>
 
                                 </div>
 
-                                <div class="option-grid mb-3">
+                                <div class="option-grid primary-options mb-3">
                                     <div>
-                                        <label class="form-label">Cópias</label>
-                                        <input type="number" class="form-control" name="copies" value="1" min="1">
+                                        <label class="form-label" for="copies">Quantidade de cópias</label>
+                                        <input id="copies" type="number" class="form-control" name="copies" value="1" min="1" step="1" inputmode="numeric" aria-describedby="copies-help">
+                                        <small id="copies-help" class="text-muted">Ex.: 30 alunos → 30 cópias.</small>
                                     </div>
-
                                     <div>
-                                        <label class="form-label">Modo</label>
-                                        <select class="form-select" name="sides">
-                                            <option value="one-sided">Simples</option>
-                                            <option value="two-sided-long-edge">Frente e verso - borda maior</option>
-                                            <option value="two-sided-short-edge">Frente e verso - borda menor</option>
+                                        <label class="form-label" for="sides">Como imprimir</label>
+                                        <select id="sides" class="form-select" name="sides">
+                                            <option value="one-sided">Frente apenas</option>
+                                            <option value="two-sided-long-edge">Frente e verso — como um livro</option>
+                                            <option value="two-sided-short-edge">Frente e verso — como um bloco</option>
                                         </select>
                                     </div>
-
-                                    <div>
-                                        <label class="form-label">Orientação</label>
-                                        <select class="form-select" name="orientation">
-                                            <option value="auto" selected>Automática</option>
-                                            <option value="portrait">Retrato</option>
-                                            <option value="landscape">Paisagem</option>
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label class="form-label">Qualidade</label>
-                                        <select class="form-select" name="quality">
-                                            <option value="3">Normal</option>
-                                            <option value="5">Alta</option>
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label class="form-label">Páginas por folha</label>
-                                        <select class="form-select" name="number_up">
-                                            <option value="1">1 por folha</option>
-                                            <option value="2">2 por folha</option>
-                                            <option value="4">4 por folha</option>
-                                            <option value="8">8 por folha</option>
-                                        </select>
-                                        <input type="hidden" name="large_document_layout" value="auto">
-                                    </div>
-
-                                    <div>
-                                        <label class="form-label">Tamanho do papel</label>
-                                        <select class="form-select" name="paper">
-                                            <option value="A4">A4</option>
-                                            <option value="Letter">Carta</option>
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label class="form-label">Escala</label>
-                                        <select class="form-select" name="scale">
-                                            <option value="fit">Ajustar à página</option>
-                                            <option value="100">100%</option>
-                                            <option value="95">95%</option>
-                                            <option value="90">90%</option>
-                                            <option value="80">80%</option>
-                                            <option value="custom">Personalizada</option>
-                                        </select>
-                                    </div>
-
-                                    <div class="d-none" id="scaleCustomBox">
-                                        <label class="form-label">Escala personalizada (%)</label>
-                                        <input type="number" class="form-control" name="scale_percent" value="100" min="10" max="400">
-                                    </div>
-
-                                    <div class="wide">
-                                        <label class="form-label">Páginas</label>
-                                        <input type="text" class="form-control" name="page_ranges" placeholder="Ex.: 1,3-5">
-                                        <small class="text-muted">Deixe em branco para imprimir todas</small>
-                                    </div>
-
                                 </div>
-
+                                <details class="advanced-options mb-3" id="advancedOptions">
+                                    <summary>Mais opções de impressão</summary>
+                                    <div class="option-grid mt-3">
+                                        <div><label class="form-label" for="orientation">Orientação</label><select id="orientation" class="form-select" name="orientation"><option value="auto">Automática</option><option value="portrait">Retrato</option><option value="landscape">Paisagem</option></select></div>
+                                        <div><label class="form-label" for="quality">Qualidade</label><select id="quality" class="form-select" name="quality"><option value="3">Normal</option><option value="5">Alta</option></select></div>
+                                        <div><label class="form-label" for="number_up">Páginas em cada lado do papel</label><select id="number_up" class="form-select" name="number_up"><option value="1">1 página por lado</option><option value="2">2 páginas por lado</option><option value="4">4 páginas por lado</option><option value="8">8 páginas por lado</option></select><input type="hidden" name="large_document_layout" value="auto"></div>
+                                        <div><label class="form-label" for="paper">Tamanho do papel</label><select id="paper" class="form-select" name="paper"><option value="A4">A4</option><option value="Letter">Carta</option></select></div>
+                                        <div><label class="form-label" for="scale">Escala</label><select id="scale" class="form-select" name="scale"><option value="fit">Ajustar à página</option><option value="100">100%</option><option value="95">95%</option><option value="90">90%</option><option value="80">80%</option><option value="custom">Personalizada</option></select></div>
+                                        <div class="d-none" id="scaleCustomBox"><label class="form-label" for="scale_percent">Escala personalizada (%)</label><input id="scale_percent" type="number" class="form-control" name="scale_percent" value="100" min="10" max="400"></div>
+                                        <div class="wide"><label class="form-label" for="page_ranges">Quais páginas?</label><input id="page_ranges" type="text" class="form-control" name="page_ranges" placeholder="Ex.: 1,3-5" aria-describedby="pages-help"><small id="pages-help" class="text-muted">Em branco, imprime todas. Separe páginas por vírgula e intervalos por hífen.</small></div>
+                                    </div>
+                                </details>
+                                <div class="favorite-actions d-flex flex-wrap gap-2 mb-3">
+                                    <button type="button" id="saveFavorite" class="btn btn-outline-secondary btn-sm">Salvar estas opções</button>
+                                    <button type="button" id="loadFavorite" class="btn btn-outline-secondary btn-sm" disabled>Usar opções salvas</button>
+                                </div>
+                                <p id="favoriteFeedback" class="small text-muted" role="status">Salva neste navegador, sem arquivo nem quantidade de cópias.</p>
+                                <p id="formError" class="text-danger" role="alert"></p>
                                 <?php if ($sessionRole === 'admin'): ?>
                                     <div class="mb-3 admin-box">
 
-                                        <label class="form-label">
-                                            <i class="bi bi-person-gear"></i> Imprimir para
+                                        <label class="form-label" for="targetUserSearch">
+                                            <i aria-hidden="true" class="bi bi-person-gear"></i> Imprimir para
                                         </label>
 
                                         <input list="users" name="target_user_search" id="targetUserSearch" class="form-control" autocomplete="off">
@@ -276,23 +226,10 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                                     </div>
                                 <?php endif; ?>
 
-                                <div class="<?= $sharedMode ? 'print-actions' : '' ?>">
-                                    <button id="btnPrint" class="btn btn-primary w-100" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
-                                        <span class="text"><?= $sharedMode ? 'Confirmar impressão' : 'Imprimir' ?></span>
-                                        <span class="spinner-border spinner-border-sm d-none"></span>
-                                    </button>
-
-                                    <?php if ($sharedMode): ?>
-                                        <button type="submit" form="shareCancelForm" class="btn btn-outline-danger w-100">
-                                            <i class="bi bi-x-circle"></i> Cancelar
-                                        </button>
-                                    <?php endif; ?>
-                                </div>
-
                             </form>
 
                             <?php if ($sharedMode): ?>
-                                <form id="shareCancelForm" method="post" action="/share-target.php" class="d-none">
+                                <form novalidate id="shareCancelForm" method="post" action="/share-target.php" class="d-none">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                     <input type="hidden" name="share_token" value="<?= htmlspecialchars($shareToken) ?>">
                                     <input type="hidden" name="share_action" value="cancel">
@@ -310,30 +247,44 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                     <div class="card shadow-sm border-0 info-panel">
                         <div class="card-body">
 
-                            <div class="card-title-line">
-                                <h5><i class="bi bi-info-circle"></i> Atalhos</h5>
+                            <div class="card-title-line"><h2 class="h5">Confira antes de imprimir</h2></div>
+                            <div id="paperEstimate" class="paper-estimate" role="status" aria-live="polite">
+                                <strong id="estimateTotal">Escolha um arquivo para começar</strong>
+                                <p id="estimateDetails" class="mb-1">A estimativa de papel aparecerá aqui.</p>
+                                <small>Estimativa de folhas físicas. O acumulado do sistema segue a regra de contabilização da escola.</small>
                             </div>
+                            <p id="sendState" class="send-state" role="status" aria-live="polite">Nenhum arquivo pronto para envio.</p>
+                            <div id="progressBar" class="d-none" role="status"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Aguardando resposta do servidor…</div>
+                                <div class="<?= $sharedMode ? 'print-actions' : '' ?>">
+                                    <button type="submit" form="printForm" id="btnPrint" class="btn btn-primary w-100" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
+                                        <span class="text"><?= $sharedMode ? 'Confirmar impressão' : 'Enviar para impressão' ?></span>
+                                        <span class="spinner-border spinner-border-sm d-none"></span>
+                                    </button>
 
-                            <ul class="list-unstyled info-list">
-                                <li><i class="bi bi-check-circle"></i> Envie arquivos PDF, DOC, DOCX, TXT ou imagem</li>
-                                <li><i class="bi bi-check-circle"></i> Escolha frente e verso se necessário</li>
-                                <li><i class="bi bi-check-circle"></i> Consulte arquivos impressos para baixar ou reimprimir</li>
-                                <li><i class="bi bi-check-circle"></i> Administradores podem imprimir para outros
-                                    usuários</li>
-                            </ul>
+                                    <?php if ($sharedMode): ?>
+                                        <button type="submit" form="shareCancelForm" class="btn btn-outline-danger w-100">
+                                            <i aria-hidden="true" class="bi bi-x-circle"></i> Descartar arquivo
+                                        </button>
+                                    <?php endif; ?>
+                                </div>
 
-                            <div class="quick-actions mt-3">
-                                <a href="<?= $sessionRole === 'admin' ? '/prints?status=active' : '/prints' ?>">
-                                    <span><i class="bi <?= $sessionRole === 'admin' ? 'bi-list-task' : 'bi-clock-history' ?>"></i> <?= $sessionRole === 'admin' ? 'Ver fila de impressão' : 'Ver meu histórico' ?></span>
-                                    <i class="bi bi-chevron-right"></i>
-                                </a>
-                                <?php if ($sessionRole === 'admin'): ?>
-                                    <a href="/admin">
-                                        <span><i class="bi bi-speedometer2"></i> Abrir painel administrativo</span>
-                                        <i class="bi bi-chevron-right"></i>
-                                    </a>
-                                <?php endif; ?>
-                            </div>
+
+                            <a href="/prints" id="trackPrint" class="btn btn-outline-secondary w-100 mt-2">Acompanhar meus envios</a>
+                            <p class="small text-muted mt-2">Enviar não confirma que o papel já saiu. Confira a situação em Meus envios antes de repetir.</p>
+                                    <!-- PREVIEW -->
+                                    <div id="previewSummary" class="preview-summary mt-3 d-none">
+                                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                            <strong>Prévia de amostra</strong>
+                                            <span id="previewConfiguration" class="text-muted small"></span>
+                                        </div>
+                                        <div id="previewCoverage" class="small text-muted mt-1"></div>
+                                    </div>
+                                    <button type="button" id="expandPreview" class="btn btn-outline-secondary btn-sm mt-2" disabled>Abrir prévia ampliada</button>
+                                    <a id="openPreviewPdf" class="btn btn-outline-secondary btn-sm mt-2 d-none" target="_blank" rel="noopener">Abrir PDF em nova aba</a>
+                                    <div id="preview" class="mt-3"></div>
+
+
+                            <details class="mobile-help mt-3"><summary>Como enviar pelo celular</summary><p class="small mt-2">Você pode escolher o arquivo acima. Para compartilhar do WhatsApp, abra o documento e use Compartilhar. Instale o sistema na tela inicial; a disponibilidade depende do celular. No iPhone, use Safari → Compartilhar → Adicionar à Tela de Início.</p></details>
 
                         </div>
                     </div>
@@ -346,13 +297,13 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
 
     </div>
 
-    <div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalTitle" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered">
             <div class="modal-content">
 
                 <div class="modal-header">
-                    <h5 class="modal-title">Visualização do arquivo</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="previewModalTitle">Visualização do arquivo</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar prévia"></button>
                 </div>
 
                 <div class="modal-body text-center">
@@ -363,6 +314,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         </div>
     </div>
 
+    <script src="/js/print-estimate.js?v=20261117"></script>
     <script>
         const dropArea = document.getElementById('drop-area');
         const input = document.getElementById('fileInput');
@@ -374,16 +326,18 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         const previewCoverage = document.getElementById('previewCoverage');
         const uploadTokenInput = document.getElementById('uploadTokenInput');
         const progress = document.getElementById('progressBar');
-        const bar = progress.querySelector('.progress-bar');
+
         const printForm = document.getElementById('printForm');
         const btnPrint = document.getElementById('btnPrint');
         const resultBox = document.getElementById('printResult');
         const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
+        const reviewOptions = <?= json_encode($reviewOptions ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        const reviewMode = <?= json_encode($reviewMode) ?>;
         const sharedMode = <?= json_encode($sharedMode) ?>;
-        const sharedFile = <?= json_encode($sharedFile, JSON_UNESCAPED_UNICODE) ?>;
+        const sharedFile = <?= json_encode($sharedFile, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         const shareToken = <?= json_encode($shareToken) ?>;
-        const adminUsers = <?= json_encode($userList ?? [], JSON_UNESCAPED_UNICODE) ?>;
-        let printerStatus = <?= json_encode($printerStatus ?? [], JSON_UNESCAPED_UNICODE) ?>;
+        const adminUsers = <?= json_encode($userList ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        let printerStatus = <?= json_encode($printerStatus ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         let pageCountToken = 0;
         let previewToken = 0;
         let previewObjectUrl = '';
@@ -393,9 +347,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         let previewController = null;
         let previewDebounceTimer = null;
         let currentPageData = null;
-        let currentFileMeta = sharedMode ? sharedFile : null;
+        let currentFileMeta = (sharedMode || reviewMode) ? sharedFile : null;
         let currentPageAdvice = '';
         let printingActive = false;
+        let submissionLocked = false;
+        let documentRecalculating = false;
         let sharedPrintCompleted = false;
         let postPrintWatchTimer = null;
         let postPrintWatchUntil = 0;
@@ -408,6 +364,131 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         const sidesSelect = document.querySelector('[name="sides"]');
         const largeDocumentLayout = document.querySelector('[name="large_document_layout"]');
         let layoutChangedByUser = false;
+
+        const favoriteKey = 'impressao.opcoes.v1';
+        const favoriteFields = { sides: ['one-sided', 'two-sided-long-edge', 'two-sided-short-edge'], paper: ['A4', 'Letter'], orientation: ['auto', 'portrait', 'landscape'], quality: ['3', '5'], number_up: ['1', '2', '4', '8'], scale: ['fit', '100', '95', '90', '80'] };
+
+        function paperEstimate() {
+            return estimatePrintPaper({ pages: currentPageData && currentPageData.pages, copies: printForm.elements.copies.value,
+                sides: sidesSelect.value, numberUp: numberUpSelect.value, range: printForm.elements.page_ranges.value });
+        }
+
+        function updateEstimate() {
+            const total = document.getElementById('estimateTotal');
+            const details = document.getElementById('estimateDetails');
+            const state = document.getElementById('sendState');
+            const result = paperEstimate();
+            if (!uploadToken || documentRecalculating || result.sheets === null) {
+                total.textContent = !uploadToken ? 'Escolha um arquivo para começar' : (documentRecalculating ? 'Recalculando páginas…' : 'Confira cópias e seleção de páginas');
+                details.textContent = 'A estimativa fica disponível após validar o arquivo e as opções.';
+            } else {
+                total.textContent = `Estimativa: ${result.sheets} ${result.sheets === 1 ? 'folha' : 'folhas'} de papel`;
+                details.textContent = `${currentFileMeta.original_name} · ${result.selectedPages} ${result.selectedPages === 1 ? 'página selecionada' : 'páginas selecionadas'} · ${printForm.elements.copies.value} ${Number(printForm.elements.copies.value) === 1 ? 'cópia' : 'cópias'} · ${sidesSelect.value === 'one-sided' ? 'frente apenas' : 'frente e verso'}`;
+            }
+            if (!printingActive && !submissionLocked) state.textContent = uploadToken ? (documentRecalculating ? 'Recalculando o documento. Aguarde.' : 'Arquivo pronto. Confira as opções antes de enviar.') : (uploadController ? 'Enviando e validando o arquivo…' : 'Nenhum arquivo pronto para envio.');
+        }
+
+        function showFieldError(element, message) {
+            document.getElementById('formError').textContent = message;
+            element.setAttribute('aria-invalid', 'true');
+            element.setAttribute('aria-describedby', 'formError');
+            const disclosure = element.closest('details');
+            if (disclosure) disclosure.open = true;
+            element.focus();
+            return false;
+        }
+
+        function validatePrintOptions() {
+            document.getElementById('formError').textContent = '';
+            printForm.querySelectorAll('[aria-invalid]').forEach(element => element.removeAttribute('aria-invalid'));
+            const copies = printForm.elements.copies;
+            if (!Number.isSafeInteger(Number(copies.value)) || Number(copies.value) < 1) return showFieldError(copies, 'Informe uma quantidade inteira de cópias, a partir de 1.');
+            if (scaleSelect.value === 'custom') {
+                const scale = printForm.elements.scale_percent;
+                if (!Number.isFinite(Number(scale.value)) || Number(scale.value) < 10 || Number(scale.value) > 400) return showFieldError(scale, 'Informe uma escala entre 10% e 400%.');
+            }
+            if (uploadToken && paperEstimate().sheets === null) return showFieldError(printForm.elements.page_ranges, 'Confira o intervalo de páginas. Use, por exemplo, 1,3-5 e não ultrapasse o total do documento.');
+            return true;
+        }
+
+        function clearSelectedFile() {
+            clearTimeout(previewDebounceTimer);
+            [uploadController, pageCountController, previewController].forEach(controller => { if (controller) controller.abort(); });
+            uploadController = pageCountController = previewController = null;
+            if (submissionLocked) printForm.elements.copies.value = '1';
+            pageCountToken++;
+            previewToken++;
+            resetPreviewObjectUrl();
+            uploadToken = '';
+            uploadTokenInput.value = '';
+            currentPageData = currentFileMeta = null;
+            documentRecalculating = false;
+            submissionLocked = false;
+            if (input) input.value = '';
+            label.textContent = 'Escolher arquivo ou arrastar aqui';
+            info.textContent = '';
+            preview.innerHTML = '';
+            currentPageAdvice = '';
+            renderPageAdvice();
+            previewSummary.classList.add('d-none');
+            dropArea.classList.remove('success', 'error', 'drag-over');
+            resultBox.classList.add('d-none');
+            renderPrinterStatus(printerStatus);
+        }
+
+        document.getElementById('expandPreview').addEventListener('click', () => { if (previewObjectUrl) openModal(previewObjectUrl, 'pdf'); });
+        printForm.addEventListener('input', event => {
+            if (event.target.hasAttribute('aria-invalid')) {
+                event.target.removeAttribute('aria-invalid');
+                document.getElementById('formError').textContent = '';
+            }
+            updateEstimate();
+        });
+        printForm.addEventListener('change', updateEstimate);
+        if (input) {
+            document.getElementById('replaceFile').addEventListener('click', () => input.click());
+            document.getElementById('removeFile').addEventListener('click', () => { clearSelectedFile(); document.getElementById('replaceFile').focus(); });
+            ['dragover', 'drop'].forEach(name => dropArea.addEventListener(name, event => event.preventDefault()));
+            dropArea.addEventListener('dragover', () => { if (!printingActive) dropArea.classList.add('drag-over'); });
+            dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
+            dropArea.addEventListener('drop', event => {
+                dropArea.classList.remove('drag-over');
+                if (printingActive || !event.dataTransfer.files.length) return;
+                if (event.dataTransfer.files.length !== 1) { showPrintResult('Envie um arquivo por vez. Selecione o documento que deseja imprimir.', false); return; }
+                input.files = event.dataTransfer.files;
+                input.dispatchEvent(new Event('change'));
+            });
+        }
+
+        document.getElementById('saveFavorite').addEventListener('click', () => {
+            const feedback = document.getElementById('favoriteFeedback');
+            try {
+                const values = {};
+                Object.entries(favoriteFields).forEach(([name, allowed]) => { const value = printForm.elements[name].value; if (allowed.includes(value)) values[name] = value; });
+                localStorage.setItem(favoriteKey, JSON.stringify(values));
+                document.getElementById('loadFavorite').disabled = false;
+                feedback.textContent = 'Opções salvas neste navegador. Arquivo, cópias e seleção de páginas não são salvos.';
+            } catch { feedback.textContent = 'O navegador não permitiu salvar. Você pode continuar imprimindo normalmente.'; }
+        });
+        document.getElementById('loadFavorite').addEventListener('click', () => {
+            try {
+                const values = JSON.parse(localStorage.getItem(favoriteKey));
+                if (!values || typeof values !== 'object') throw new Error();
+                Object.entries(favoriteFields).forEach(([name, allowed]) => { if (allowed.includes(values[name])) printForm.elements[name].value = values[name]; });
+                printForm.elements.copies.value = '1';
+                printForm.elements.page_ranges.value = '';
+                largeDocumentLayout.value = 'manual';
+                layoutChangedByUser = true;
+                scaleCustomBox.classList.toggle('d-none', scaleSelect.value !== 'custom');
+                document.getElementById('favoriteFeedback').textContent = 'Opções aplicadas. Confira a quantidade: 1 cópia.';
+                if (uploadToken) {
+                    documentRecalculating = true;
+                    loadPageCount(++pageCountToken);
+                }
+                renderPrinterStatus(printerStatus);
+            } catch { document.getElementById('favoriteFeedback').textContent = 'Não foi possível recuperar as opções. Ajuste os campos para continuar.'; }
+        });
+        try { document.getElementById('loadFavorite').disabled = !localStorage.getItem(favoriteKey); } catch { /* Favorites are optional. */ }
 
         scaleSelect.addEventListener('change', () => {
             scaleCustomBox.classList.toggle('d-none', scaleSelect.value !== 'custom');
@@ -469,6 +550,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             if (!select) return;
             select.addEventListener('change', () => {
                 layoutChangedByUser = true;
+                currentPageAdvice = '';
+                renderPageAdvice();
                 if (largeDocumentLayout) {
                     largeDocumentLayout.value = 'manual';
                 }
@@ -494,11 +577,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             const modalContent = document.getElementById('modalContent');
 
             if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
-                modalContent.innerHTML = `<img src="${url}" style="max-width:100%;">`;
+                modalContent.innerHTML = `<img alt="Prévia do arquivo" src="${url}" style="max-width:100%;">`;
             }
 
             if (ext === 'pdf') {
-                modalContent.innerHTML = `<iframe src="${url}" style="width:100%; height:80vh;"></iframe>`;
+                modalContent.innerHTML = `<iframe title="Prévia ampliada da impressão" src="${url}" style="width:100%; height:80vh;"></iframe>`;
             }
 
             const modal = new bootstrap.Modal(document.getElementById('previewModal'));
@@ -521,7 +604,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         function resetPreviewObjectUrl() {
             if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
             previewObjectUrl = '';
-            preview.onclick = null;
+            document.getElementById('expandPreview').disabled = true;
+            document.getElementById('openPreviewPdf').classList.add('d-none');
+            document.getElementById('openPreviewPdf').removeAttribute('href');
         }
 
         function pageInfoText(data) {
@@ -536,6 +621,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         }
 
         function renderPreviewSummary(metadata = null) {
+            updateEstimate();
             if (!uploadToken) {
                 previewSummary.classList.add('d-none');
                 return;
@@ -545,7 +631,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             const orientationValue = document.querySelector('[name="orientation"]').value;
             const orientation = orientationValue === 'portrait' ? 'Retrato' : (orientationValue === 'landscape' ? 'Paisagem' : 'Automática');
             const sides = sidesSelect.value === 'one-sided' ? 'Impressão simples' : 'Frente e verso';
-            previewConfiguration.textContent = `${numberUp} ${numberUp === 1 ? 'página' : 'páginas'} por folha • ${paper} • ${orientation} • ${sides}`;
+            previewConfiguration.textContent = `${numberUp} ${numberUp === 1 ? 'página' : 'páginas'} por lado • ${paper} • ${orientation} • ${sides}`;
 
             if (metadata) {
                 const shown = Number(metadata.previewSheets || 0);
@@ -577,7 +663,10 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             preview.innerHTML = '<div class="preview-loading"><span class="spinner-border spinner-border-sm"></span><span>Preparando o arquivo...</span></div>';
             previewSummary.classList.add('d-none');
             btnPrint.disabled = true;
+            updateEstimate();
 
+            const requestedPaper = printForm.elements.paper.value;
+            const requestedOrientation = printForm.elements.orientation.value;
             const formData = new FormData();
             formData.append('arquivo', file);
             appendPreviewOptions(formData);
@@ -596,18 +685,24 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                     throw new Error(friendlyServerError(text, response));
                 }
                 if (!response.ok || !data.success) throw new Error(data.message || 'Não foi possível enviar o arquivo.');
+                if (uploadController !== controller) return;
                 uploadToken = data.upload_token;
                 uploadTokenInput.value = uploadToken;
+                documentRecalculating = requestedPaper !== printForm.elements.paper.value || requestedOrientation !== printForm.elements.orientation.value;
                 currentPageData = data;
                 currentFileMeta = { ...currentFileMeta, ...data };
                 info.textContent = pageInfoText(data);
-                currentPageAdvice = data.advice || '';
+                currentPageAdvice = layoutChangedByUser ? '' : (data.advice || '');
                 applyLargeDocumentLayout(data);
                 renderPageAdvice();
                 renderPreviewSummary();
-                schedulePreview(0);
+                if (documentRecalculating) {
+                    loadPageCount(++pageCountToken);
+                } else {
+                    schedulePreview(0);
+                }
             } catch (error) {
-                if (error.name === 'AbortError') return;
+                if (error.name === 'AbortError' || uploadController !== controller) return;
                 dropArea.classList.remove('success');
                 dropArea.classList.add('error');
                 preview.innerHTML = `<p class="text-danger">${escapeHtml(error.message)}</p>`;
@@ -647,7 +742,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                 resetPreviewObjectUrl();
                 previewObjectUrl = URL.createObjectURL(blob);
                 preview.innerHTML = `<iframe src="${previewObjectUrl}" title="Pré-visualização da impressão"></iframe>`;
-                preview.onclick = () => openModal(previewObjectUrl, 'pdf');
+                document.getElementById('expandPreview').disabled = false;
+                document.getElementById('openPreviewPdf').href = previewObjectUrl;
+                document.getElementById('openPreviewPdf').classList.remove('d-none');
                 renderPreviewSummary(metadata);
             } catch (error) {
                 if (error.name === 'AbortError' || token !== previewToken) return;
@@ -684,16 +781,22 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                 if (!response.ok || !data.success) throw new Error(data.message || 'não foi possível contar as páginas');
                 currentPageData = data;
                 info.textContent = pageInfoText(data);
-                currentPageAdvice = data.advice || '';
+                currentPageAdvice = layoutChangedByUser ? '' : (data.advice || '');
                 applyLargeDocumentLayout(data);
                 renderPageAdvice();
                 schedulePreview();
             } catch (error) {
                 if (error.name === 'AbortError' || token !== pageCountToken) return;
-                info.textContent = `${currentFileMeta && currentFileMeta.size_label ? currentFileMeta.size_label : ''} · não foi possível recalcular as páginas`;
+                currentPageData = null;
+                info.textContent = 'Não foi possível recalcular. Confira a conexão e tente alterar o papel ou orientação novamente.';
                 schedulePreview();
             } finally {
-                if (pageCountController === controller) pageCountController = null;
+                if (pageCountController === controller) {
+                    pageCountController = null;
+                    documentRecalculating = false;
+                    renderPrinterStatus(printerStatus);
+                    updateEstimate();
+                }
             }
         }
 
@@ -701,6 +804,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             input.addEventListener('change', () => {
                 const file = input.files[0];
                 if (!file) return;
+                clearSelectedFile();
                 const ext = file.name.split('.').pop().toLowerCase();
                 resetPreviewObjectUrl();
                 const previousLayoutWasAutomatic = largeDocumentLayout && largeDocumentLayout.value === 'auto_applied';
@@ -724,6 +828,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                     input.value = '';
                     return;
                 }
+                input.value = '';
                 label.textContent = file.name;
                 dropArea.classList.add('success');
                 uploadSelectedFile(file);
@@ -738,7 +843,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             const box = document.createElement('div');
             box.id = 'pageAdvice';
             box.className = 'print-advice';
-            box.innerHTML = `<i class="bi bi-lightbulb"></i><span>${escapeHtml(currentPageAdvice)}</span>`;
+            box.innerHTML = `<i aria-hidden="true" class="bi bi-lightbulb"></i><span>${escapeHtml(currentPageAdvice)}</span>`;
             info.insertAdjacentElement('afterend', box);
         }
 
@@ -765,7 +870,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                 previewToken++;
                 if (previewController) previewController.abort();
                 info.textContent = `${currentFileMeta && currentFileMeta.size_label ? currentFileMeta.size_label : ''} · recalculando páginas...`;
+                documentRecalculating = true;
                 renderPreviewSummary();
+                renderPrinterStatus(printerStatus);
                 loadPageCount(++pageCountToken);
             });
         });
@@ -802,6 +909,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         function showPrintResult(message, success) {
             resultBox.className = `alert alert-${success ? 'success' : 'danger'}`;
             resultBox.textContent = message;
+            resultBox.focus({ preventScroll: true });
             resultBox.classList.remove('d-none');
             resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
@@ -835,7 +943,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
         function renderPrinterStatus(status) {
             printerStatus = status || {};
             const notice = printerStatus.notice || '';
-            const awaitingUpload = !sharedMode && input && input.files.length > 0 && !uploadToken;
+            const awaitingUpload = !uploadToken || documentRecalculating || submissionLocked;
+            updateEstimate();
             if (!notice) {
                 printerStatusBox.classList.add('d-none');
                 if (!printingActive) {
@@ -846,7 +955,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
 
             const type = printerStatus.notice_type || (printerStatus.can_print === false ? 'warning' : 'success');
             printerStatusBox.className = `alert alert-${type} printer-status-alert`;
-            printerStatusBox.innerHTML = `<i class="bi bi-printer"></i><span>${escapeHtml(notice)}</span>`;
+            printerStatusBox.innerHTML = `<i aria-hidden="true" class="bi bi-printer"></i><span>${escapeHtml(notice)}</span>`;
             printerStatusBox.classList.remove('d-none');
             if (!printingActive) {
                 btnPrint.disabled = awaitingUpload || printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
@@ -891,25 +1000,30 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             printingActive = active;
             const text = btnPrint.querySelector('.text');
             const spinner = btnPrint.querySelector('.spinner-border');
-            const awaitingUpload = !sharedMode && input && input.files.length > 0 && !uploadToken;
+            const awaitingUpload = !uploadToken || documentRecalculating || submissionLocked;
             btnPrint.disabled = active || awaitingUpload || printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
-            text.textContent = active ? 'Enviando...' : (sharedMode && sharedPrintCompleted ? 'Enviado' : (sharedMode ? 'Confirmar impressão' : 'Imprimir'));
+            text.textContent = active ? 'Enviando...' : (submissionLocked ? 'Confira em Meus envios' : null) || (sharedMode && sharedPrintCompleted ? 'Enviado' : (sharedMode ? 'Confirmar impressão' : 'Enviar para impressão'));
             spinner.classList.toggle('d-none', !active);
             progress.classList.toggle('d-none', !active);
+            printForm.querySelectorAll('input, select, button').forEach(element => { element.disabled = active; });
             if (!active) {
-                bar.style.width = '0%';
+                try { document.getElementById('loadFavorite').disabled = !localStorage.getItem(favoriteKey); } catch { document.getElementById('loadFavorite').disabled = true; }
             }
+            document.getElementById('sendState').textContent = active ? 'Enviando à impressora. Aguarde a resposta.' : (submissionLocked ? 'Confira o resultado em Meus envios antes de uma nova impressão.' : (uploadToken ? 'Arquivo pronto. Confira as opções antes de enviar.' : 'Escolha um arquivo para preparar o envio.'));
+            updateEstimate();
         }
 
         // envio AJAX para exibir erros sem deixar a pagina presa carregando
         printForm.addEventListener('submit', (event) => {
             event.preventDefault();
-            if (!sharedMode && !uploadToken) {
+            if (printingActive || submissionLocked || documentRecalculating) return;
+            if (!validatePrintOptions()) return;
+            if (!uploadToken) {
                 showPrintResult('Aguarde o término do envio e da validação do arquivo antes de imprimir.', false);
                 return;
             }
             if (!syncTargetUserCpf()) {
-                printForm.reportValidity();
+                showFieldError(targetUserSearch, 'Selecione um professor da lista.');
                 return;
             }
             if (printerStatus.can_print === false) {
@@ -924,18 +1038,14 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
             pageCountToken++;
             resultBox.classList.add('d-none');
             progress.classList.remove('d-none');
+            const printData = new FormData(printForm);
             setPrintingState(true);
 
-            let percent = 0;
-            const interval = setInterval(() => {
-                percent = Math.min(percent + 10, 95);
-                bar.style.width = percent + '%';
-            }, 500);
+
 
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 300000);
 
-            const printData = new FormData(printForm);
             if (uploadToken) {
                 printData.delete('arquivo');
                 printData.set('upload_token', uploadToken);
@@ -958,7 +1068,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                     }
                 })
                 .then(data => {
-                    showPrintResult(data.message || 'Impressão enviada', !!data.success);
+                    if (data.success === undefined) submissionLocked = true;
+                    showPrintResult(data.message || 'Confira Meus envios para verificar o resultado.', !!data.success);
                     if (data.success) {
                         if (sharedMode) {
                             sharedPrintCompleted = true;
@@ -966,7 +1077,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                             uploadToken = '';
                             uploadTokenInput.value = '';
                         }
-                        bar.style.width = '100%';
+                        submissionLocked = true;
                         startPostPrintStatusWatch();
                     }
                 })
@@ -979,20 +1090,27 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
                         || String(error.message || '').startsWith('O arquivo é maior')) {
                         message = error.message;
                     }
-                    showPrintResult(message, false);
+                    submissionLocked = true;
+                    showPrintResult(message + ' Confira Meus envios antes de tentar novamente.', false);
                 })
                 .finally(() => {
                     clearTimeout(timeout);
-                    clearInterval(interval);
+
                     setPrintingState(false);
                 });
         });
 
+        if (reviewMode) {
+            Object.entries(reviewOptions).forEach(([name, value]) => { if (printForm.elements[name]) printForm.elements[name].value = value; });
+            largeDocumentLayout.value = 'manual';
+            layoutChangedByUser = true;
+            if (printForm.elements.page_ranges.value) document.getElementById('advancedOptions').open = true;
+        }
         renderPrinterStatus(printerStatus);
-        if (sharedMode && uploadToken) {
+        if ((sharedMode || reviewMode) && uploadToken) {
             currentPageData = sharedFile;
             currentPageAdvice = sharedFile.page_advice || '';
-            if (sharedFile.large_document) applyLargeDocumentLayout(sharedFile);
+            if (sharedMode && sharedFile.large_document) applyLargeDocumentLayout(sharedFile);
             renderPreviewSummary();
             schedulePreview(0);
         }
@@ -1001,7 +1119,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '';
 
     </script>
     <script src="/js/pwa.js?v=20260623"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/vendor/bootstrap.bundle.min.js"></script>
 </body>
 
 </html>

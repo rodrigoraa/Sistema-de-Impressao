@@ -226,6 +226,10 @@ class PrintJobService
             $params[':status'] = [$status, SQLITE3_TEXT];
         }
 
+        if (trim((string) ($filters['search'] ?? '')) !== '') {
+            $where[] = 'pj.original_name LIKE :search';
+            $params[':search'] = ['%' . trim((string) $filters['search']) . '%', SQLITE3_TEXT];
+        }
         if (!empty($filters['cpf'])) {
             $where[] = 'pj.user LIKE :cpf';
             $params[':cpf'] = ['%' . preg_replace('/\D/', '', (string) $filters['cpf']) . '%', SQLITE3_TEXT];
@@ -587,6 +591,10 @@ class PrintJobService
             $params[':user'] = [$user, SQLITE3_TEXT];
         }
 
+        if (trim((string) ($filters['search'] ?? '')) !== '') {
+            $where[] = 'us.file LIKE :search';
+            $params[':search'] = ['%' . trim((string) $filters['search']) . '%', SQLITE3_TEXT];
+        }
         if (!empty($filters['cpf'])) {
             $where[] = 'us.user LIKE :cpf';
             $params[':cpf'] = ['%' . preg_replace('/\D/', '', (string) $filters['cpf']) . '%', SQLITE3_TEXT];

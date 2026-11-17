@@ -6,6 +6,7 @@
     margin-bottom: 18px;
 }
 
+.card-title-line h2,
 .card-title-line h4,
 .card-title-line h5 {
     margin: 0;
@@ -286,4 +287,33 @@
     .share-confirm-page .page-title .btn {
         width: 100%;
     }
+}
+
+/* Teacher workflow: choices first, review second. Tokens live in base.css. */
+.paper-estimate {
+    padding: 16px;
+    border-left: 4px solid var(--app-brand);
+    border-radius: 8px;
+    background: var(--app-brand-soft);
+    overflow-wrap: anywhere;
+}
+.paper-estimate strong { display: block; font-size: 1.35rem; line-height: 1.3; margin-bottom: 8px; }
+.paper-estimate small { color: var(--app-ink); }
+.send-state { min-height: 3em; margin: 16px 0 8px; }
+.advanced-options { border: 1px solid var(--app-line); border-radius: 8px; padding: 12px; }
+.advanced-options summary, .mobile-help summary { cursor: pointer; color: var(--app-brand-dark); font-weight: 650; min-height: 44px; padding: 10px 0; }
+.upload-box.drag-over { border-color: var(--app-brand); background: var(--app-brand-soft); }
+#btnPrint { min-height: 48px; }
+#progressBar { min-height: 40px; color: var(--app-muted); }
+#preview iframe { min-height: 280px; height: min(55vh, 520px); }
+#estimateDetails { line-height: 1.6; }
+.file-actions .btn, .favorite-actions .btn { min-height: 44px; }
+@media (max-width: 575px) {
+    .info-panel .card-body { padding: 16px; }
+    .paper-estimate strong { font-size: 1.2rem; }
+    .file-actions, .favorite-actions { flex-wrap: wrap; }
+}
+
+@media (min-width: 576px) {
+    .primary-options { grid-template-columns: minmax(120px, .65fr) minmax(0, 1.35fr); }
 }

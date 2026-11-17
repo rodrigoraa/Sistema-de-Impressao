@@ -24,6 +24,7 @@ class PrintJobController
         }
         $service = new PrintJobService();
         $jobs = $service->listForUser($_SESSION['user'], $isAdmin, $status, 150, [
+            'search' => is_string($_GET['search'] ?? '') ? substr($_GET['search'] ?? '', 0, 150) : '',
             'cpf' => $_GET['cpf'] ?? '',
             'month' => $_GET['month'] ?? '',
             'error' => $_GET['error'] ?? '',
@@ -61,6 +62,90 @@ class PrintJobController
         header('Content-Disposition: attachment; filename="' . $name . '"');
         readfile($job['stored_file']);
         exit;
+    }
+
+    // Preparing a review never dispatches a print or changes the original job.
+    public function reuse()
+    {
+        if (!isset($_SESSION['user'])) {
+            header('Location: /login');
+            exit;
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            exit('Método inválido');
+        }
+        $token = $_POST['csrf_token'] ?? '';
+        $expected = $_SESSION['csrf_token'] ?? '';
+        if (!is_string($token) || !is_string($expected) || $expected === '' || !hash_equals($expected, $token)) {
+            http_response_code(419);
+            exit('Token CSRF inválido');
+        }
+        $job = (new PrintJobService())->findVisible((int) ($_POST['id'] ?? 0), $_SESSION['user'], AuthService::isAdmin());
+        if ($job === null || !$this->isDownloadableFile($job['stored_file'] ?? null)) {
+            http_response_code(404);
+            exit('Arquivo não encontrado para reutilização.');
+        }
+        require_once __DIR__ . '/PrintController.php';
+        $controller = new PrintController();
+        $reviewOptions = [
+            'sides' => in_array($job['sides'], ['one-sided', 'two-sided-long-edge', 'two-sided-short-edge'], true) ? $job['sides'] : 'one-sided',
+            'number_up' => in_array((int) $job['number_up'], [1, 2, 4, 8], true) ? (string) $job['number_up'] : '1',
+            'orientation' => in_array($job['orientation'], ['auto', 'portrait', 'landscape'], true) ? $job['orientation'] : 'auto',
+            'paper' => in_array($job['paper'], ['A4', 'Letter'], true) ? $job['paper'] : 'A4',
+        ];
+        try {
+            $range = $this->reusePageRange($job);
+            if ($range !== '') $reviewOptions['page_ranges'] = $range;
+        } catch (RuntimeException $e) {
+            $this->finish('Não foi possível recuperar a seleção completa de páginas. Faça uma nova impressão escolhendo o intervalo desejado.', false);
+            return;
+        }
+        try {
+            $entry = $controller->createTemporaryCopyForSavedFile($job['stored_file'], $job['original_name'],
+                strtolower(pathinfo($job['stored_file'], PATHINFO_EXTENSION)), (int) filesize($job['stored_file']),
+                (string) ($job['mime_type'] ?? ''));
+            $pageInfo = $controller->temporaryPageInfo($entry['token'], $reviewOptions['paper'], $reviewOptions['orientation']);
+        } catch (Throwable $e) {
+            if (isset($entry['token'])) $controller->destroyTemporaryUpload($entry['token']);
+            $this->finish('Não foi possível preparar o arquivo para revisão. Faça um novo envio.', false);
+            return;
+        }
+        $context = $controller->formContext();
+        $userList = $context['userList'] ?? [];
+        $printerStatus = $context['printerStatus'] ?? [];
+        $maxUploadMb = $context['maxUploadMb'];
+        $allowedExtensions = $context['allowedExtensions'];
+        $reviewMode = true;
+        $sharedFile = array_merge($pageInfo, [
+            'upload_token' => $entry['token'], 'original_name' => $job['original_name'],
+            'size_label' => round(filesize($job['stored_file']) / 1024) . ' KB',
+            'page_label' => (int) $pageInfo['pages'] . ' páginas',
+            'page_advice' => 'Arquivo recuperado com 1 cópia. Confira as opções e a seleção de páginas antes de enviar.',
+        ]);
+        require __DIR__ . '/../../views/print.php';
+    }
+
+    private function reusePageRange($job)
+    {
+        $pages = max(0, (int) ($job['pages'] ?? 0));
+        $selected = max(0, (int) ($job['selected_pages_count'] ?? 0));
+        if ($selected === 0 || $selected >= $pages) return '';
+
+        // This is a display label capped at 120 bytes, not a complete machine selection.
+        $label = (string) ($job['selected_pages_label'] ?? '');
+        if (strlen($label) >= 120 || !preg_match('/^Páginas? ([0-9, -]+)$/u', $label, $matches)) {
+            throw new RuntimeException('Seleção incompleta ou especial.');
+        }
+        $range = preg_replace('/\s+/', '', $matches[1]);
+        if (!preg_match('/^[0-9]+(?:-[0-9]+)?(?:,[0-9]+(?:-[0-9]+)?)*$/', $range)) {
+            throw new RuntimeException('Intervalo inválido.');
+        }
+        $plan = (new PrintService())->previewPlan($pages, 1, 1, ['page-ranges' => $range]);
+        if ((int) $plan['selected_page_count'] !== $selected) {
+            throw new RuntimeException('Seleção diverge do registro original.');
+        }
+        return $range;
     }
 
     public function reprint()

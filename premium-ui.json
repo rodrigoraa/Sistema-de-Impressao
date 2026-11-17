@@ -1,0 +1,14 @@
+{
+  "profile": "product-admin",
+  "canonicalMap": "UX-CONTRACT.md",
+  "sourceRoots": ["views", "public/js", "public/css"],
+  "requiredCapabilities": ["Select/Listbox", "Date", "Form", "Scrollbar"],
+  "ownership": {"Select/Listbox": "native", "Date": "native"},
+  "requiredCommands": ["regression", "estimate", "browser"],
+  "commands": {
+    "regression": "for test in tests/*.php; do php \"$test\" || exit; done",
+    "estimate": "node --test tests/print_estimate.test.js",
+    "browser": "node tests/teacher_workflow.cjs"
+  },
+  "evidence": {"failurePaths": "tests/teacher_workflow.cjs"}
+}

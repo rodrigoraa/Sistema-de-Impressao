@@ -225,3 +225,17 @@ body {
         padding: 16px;
     }
 }
+
+:root { --app-scroll-thumb: #647084; --app-scroll-track: #f3f6fa; }
+* { scrollbar-color: var(--app-scroll-thumb) var(--app-scroll-track); scrollbar-width: auto; }
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: var(--app-scroll-track); }
+::-webkit-scrollbar-thumb { background: var(--app-scroll-thumb); border: 3px solid var(--app-scroll-track); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--app-brand-dark); }
+button, summary, .btn { cursor: pointer; }
+button:disabled, .btn:disabled { cursor: not-allowed; }
+:focus-visible { outline: 3px solid var(--app-brand); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
+@media (forced-colors: active) { * { scrollbar-color: auto; } }
