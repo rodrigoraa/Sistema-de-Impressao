@@ -43,8 +43,41 @@ try {
     if (!is_file($resolved['source_path']) || !str_starts_with(realpath($resolved['source_path']), realpath($root))) {
         throw new RuntimeException('Arquivo temporário escapou da pasta configurada.');
     }
+    if (!method_exists($storage, 'cachedPreviewPath')) throw new RuntimeException('Implementar acesso protegido ao PDF de prévia em cache.');
+    $cached = $storage->previewCachePath($token, ['test' => 'image']);
+    file_put_contents($cached, '%PDF-fixture');
+    $key = substr(basename($cached), 8, -4);
+    if ($storage->cachedPreviewPath($token, $key) !== $cached) throw new RuntimeException('Prévia própria deve ser resolvida.');
+    foreach (['../metadata.json', '', str_repeat('z', 64)] as $invalidKey) {
+        try { $storage->cachedPreviewPath($token, $invalidKey); }
+        catch (RuntimeException $expected) { continue; }
+        throw new RuntimeException('Chave inválida de prévia foi aceita.');
+    }
+    if (PHP_OS_FAMILY !== 'Windows') {
+        unlink($cached);
+        symlink($source, $cached);
+        try { $storage->cachedPreviewPath($token, $key); }
+        catch (RuntimeException $expected) { $deniedLink = true; }
+        if (empty($deniedLink)) throw new RuntimeException('Link simbólico foi aceito como prévia.');
+        unlink($cached);
+        file_put_contents($cached, '%PDF-fixture');
+    }
+    $ownSession = session_id();
+    session_write_close();
+    session_id('print-other-session-' . bin2hex(random_bytes(4)));
+    session_start();
+    $_SESSION['user'] = 'professor-a';
+    try { $storage->cachedPreviewPath($token, $key); }
+    catch (RuntimeException $expected) { $deniedSession = true; }
+    if (empty($deniedSession)) throw new RuntimeException('Outra sessão acessou PDF de prévia.');
+    session_destroy();
+    session_id($ownSession);
+    session_start();
 
     $_SESSION['user'] = 'professor-b';
+    try { $storage->cachedPreviewPath($token, $key); }
+    catch (RuntimeException $expected) { $deniedPreview = true; }
+    if (empty($deniedPreview)) throw new RuntimeException('Outro professor acessou PDF de prévia.');
     try {
         $storage->entry($token);
         throw new RuntimeException('Outro usuário conseguiu acessar o token temporário.');

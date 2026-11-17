@@ -150,6 +150,22 @@ class TemporaryPrintFileService
         return $this->tokenDirectory($token) . DIRECTORY_SEPARATOR . 'preview-' . $key . '.pdf';
     }
 
+    public function cachedPreviewPath($token, $key)
+    {
+        $this->entry($token); // Enforce user/session ownership before resolving any cached file.
+        if (!is_string($key) || !preg_match('/^[a-f0-9]{64}$/D', $key)) {
+            throw new RuntimeException('Chave de prévia inválida.');
+        }
+        $path = $this->safeChildPath($token, 'preview-' . $key . '.pdf');
+        $directory = realpath($this->tokenDirectory($token));
+        $actual = $path !== null ? realpath($path) : false;
+        if ($actual === false || $directory === false || is_link($path)
+            || !str_starts_with($actual, $directory . DIRECTORY_SEPARATOR) || !is_file($actual)) {
+            throw new RuntimeException('Prévia não encontrada.');
+        }
+        return $actual;
+    }
+
     public function moveSourceTo($token, $destination)
     {
         $metadata = $this->entry($token);

@@ -351,6 +351,11 @@ if ($uri === '/printer/status') {
     exit;
 }
 
+if ($uri === '/print/preview-image') {
+    (new PrintController())->previewImage();
+    exit;
+}
+
 if ($uri === '/print/preview') {
     (new PrintController())->preview();
     exit;

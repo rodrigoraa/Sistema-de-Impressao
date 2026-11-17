@@ -870,6 +870,7 @@ class PrintController
                 throw new LengthException('Prévia acima do limite de transferência.');
             }
 
+            header('X-Preview-Cache-Key: ' . substr(basename($previewFile), 8, -4));
             header('X-Preview-Document-Pages: ' . $plan['document_pages']);
             header('X-Preview-Selected-Pages: ' . $plan['selected_page_count']);
             header('X-Preview-Total-Sheets: ' . $plan['total_sheets']);
@@ -901,6 +902,59 @@ class PrintController
             }
         }
 
+        exit;
+    }
+
+    public function previewImage()
+    {
+        if (!isset($_SESSION['user'])) {
+            http_response_code(401);
+            exit('Sessão expirada.');
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            exit('Método inválido');
+        }
+        $this->validateCsrfOrFail();
+        $page = filter_var($_POST['preview_page'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($page === false || $page === null) {
+            http_response_code(400);
+            exit('Página inválida.');
+        }
+        try {
+            $token = $_POST['upload_token'] ?? '';
+            $key = $_POST['preview_key'] ?? '';
+            if (!is_string($token) || !is_string($key)) throw new RuntimeException('Identificador inválido.');
+            $temporary = new TemporaryPrintFileService();
+            $pdfFile = $temporary->cachedPreviewPath($token, $key);
+        } catch (Throwable $e) {
+            http_response_code(404);
+            exit('Prévia não encontrada ou expirada.');
+        }
+        if ($page > (new PrintService())->previewImagePageCount($pdfFile)) {
+            http_response_code(400);
+            exit('Página fora da prévia.');
+        }
+        $imageFile = substr($pdfFile, 0, -4) . '-page-' . $page . '-1400.png';
+        try {
+            if (!is_file($imageFile)) {
+                $building = $imageFile . '.building-' . bin2hex(random_bytes(6)) . '.png';
+                try {
+                    (new PrintService())->renderPreviewPageImage($pdfFile, $building, $page);
+                    if (!rename($building, $imageFile)) throw new RuntimeException('Falha ao guardar imagem.');
+                } finally { @unlink($building); }
+            }
+            clearstatcache(true, $imageFile);
+            header('Content-Type: image/png');
+            header('Content-Length: ' . filesize($imageFile));
+            header('Cache-Control: no-store, private');
+            header('X-Content-Type-Options: nosniff');
+            readfile($imageFile);
+        } catch (Throwable $e) {
+            (new PrintService())->log('Falha na imagem da prévia: ' . $e->getMessage());
+            http_response_code(500);
+            echo 'Não foi possível mostrar esta página da prévia.';
+        }
         exit;
     }
 

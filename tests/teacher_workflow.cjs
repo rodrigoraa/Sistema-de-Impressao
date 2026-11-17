@@ -390,18 +390,61 @@ const net = require('node:net');
   await page.evaluate(()=>{window.firstPrinterNotice=document.querySelector('#printerStatusBox').firstElementChild;});
   await page.evaluate(()=>refreshPrinterStatus());
   assert.equal(await page.evaluate(()=>window.firstPrinterNotice===document.querySelector('#printerStatusBox').firstElementChild),true);
-  // If the module cannot load, offer the PDF directly rather than a broken/cropped iframe.
+  // If PDF.js cannot load, show server-rendered pages automatically without requiring a click.
   await page.route('**/printer/status',route=>route.fulfill({json:{success:true,status:{can_print:true}}}));
+  // A failure on a later PDF.js page also switches automatically to server images.
+  await page.goto(base+'/');
+  await page.locator('#fileInput').setInputFiles({name:'Later-page.pdf',mimeType:'application/pdf',buffer:pdf});
+  await page.waitForFunction(()=>previewObjectUrl && !previewController && document.querySelector('#preview canvas'));
+  await page.evaluate(()=>{const original=previewViewer.document.getPage.bind(previewViewer.document);previewViewer.document.getPage=number=>number===2?Promise.reject(new Error('Simulated PDF.js page failure')):original(number);window.pendingFullTask={destroy(){window.pendingFullDestroyed=true;}};previewViewer.loadingTask=window.pendingFullTask;});
+  await page.getByRole('button',{name:'Próxima página',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.pdf-preview-counter').textContent==='2 / 2');
+  await assertWholePageFits();
+  await expectPdfWorkers(0);
+  assert.equal(await page.evaluate(()=>previewViewer.loadingTask===window.pendingFullTask),true,'Fallback de página não deve perder o recurso da prévia completa pendente');
+  await page.getByRole('button',{name:'Remover arquivo',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.pendingFullDestroyed),true,'Remover deve destruir também o recurso da completa pendente');
   const blockedRenderer=route=>route.abort();
   await page.route('**/pdfjs-6.5.438/pdf.mjs',blockedRenderer);
   await page.goto(base+'/');
+  const fallbackResponse=page.waitForResponse(response=>response.url().endsWith('/print/preview') && response.ok());
   await page.locator('#fileInput').setInputFiles({name:'Fallback.pdf',mimeType:'application/pdf',buffer:pdf});
-  const fallback=page.getByRole('link',{name:'Abrir prévia no navegador',exact:true});
-  await fallback.waitFor();
-  assert.ok((await fallback.getAttribute('href')).startsWith('blob:'));
-  assert.equal(await fallback.getAttribute('target'),'_blank');
+  const fallbackPdf=await fallbackResponse;
+  await page.waitForFunction(()=>previewObjectUrl && !previewController);
+  assert.equal(await page.locator('#preview canvas').count(),1,'PDF.js bloqueado deve exibir imagem automaticamente');
+  assert.equal(await page.getByRole('link',{name:'Abrir prévia no navegador',exact:true}).count(),0);
+  await assertWholePageFits();
+  assert.equal(await page.locator('.pdf-preview-counter').textContent(),'1 / 2');
+  await page.getByRole('button',{name:'Próxima página',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.pdf-preview-counter').textContent==='2 / 2');
   assert.equal(await page.locator('#preview iframe').count(),0);
   assert.equal(await page.locator('#btnPrint').isDisabled(),false);
+  await assertWholePageFits();
+  const imageForm={upload_token:await page.locator('#uploadTokenInput').inputValue(),csrf_token:await page.locator('input[name=csrf_token]').first().inputValue(),preview_key:fallbackPdf.headers()['x-preview-cache-key'],preview_page:'1',paper:'A4'};
+  const png=await page.request.post(base+'/print/preview-image',{form:imageForm});
+  assert.equal(png.status(),200);
+  assert.match(png.headers()['content-type'],/^image\/png/);
+  assert.match(png.headers()['cache-control'],/private/);
+  const pngBytes=await png.body();
+  assert.deepEqual(pngBytes.subarray(0,8),Buffer.from([137,80,78,71,13,10,26,10]));
+  assert.ok(pngBytes.readUInt32BE(16)<=1500 && pngBytes.readUInt32BE(20)<=1500);
+  const pngCache=await page.request.post(base+'/print/preview-image',{form:imageForm});
+  assert.deepEqual(await pngCache.body(),pngBytes,'Imagem em cache deve preservar o conteúdo');
+  for(const preview_page of ['0','-1','3','999999','abc']) {
+   assert.equal((await page.request.post(base+'/print/preview-image',{form:{...imageForm,preview_page}})).status(),400);
+  }
+  assert.equal((await page.request.post(base+'/print/preview-image',{form:{...imageForm,preview_key:'../metadata.json'}})).status(),404);
+  assert.equal((await page.request.post(base+'/print/preview-image',{form:{...imageForm,csrf_token:'invalid'}})).status(),419);
+  const anonymous=await browser.newContext();
+  const anonymousImage=await anonymous.request.post(base+'/print/preview-image',{form:imageForm,maxRedirects:0});
+  assert.equal(anonymousImage.status(),302);
+  assert.equal(anonymousImage.headers().location,'/login');
+  await anonymous.close();
+  for(const width of [320,390,844]) {await page.setViewportSize({width,height:844});await assertWholePageFits();}
+  await page.screenshot({path:path.join(root,'automatic-image-fallback-mobile.png'),fullPage:true});
+  await page.getByRole('button',{name:'Remover arquivo',exact:true}).click();
+  assert.equal(await page.locator('#preview canvas').count(),0);
+  assert.equal(submissions,2,'Prévias automáticas não devem enviar impressões');
   await page.unroute('**/pdfjs-6.5.438/pdf.mjs',blockedRenderer);
   assert.deepEqual(errors,[]);
   console.log('Professor: upload real, estimativa, favoritos, validação, responsividade, envio único, busca e autorização de reaproveitamento: OK');

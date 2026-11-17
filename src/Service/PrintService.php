@@ -430,6 +430,51 @@ class PrintService
         }
     }
 
+    public function previewImagePageCount($pdfFile)
+    {
+        return $this->countPdfPages($pdfFile, 5);
+    }
+
+    public function renderPreviewPageImage($pdfFile, $targetFile, $page)
+    {
+        $page = (int) $page;
+        if (!is_file($pdfFile) || $page < 1) {
+            throw new RuntimeException('Página de prévia inválida.');
+        }
+        $deadline = microtime(true) + max(5, min(30, (int) ($_ENV['PRINT_PREVIEW_TIMEOUT_SECONDS'] ?? 30)));
+        $commands = [];
+        foreach (['pdftoppm', 'pdftocairo'] as $tool) {
+            $binary = $this->findExecutable([$_ENV[strtoupper($tool) . '_PATH'] ?? null, '/usr/bin/' . $tool, $tool]);
+            if ($binary !== null) {
+                $commands[] = [$binary, '-f', (string) $page, '-l', (string) $page, '-singlefile',
+                    '-scale-to', '1400', '-png', $pdfFile, substr($targetFile, 0, -4)];
+            }
+        }
+        $ghostscript = $this->findExecutable([$_ENV['GHOSTSCRIPT_PATH'] ?? null, '/usr/bin/gs', 'gs']);
+        if ($ghostscript !== null) {
+            // The prepared PDF already carries the print paper size and rotation.
+            // 110 dpi keeps A4/Letter below 1400px without changing its geometry.
+            $commands[] = [$ghostscript, '-q', '-dSAFER', '-dBATCH', '-dNOPAUSE', '-sDEVICE=png16m',
+                '-dNumRenderingThreads=1', '-dFirstPage=' . $page, '-dLastPage=' . $page,
+                '-r110', '-sOutputFile=' . $targetFile, $pdfFile];
+        }
+        foreach ($commands as $command) {
+            $remaining = (int) floor($deadline - microtime(true));
+            if ($remaining < 1) break;
+            @unlink($targetFile);
+            $result = $this->runCommandWithTimeout($command, $remaining);
+            clearstatcache(true, $targetFile);
+            $size = is_file($targetFile) ? @getimagesize($targetFile) : false;
+            if ($result['exit_code'] === 0 && !$result['timed_out'] && $size !== false
+                && $size[2] === IMAGETYPE_PNG && $size[0] <= 1500 && $size[1] <= 1500
+                && filesize($targetFile) <= 8 * 1024 * 1024) {
+                return;
+            }
+            @unlink($targetFile);
+        }
+        throw new RuntimeException('Não foi possível rasterizar a prévia. Verifique Poppler ou Ghostscript.');
+    }
+
     private function previewCupsOptions($plan, $paper, $orientation, $extraOptions)
     {
         $options = [
@@ -2225,13 +2270,19 @@ class PrintService
         return 0;
     }
 
-    private function countPdfPages($pdfFile)
+    private function countPdfPages($pdfFile, $timeoutSeconds = null)
     {
         $pdfinfo = $this->findExecutable([$_ENV['PDFINFO_PATH'] ?? null, '/usr/bin/pdfinfo', 'pdfinfo']);
         if ($pdfinfo !== null) {
             $output = [];
             $status = 1;
-            exec(escapeshellarg($pdfinfo) . ' ' . escapeshellarg($pdfFile) . ' 2>&1', $output, $status);
+            if ($timeoutSeconds !== null) {
+                $result = $this->runCommandWithTimeout([$pdfinfo, $pdfFile], $timeoutSeconds);
+                $output = explode("\n", $result['stdout']);
+                $status = $result['timed_out'] ? 1 : $result['exit_code'];
+            } else {
+                exec(escapeshellarg($pdfinfo) . ' ' . escapeshellarg($pdfFile) . ' 2>&1', $output, $status);
+            }
             if ($status === 0) {
                 foreach ($output as $line) {
                     if (stripos($line, 'Pages:') === 0) {
