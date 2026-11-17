@@ -27,7 +27,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/print.css?v=20261117-4">
+    <link rel="stylesheet" href="/css/print.css?v=20261117-5">
 
 </head>
 
@@ -248,7 +248,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                                 <strong id="estimateTotal">Estimativa: —</strong>
                             </div>
                             <p id="sendState" class="visually-hidden" role="status" aria-live="polite">Nenhum arquivo pronto para envio.</p>
-                            <p id="previewSummary" class="preview-heading mt-3 mb-2 d-none">Prévia de amostra de como vai ficar a impressão</p>
+                            <div class="preview-heading-row mt-3 mb-2">
+                                <p id="previewSummary" class="preview-heading mb-0 d-none">Prévia de como vai ficar a impressão</p>
+                                <button type="button" id="loadFullPreview" class="btn btn-outline-secondary btn-sm d-none" aria-controls="preview">Ver prévia completa</button>
+                            </div>
+                            <p id="previewNotice" class="small text-muted mb-2 d-none" role="status" aria-live="polite"></p>
                             <div id="preview"></div>
 
                             <div class="print-confirmation mt-3">
@@ -286,6 +290,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         const info = document.getElementById('file-info');
         const preview = document.getElementById('preview');
         const previewSummary = document.getElementById('previewSummary');
+        const fullPreviewButton = document.getElementById('loadFullPreview');
+        const previewNotice = document.getElementById('previewNotice');
         const uploadTokenInput = document.getElementById('uploadTokenInput');
         const progress = document.getElementById('progressBar');
 
@@ -303,6 +309,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         let pageCountToken = 0;
         let previewToken = 0;
         let previewObjectUrl = '';
+        let previewInfo = null;
         let uploadToken = uploadTokenInput.value || '';
         let uploadController = null;
         let pageCountController = null;
@@ -392,11 +399,20 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             currentPageAdvice = '';
             currentPageWarning = '';
             renderPageAdvice();
+            previewInfo = null;
             previewSummary.classList.add('d-none');
+            fullPreviewButton.classList.add('d-none');
+            previewNotice.classList.add('d-none');
             dropArea.classList.remove('success', 'error', 'drag-over');
             resultBox.classList.add('d-none');
             renderPrinterStatus(printerStatus);
         }
+
+        fullPreviewButton.addEventListener('click', () => {
+            if (!uploadToken || printingActive || documentRecalculating || previewController || !previewInfo || previewInfo.additional <= 0) return;
+            clearTimeout(previewDebounceTimer);
+            loadDocumentPreview(++previewToken, true);
+        });
 
         printForm.addEventListener('input', event => {
             if (event.target.hasAttribute('aria-invalid')) {
@@ -445,7 +461,13 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 scaleCustomBox.classList.toggle('d-none', scaleSelect.value !== 'custom');
                 document.getElementById('favoriteFeedback').textContent = 'Opções aplicadas. Confira a quantidade: 1 cópia.';
                 if (uploadToken) {
+                    clearTimeout(previewDebounceTimer);
+                    previewToken++;
+                    if (previewController) previewController.abort();
+                    previewInfo = null;
+                    previewNotice.classList.add('d-none');
                     documentRecalculating = true;
+                    renderPreviewSummary();
                     loadPageCount(++pageCountToken);
                 }
                 renderPrinterStatus(printerStatus);
@@ -566,7 +588,12 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
         function renderPreviewSummary() {
             updateEstimate();
-            previewSummary.classList.toggle('d-none', !uploadToken);
+            previewSummary.classList.toggle('d-none', !uploadToken && !previewObjectUrl);
+            previewSummary.textContent = !previewInfo ? 'Prévia de como vai ficar a impressão'
+                : (previewInfo.additional > 0 ? `Prévia de amostra (${previewInfo.shown} de ${previewInfo.total} páginas)` : 'Prévia completa da impressão');
+            fullPreviewButton.classList.toggle('d-none', !uploadToken || !previewInfo || previewInfo.additional <= 0);
+            fullPreviewButton.disabled = printingActive || documentRecalculating || !!previewController || !uploadToken;
+            fullPreviewButton.setAttribute('aria-busy', previewController ? 'true' : 'false');
         }
 
         async function uploadSelectedFile(file) {
@@ -637,15 +664,23 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             }
         }
 
-        async function loadDocumentPreview(token) {
+        async function loadDocumentPreview(token, fullRequested = false) {
             if (!uploadToken) return;
             if (previewController) previewController.abort();
             const controller = new AbortController();
             previewController = controller;
-            preview.innerHTML = '<div class="preview-loading"><span class="spinner-border spinner-border-sm"></span><span>Preparando prévia…</span></div>';
+            const preserveSample = fullRequested && !!previewObjectUrl;
+            if (preserveSample) {
+                previewNotice.className = 'small text-muted mb-2';
+                previewNotice.textContent = 'Carregando prévia completa…';
+            } else {
+                previewNotice.classList.add('d-none');
+                preview.innerHTML = '<div class="preview-loading"><span class="spinner-border spinner-border-sm"></span><span>Preparando prévia…</span></div>';
+            }
             renderPreviewSummary();
             const formData = new FormData();
             appendPreviewOptions(formData);
+            if (fullRequested) formData.append('preview_mode', 'full');
 
             try {
                 const response = await fetch('/print/preview', {
@@ -655,24 +690,42 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                     signal: controller.signal
                 });
                 if (!response.ok) throw new Error(await response.text() || 'Não foi possível gerar a pré-visualização.');
+                const metadata = {
+                    total: Number(response.headers.get('X-Preview-Total-Sheets') || 0),
+                    shown: Number(response.headers.get('X-Preview-Sheets') || 0),
+                    additional: Number(response.headers.get('X-Preview-Additional-Sheets') || 0)
+                };
                 const blob = await response.blob();
                 if (token !== previewToken) return;
                 resetPreviewObjectUrl();
+                previewInfo = metadata;
+                previewNotice.classList.add('d-none');
                 previewObjectUrl = URL.createObjectURL(blob);
                 preview.innerHTML = `<iframe src="${previewObjectUrl}" title="Pré-visualização da impressão"></iframe>`;
                 renderPreviewSummary();
             } catch (error) {
                 if (error.name === 'AbortError' || token !== previewToken) return;
+                if (preserveSample) {
+                    previewNotice.className = 'small text-danger mb-2';
+                    previewNotice.textContent = 'Não foi possível carregar tudo. A amostra continua disponível.';
+                    return;
+                }
                 resetPreviewObjectUrl();
                 preview.innerHTML = `<div class="print-notice print-notice-warning mb-0"><i aria-hidden="true" class="bi bi-exclamation-triangle-fill"></i><div><strong>Prévia indisponível</strong><p>${escapeHtml(error.message || 'Não foi possível gerar a pré-visualização, mas o arquivo pode ser enviado para impressão.')}</p></div></div>`;
             } finally {
-                if (previewController === controller) previewController = null;
+                if (previewController === controller) {
+                    previewController = null;
+                    renderPreviewSummary();
+                }
             }
         }
 
         function schedulePreview(delay = 350) {
             clearTimeout(previewDebounceTimer);
             if (previewController) previewController.abort();
+            previewInfo = null;
+            previewNotice.classList.add('d-none');
+            renderPreviewSummary();
             const token = ++previewToken;
             previewDebounceTimer = setTimeout(() => loadDocumentPreview(token), delay);
         }
@@ -794,6 +847,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             if (!element) return;
             element.addEventListener('change', () => {
                 if (!uploadToken) return;
+                clearTimeout(previewDebounceTimer);
                 previewToken++;
                 if (previewController) previewController.abort();
                 info.textContent = `${currentFileMeta && currentFileMeta.size_label ? currentFileMeta.size_label : ''} · recalculando páginas...`;
@@ -946,7 +1000,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 try { document.getElementById('loadFavorite').disabled = !localStorage.getItem(favoriteKey); } catch { document.getElementById('loadFavorite').disabled = true; }
             }
             document.getElementById('sendState').textContent = active ? 'Enviando à impressora. Aguarde a resposta.' : (submissionLocked ? 'Confira o resultado em Meus envios antes de uma nova impressão.' : (uploadToken ? 'Arquivo pronto. Confira as opções antes de enviar.' : 'Escolha um arquivo para preparar o envio.'));
-            updateEstimate();
+            renderPreviewSummary();
         }
 
         // envio AJAX para exibir erros sem deixar a pagina presa carregando

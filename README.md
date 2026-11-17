@@ -24,6 +24,9 @@ SHARE_TARGET_PATH=/var/www/impressao/storage/share-target
 PRINT_TEMP_PATH=/var/www/impressao/storage/print-temp
 MAX_UPLOAD_BYTES=104857600
 PRINT_PREVIEW_MAX_SHEETS=3
+PRINT_PREVIEW_AUTO_MAX_SHEETS=20
+PRINT_PREVIEW_AUTO_MAX_BYTES=10485760
+PRINT_PREVIEW_MAX_BYTES=52428800
 PRINT_PREVIEW_TTL_SECONDS=1800
 PRINT_PREVIEW_TIMEOUT_SECONDS=30
 CUPSFILTER_PATH=/usr/sbin/cupsfilter
@@ -43,9 +46,11 @@ PRINT_JOB_IDLE_CONFIRM_SECONDS=6
 
 O arquivo é enviado uma única vez para uma pasta temporária fora de `public/`. O navegador recebe somente um token aleatório associado ao usuário e à sessão; contagem de páginas, mudanças de configuração e prévias seguintes usam esse token, sem reenviar o arquivo completo. O token não contém caminho de arquivo e expira por padrão em 30 minutos.
 
-A prévia é um PDF de amostra montado primeiro pelo filtro `pdftopdf`, com a mesma ordem `number-up-layout=lrtb` usada pela impressão. Se esse filtro não estiver disponível ou falhar, o sistema tenta `cupsfilter` e depois o N-up nativo do Ghostscript. Ela respeita 1, 2, 4 ou 8 páginas por folha e processa, por padrão, no máximo as primeiras 3 folhas. Seleções como `1,3-5` são aplicadas antes do N-up. A interface informa páginas do documento, lados impressos por cópia e quantas folhas da amostra estão visíveis.
+A prévia é um PDF montado primeiro pelo filtro `pdftopdf`, com a mesma ordem `number-up-layout=lrtb` usada pela impressão. Se esse filtro não estiver disponível ou falhar, o sistema tenta `cupsfilter` e depois o N-up nativo do Ghostscript. Ela respeita 1, 2, 4 ou 8 páginas por lado. A prévia é completa automaticamente quando a seleção resulta em até 20 páginas do PDF de impressão e o PDF preparado tem até 10 MiB. Para documentos maiores, começa com uma amostra de 3 lados e mostra **Ver prévia completa**. Seleções como `1,3-5` são aplicadas antes do N-up e da decisão de amostrar. A interface indica se a prévia está completa ou quantas páginas da amostra estão visíveis.
 
 DOC/DOCX, TXT e imagens reutilizam o PDF convertido enquanto papel, orientação e margens de conversão permanecerem iguais. Os arquivos ficam em `PRINT_TEMP_PATH`, possuem nomes imprevisíveis, são removidos após a impressão ou por TTL e também podem ser limpos no painel administrativo. Nenhum arquivo temporário fica em sessão ou em diretório público.
+
+A completa solicitada pelo professor inclui todas as páginas selecionadas, com o mesmo N-up da impressão, e tem cache separado da amostra. O timeout de geração continua em 30 segundos; a transferência é limitada a 50 MiB. Se a completa falhar, a amostra permanece disponível. Os limites são configuráveis pelas variáveis `PRINT_PREVIEW_AUTO_MAX_SHEETS`, `PRINT_PREVIEW_AUTO_MAX_BYTES`, `PRINT_PREVIEW_MAX_SHEETS`, `PRINT_PREVIEW_MAX_BYTES` e `PRINT_PREVIEW_TIMEOUT_SECONDS`.
 
 A prévia é assíncrona e não altera o documento da impressão física. A impressão continua enviando o PDF preparado ao CUPS e aplicando `number-up` somente no comando `lp`; portanto não há dupla aplicação de N-up. Se a prévia falhar ou atingir o timeout, o usuário recebe um aviso amigável e ainda pode imprimir depois que upload e validações obrigatórias terminarem.
 

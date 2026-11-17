@@ -265,7 +265,7 @@ class PrintService
     {
         $totalPages = max(1, (int) $totalPages);
         $numberUp = in_array((int) $numberUp, [1, 2, 4, 8], true) ? (int) $numberUp : 1;
-        $maxSheets = max(1, min(10, (int) $maxSheets));
+        $maxSheets = max(1, min($totalPages, (int) $maxSheets));
         $selectedPages = $this->selectedPdfPages($totalPages, $extraOptions);
         if (empty($selectedPages)) {
             throw new RuntimeException('A seleção informada não contém páginas do documento.');
@@ -288,13 +288,28 @@ class PrintService
         ];
     }
 
-    public function generatePreviewPdf($pdfFile, $targetFile, $totalPages, $numberUp, $paper, $orientation, $extraOptions = [])
+    public function adaptivePreviewPlan($totalPages, $numberUp, $preparedBytes, $fullRequested = false, $extraOptions = [])
+    {
+        $plan = $this->previewPlan($totalPages, $numberUp, 1, $extraOptions);
+        $autoSheets = max(1, (int) ($_ENV['PRINT_PREVIEW_AUTO_MAX_SHEETS'] ?? 20));
+        $autoBytes = max(1, (int) ($_ENV['PRINT_PREVIEW_AUTO_MAX_BYTES'] ?? 10 * 1024 * 1024));
+        $sampleSheets = max(1, min(10, (int) ($_ENV['PRINT_PREVIEW_MAX_SHEETS'] ?? 3)));
+        $complete = $fullRequested || ($plan['total_sheets'] <= $autoSheets && (int) $preparedBytes <= $autoBytes);
+        $maxSheets = $complete ? $plan['total_sheets'] : $sampleSheets;
+        $plan['preview_pages'] = array_slice($plan['selected_pages'], 0, $maxSheets * $plan['number_up']);
+        $plan['preview_page_count'] = count($plan['preview_pages']);
+        $plan['preview_sheets'] = (int) ceil($plan['preview_page_count'] / $plan['number_up']);
+        $plan['additional_sheets'] = max(0, $plan['total_sheets'] - $plan['preview_sheets']);
+        return $plan;
+    }
+
+    public function generatePreviewPdf($pdfFile, $targetFile, $totalPages, $numberUp, $paper, $orientation, $extraOptions = [], $maxSheets = null)
     {
         if (!is_file($pdfFile) || strtolower(pathinfo($pdfFile, PATHINFO_EXTENSION)) !== 'pdf') {
             throw new RuntimeException('PDF de origem da pré-visualização não encontrado.');
         }
 
-        $maxSheets = max(1, (int) ($_ENV['PRINT_PREVIEW_MAX_SHEETS'] ?? 3));
+        $maxSheets = $maxSheets === null ? max(1, min(10, (int) ($_ENV['PRINT_PREVIEW_MAX_SHEETS'] ?? 3))) : max(1, (int) $maxSheets);
         $timeoutSeconds = max(5, (int) ($_ENV['PRINT_PREVIEW_TIMEOUT_SECONDS'] ?? 30));
         $deadline = microtime(true) + $timeoutSeconds;
         $plan = $this->previewPlan($totalPages, $numberUp, $maxSheets, $extraOptions);

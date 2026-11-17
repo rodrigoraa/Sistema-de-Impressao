@@ -828,21 +828,20 @@ class PrintController
                 $totalPages = 1;
             }
 
+            $plan = $printer->adaptivePreviewPlan(
+                $totalPages, $numberUp, (int) filesize($preparedFile),
+                ($_POST['preview_mode'] ?? '') === 'full', $extraOptions
+            );
+            $maxPreviewBytes = max(1, (int) ($_ENV['PRINT_PREVIEW_MAX_BYTES'] ?? 50 * 1024 * 1024));
             $cacheParameters = [
                 'paper' => $paper,
                 'orientation' => $orientation,
                 'resolved_orientation' => $preparationOrientation,
                 'number_up' => $numberUp,
                 'options' => $extraOptions,
-                'max_sheets' => max(1, (int) ($_ENV['PRINT_PREVIEW_MAX_SHEETS'] ?? 3)),
+                'preview_sheets' => $plan['preview_sheets'],
             ];
             $previewFile = $temporary->previewCachePath($uploadToken, $cacheParameters);
-            $plan = $printer->previewPlan(
-                $totalPages,
-                $numberUp,
-                max(1, (int) ($_ENV['PRINT_PREVIEW_MAX_SHEETS'] ?? 3)),
-                $extraOptions
-            );
             if (!is_file($previewFile) || filesize($previewFile) < 1) {
                 $buildingFile = $previewFile . '.building-' . bin2hex(random_bytes(6)) . '.pdf';
                 try {
@@ -853,14 +852,22 @@ class PrintController
                         $numberUp,
                         $paper,
                         $orientation,
-                        $extraOptions
+                        $extraOptions,
+                        $plan['preview_sheets']
                     );
+                    if (filesize($buildingFile) > $maxPreviewBytes) {
+                        throw new LengthException('Prévia acima do limite de transferência.');
+                    }
                     if (!@rename($buildingFile, $previewFile)) {
                         throw new RuntimeException('Não foi possível finalizar o cache da pré-visualização.');
                     }
                 } finally {
                     @unlink($buildingFile);
                 }
+            }
+
+            if (filesize($previewFile) > $maxPreviewBytes) {
+                throw new LengthException('Prévia acima do limite de transferência.');
             }
 
             header('X-Preview-Document-Pages: ' . $plan['document_pages']);
@@ -877,8 +884,10 @@ class PrintController
             readfile($previewFile);
         } catch (Throwable $e) {
             (new PrintService())->log('Falha ao gerar preview: ' . $e->getMessage());
-            http_response_code(500);
-            if ($preparingFile) {
+            http_response_code($e instanceof LengthException ? 413 : 500);
+            if ($e instanceof LengthException) {
+                $message = 'A prévia ficou muito grande. Use a amostra para conferir a impressão.';
+            } elseif ($preparingFile) {
                 $message = 'Não foi possível preparar o arquivo: a pré-visualização e a impressão dependem da conversão para PDF. Tente enviar o arquivo em PDF ou JPG.';
             } else {
                 $message = str_contains(strtolower($e->getMessage()), 'demorando')

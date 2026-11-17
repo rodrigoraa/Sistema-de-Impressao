@@ -103,7 +103,7 @@ const net = require('node:net');
   await page.waitForFunction(previous=>previewObjectUrl && previewObjectUrl!==previous && !previewController && document.querySelector('#preview iframe'),previousPreviewUrl);
   await page.locator('#preview iframe').waitFor();
   const reviewPanel=page.locator('.info-panel');
-  await reviewPanel.getByText('Prévia de amostra de como vai ficar a impressão',{exact:true}).waitFor();
+  assert.equal(await reviewPanel.locator('#previewSummary').textContent(),'Prévia completa da impressão');
   const reviewText=await reviewPanel.evaluate(panel=>{
    const visibleContent=panel.cloneNode(true);
    visibleContent.querySelectorAll('.visually-hidden, .d-none').forEach(element=>element.remove());
@@ -237,6 +237,90 @@ const net = require('node:net');
   assert.equal(await page.locator('#btnPrint').isDisabled(),true);
   assert.equal(await page.locator('#estimateTotal').textContent(),'Estimativa: —');
   await page.unroute('**/print/upload',removedHandler);
+  // A real large PDF starts with a sample, then loads the complete selected layout on demand.
+  const longDocument=await context.newPage();
+  await longDocument.setContent('<style>@page{size:A4;margin:20mm}section{break-after:page}</style>'+Array.from({length:60},(_,i)=>`<section>Atividade extensa - página ${i+1}</section>`).join(''));
+  const longPdf=await longDocument.pdf();await longDocument.close();
+  await page.goto(base+'/');
+  await page.locator('#fileInput').setInputFiles({name:'Documento-completo.pdf',mimeType:'application/pdf',buffer:longPdf});
+  await page.waitForFunction(()=>document.querySelector('#previewSummary').textContent.includes('3 de 30'));
+  await page.locator('#preview iframe').waitFor();
+  const sampleUrl=await page.locator('#preview iframe').getAttribute('src');
+  const rejectFull=route=>route.request().postData()?.includes('name="preview_mode"')
+    ? route.fulfill({status:500,body:'A prévia completa demorou mais que o esperado.'}) : route.continue();
+  await page.route('**/print/preview',rejectFull);
+  await page.getByRole('button',{name:'Ver prévia completa',exact:true}).click();
+  await page.locator('#previewNotice').getByText('Não foi possível carregar tudo. A amostra continua disponível.',{exact:true}).waitFor();
+  assert.equal(await page.locator('#preview iframe').getAttribute('src'),sampleUrl,'Falha na completa deve preservar a amostra');
+  assert.equal(await page.locator('#btnPrint').isDisabled(),false);
+  await page.unroute('**/print/preview',rejectFull);
+  const completeResponse=page.waitForResponse(response=>response.url().endsWith('/print/preview') && response.ok() && response.headers()['x-preview-sheets']==='30');
+  await page.getByRole('button',{name:'Ver prévia completa',exact:true}).click();
+  const complete=await completeResponse;
+  await page.waitForFunction(()=>document.querySelector('#previewSummary').textContent==='Prévia completa da impressão' && !previewController);
+  const completeBytes=Buffer.from(await page.evaluate(async()=>Array.from(new Uint8Array(await (await fetch(previewObjectUrl)).arrayBuffer()))));
+  assert.equal(completeBytes.length,Number(complete.headers()['content-length']),'O navegador deve receber todo o PDF gerado');
+  const completePath=path.join(root,'complete-preview.pdf');fs.writeFileSync(completePath,completeBytes);
+  const countPdf=file=>execFileSync('php',['-r',`require 'src/Service/PageCounter.php'; echo PageCounter::count($argv[1]);`,file],{cwd:root,encoding:'utf8'});
+  assert.equal(countPdf(completePath),'30','PDF completo deve conter todos os 30 lados, sem teto antigo de 10');
+  await page.waitForFunction(()=>document.querySelector('#previewSummary').textContent==='Prévia completa da impressão' && !previewController);
+  assert.equal(await page.locator('#loadFullPreview').isVisible(),false);
+  const previewForm={upload_token:await page.locator('#uploadTokenInput').inputValue(),csrf_token:await page.locator('input[name=csrf_token]').first().inputValue(),number_up:'2',paper:'A4',orientation:'auto',scale:'fit'};
+  const cachedSample=await page.request.post(base+'/print/preview',{form:previewForm});
+  assert.equal(cachedSample.headers()['x-preview-sheets'],'3');
+  const samplePath=path.join(root,'sample-preview.pdf');fs.writeFileSync(samplePath,await cachedSample.body());
+  assert.equal(countPdf(samplePath),'3','Cache da amostra não pode devolver a completa');
+  const cachedFull=await page.request.post(base+'/print/preview',{form:{...previewForm,preview_mode:'full'}});
+  assert.deepEqual(await cachedFull.body(),completeBytes,'Cache da completa deve ser separado e reutilizado');
+  const selectedPreview=await page.request.post(base+'/print/preview',{form:{...previewForm,page_ranges:'1,3-5'}});
+  assert.equal(selectedPreview.headers()['x-preview-sheets'],'2','Seleção pequena em documento grande deve ser completa');
+  assert.equal(selectedPreview.headers()['x-preview-additional-sheets'],'0');
+  assert.equal((await page.request.post(base+'/print/preview',{form:{...previewForm,preview_mode:'full',csrf_token:'invalid'}})).status(),419);
+  const originalEnv=fs.readFileSync(path.join(root,'.env'),'utf8');
+  try {
+   fs.appendFileSync(path.join(root,'.env'),'PRINT_PREVIEW_MAX_BYTES=1\n');
+   const limited=await page.request.post(base+'/print/preview',{form:{...previewForm,preview_mode:'full'}});
+   assert.equal(limited.status(),413,'Limite de transferência também deve valer para cache existente');
+   const uncachedLimited=await page.request.post(base+'/print/preview',{form:{...previewForm,preview_mode:'full',number_up:'4',page_ranges:'1-5'}});
+   assert.equal(uncachedLimited.status(),413,'Limite deve valer para PDF recém-gerado');
+  } finally {fs.writeFileSync(path.join(root,'.env'),originalEnv);}
+  // Changing options returns to automatic policy rather than regenerating a large full preview.
+  const changedResponse=page.waitForResponse(response=>response.url().endsWith('/print/preview') && response.ok() && response.headers()['x-preview-sheets']==='15');
+  await page.locator('#number_up').selectOption('4');
+  await changedResponse;
+  await page.waitForFunction(()=>document.querySelector('#previewSummary').textContent==='Prévia completa da impressão' && !previewController);
+  // Applying favorites during a full preview must invalidate old visual settings immediately.
+  await page.locator('#number_up').selectOption('1');
+  await page.waitForFunction(()=>document.querySelector('#previewSummary').textContent.includes('3 de 60') && !previewController);
+  const beforeFavoritesUrl=await page.locator('#preview iframe').getAttribute('src');
+  await page.evaluate(()=>localStorage.setItem('impressao.opcoes.v1',JSON.stringify({paper:'Letter',orientation:'landscape',number_up:'4'})));
+  let fullReady, releaseOldFull, oldFullDone, recountReady, releaseRecount;
+  const fullReadyGate=new Promise(resolve=>fullReady=resolve);
+  const oldFullGate=new Promise(resolve=>releaseOldFull=resolve);
+  const oldFullFinished=new Promise(resolve=>oldFullDone=resolve);
+  const recountReadyGate=new Promise(resolve=>recountReady=resolve);
+  const recountGate=new Promise(resolve=>releaseRecount=resolve);
+  const heldFull=async route=>{
+   if(!route.request().postData()?.includes('name="preview_mode"'))return route.continue();
+   const response=await route.fetch();fullReady();await oldFullGate;
+   try{await route.fulfill({response});}catch{/* Invalidated request may already be aborted. */}finally{oldFullDone();}
+  };
+  const heldRecount=async route=>{const response=await route.fetch();recountReady();await recountGate;await route.fulfill({response});};
+  await page.route('**/print/preview',heldFull);
+  await page.route('**/print/page-count',heldRecount);
+  await page.getByRole('button',{name:'Ver prévia completa',exact:true}).click();
+  await fullReadyGate;
+  await page.getByRole('button',{name:'Usar opções salvas',exact:true}).click();
+  await recountReadyGate;
+  releaseOldFull();await oldFullFinished;
+  await page.waitForFunction(()=>!previewController);
+  assert.equal(await page.locator('#preview iframe').getAttribute('src'),beforeFavoritesUrl,'Prévia antiga não pode substituir amostra durante recálculo de favoritos');
+  releaseRecount();
+  await page.unroute('**/print/preview',heldFull);
+  await page.waitForFunction(()=>document.querySelector('#previewSummary').textContent==='Prévia completa da impressão' && !previewController && !documentRecalculating);
+  await page.unroute('**/print/page-count',heldRecount);
+  assert.equal(submissions,2,'Gerar prévias completas não deve imprimir');
+  assert.equal(execFileSync('php',['-r',`require 'src/Service/Database.php'; echo Database::connect()->querySingle('SELECT count(*) FROM print_jobs');`],{cwd:root,encoding:'utf8'}),'3','Prévia não cria trabalhos ou altera o histórico');
   // Conversion warnings remain prominent when the automatic layout is changed manually.
   await page.goto(base+'/');
   const conversionWarning='Confira a paginação após a conversão do documento.';

@@ -351,3 +351,6 @@
 .print-notice-success { color: #14532d; background: #f0fdf4; border-color: var(--app-success); }
 #formError:not(:empty) { padding: 16px; border: 2px solid var(--app-danger); border-left-width: 6px; border-radius: 8px; background: #fff1f2; color: #7f1d1d; font-weight: 650; }
 #formError:not(:empty)::before { content: 'Confira antes de imprimir'; display: block; font-weight: 800; margin-bottom: 6px; }
+
+.preview-heading-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+#loadFullPreview { min-width: 180px; min-height: 44px; }
