@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/PrinterHealthService.php';
+
 class CupsService
 {
     private $printerName;
@@ -32,7 +34,10 @@ class CupsService
             'completed_jobs' => 0,
             'canceled_jobs' => 0,
             'failed_jobs' => 0,
-            'can_print' => true,
+            'queue_verified' => false,
+            'physical_verified' => false,
+            'physical_reachable' => null,
+            'can_print' => false,
             'notice_type' => 'success',
             'notice' => '',
             'auto_enable_result' => null,
@@ -63,6 +68,14 @@ class CupsService
 
         $printer = escapeshellarg($this->printerName);
         $printerStatus = $this->run(escapeshellarg($lpstat) . ' -p ' . $printer . ' 2>&1');
+        if ($printerStatus['return_code'] !== 0 && ($printerStatus['return_code'] === 124
+            || $this->looksLikeCupsDown($printerStatus['stdout'] . "\n" . $printerStatus['stderr']))) {
+            $status['cups_active'] = false;
+            $status['reason'] = 'CUPS parado ou erro de comunicação';
+            $status['raw']['printer'] = $printerStatus;
+            $this->applyUserNotice($status);
+            return $status;
+        }
         $acceptStatus = $this->run(escapeshellarg($lpstat) . ' -a ' . $printer . ' 2>&1');
         $stateStatus = $this->run(escapeshellarg($lpstat) . ' -l -p ' . $printer . ' 2>&1');
         $pending = $this->run(escapeshellarg($lpstat) . ' -o ' . $printer . ' 2>&1');
@@ -116,6 +129,9 @@ class CupsService
             $status['printer_state_message'] = trim($match[1], " \t\r\n\"");
         }
 
+        $status['queue_verified'] = $printerStatus['return_code'] === 0
+            && $acceptStatus['return_code'] === 0 && $stateStatus['return_code'] === 0
+            && $status['enabled'] !== null && $status['accepting'] !== null;
         $status['pending_jobs'] = $this->countJobLines($pending['stdout']);
         $status['completed_jobs'] = $this->countJobLines($completed['stdout']);
         $status['canceled_jobs'] = $this->countMatchingJobLines($completed['stdout'], '/cancel|abort/i');
@@ -123,7 +139,17 @@ class CupsService
 
         $combined = trim($printerText . "\n" . $acceptText . "\n" . $stateText);
         $ippText = $this->ippAttributesText($ippStatus);
+        $physical = (new PrinterHealthService())->interpret($ippStatus['attributes'] ?? null);
+        $status['physical_verified'] = $physical['verified'];
+        $status['physical_reachable'] = $ippStatus['reachable'] ?? null;
         $status['reason'] = $this->classifyReason($combined, $ippText);
+        if ($status['physical_reachable'] === false) {
+            $status['reason'] = 'offline';
+        } elseif ($physical['verified'] && !$physical['can_print']) {
+            $status['reason'] = $physical['reason'];
+        } elseif ($status['reason'] === '') {
+            $status['reason'] = $physical['reason'];
+        }
         if ($printerStatus['return_code'] !== 0 || $acceptStatus['return_code'] !== 0 || $stateStatus['return_code'] !== 0) {
             $status['last_error'] = $this->truncate($combined, 1000);
         } elseif ($status['reason'] !== '') {
@@ -134,7 +160,7 @@ class CupsService
             $autoEnable = $this->enablePrinter('auto');
             $freshStatus = $this->diagnostics(false);
             $freshStatus['auto_enable_result'] = $autoEnable;
-            if (!empty($autoEnable['success'])) {
+            if (!empty($autoEnable['success']) && $freshStatus['can_print'] === true) {
                 $freshStatus['notice_type'] = 'success';
                 $freshStatus['notice'] = 'Impressora reativada automaticamente. Já é possível enviar impressões.';
                 $freshStatus['can_print'] = true;
@@ -162,23 +188,8 @@ class CupsService
         }
 
         $diag = $checks['diagnostics'];
-        if ($diag['cups_active'] === false) {
-            return $this->failedPreflight($checks, 'CUPS parado ou inacessível');
-        }
-        if (($diag['reason'] ?? '') === 'falta de papel') {
-            return $this->failedPreflight($checks, 'Impressora sem papel. Não é possível enviar impressões.');
-        }
-        if (($diag['reason'] ?? '') === 'atolamento de papel') {
-            return $this->failedPreflight($checks, 'Atolamento de papel na impressora. Não é possível enviar impressões.');
-        }
-        if (!$diag['printer_exists']) {
-            return $this->failedPreflight($checks, 'Impressora não encontrada no CUPS');
-        }
-        if ($diag['enabled'] === false) {
-            return $this->failedPreflight($checks, 'Impressora desativada');
-        }
-        if ($diag['accepting'] === false) {
-            return $this->failedPreflight($checks, 'Impressora não está aceitando impressões');
+        if (($diag['can_print'] ?? false) !== true) {
+            return $this->failedPreflight($checks, $diag['notice'] ?? 'Não foi possível confirmar que a impressora está disponível.');
         }
 
         return $checks;
@@ -596,6 +607,10 @@ class CupsService
             'toner ou suprimento',
             'offline',
             'erro de comunicação',
+            'estado não confirmado',
+            'falha no equipamento',
+            'impressora parada',
+            'impressora não aceita impressões',
             'falha no filtro do CUPS',
             'impressora desativada',
         ], true);
@@ -616,7 +631,8 @@ class CupsService
             'tampa aberta' => ['door-open', 'cover-open', 'tampa aberta', 'porta aberta'],
             'impressora desativada' => ['disabled', 'paused', 'stopped'],
             'impressora não aceita impressões' => ['not accepting', 'rejecting'],
-            'toner ou suprimento' => ['toner', 'marker-supply', 'marker-waste', 'ink-empty', 'ink-low', 'toner-empty', 'toner-low', 'sem toner', 'toner baixo', 'suprimento'],
+            'toner ou suprimento' => ['toner-empty', 'marker-supply-empty', 'marker-waste-full', 'ink-empty', 'sem toner'],
+            'suprimento baixo' => ['toner-low', 'marker-supply-low', 'ink-low', 'toner low', 'toner baixo'],
             'offline' => ['offline', 'not connected', 'unreachable', 'desconectada', 'fora da rede'],
             'formato não suportado' => ['unsupported format', 'unsupported document', 'unsupported document-format'],
             'arquivo inválido' => ['empty file', 'no file', 'cannot open file', 'not a pdf'],
@@ -645,7 +661,10 @@ class CupsService
             return $device;
         }
 
-        $uri = (string) $device['uri'];
+        $probe = (new PrinterHealthService())->probe($device['uri']);
+        $device['reachable'] = $probe['reachable'];
+        if ($probe['reachable'] === false) return $device;
+        $uri = trim((string) ($_ENV['PRINTER_STATUS_URI'] ?? '')) ?: $probe['status_uri'];
         if (!$this->canQueryIppUri($uri)) {
             $device['attributes'] = [
                 'stdout' => '',
@@ -718,15 +737,6 @@ class CupsService
 
     private function ippToolGetPrinterAttributesTest()
     {
-        foreach ([
-            '/usr/share/cups/ipptool/get-printer-attributes.test',
-            '/usr/local/share/cups/ipptool/get-printer-attributes.test',
-        ] as $candidate) {
-            if (is_file($candidate)) {
-                return ['path' => $candidate, 'temporary' => false];
-            }
-        }
-
         $path = @tempnam(sys_get_temp_dir(), 'cups-ipp-');
         if ($path === false) {
             return null;
@@ -740,6 +750,7 @@ class CupsService
             '  ATTR charset attributes-charset utf-8',
             '  ATTR naturalLanguage attributes-natural-language en',
             '  ATTR uri printer-uri $uri',
+            '  ATTR keyword requested-attributes printer-state,printer-state-reasons,printer-state-message,printer-is-accepting-jobs,media-ready,printer-input-tray',
             '}',
             '',
         ]);
@@ -817,7 +828,8 @@ class CupsService
             return;
         }
         if ($reason === 'Diagnostico CUPS indisponivel no Windows') {
-            $status['notice_type'] = 'info';
+            $status['can_print'] = false;
+            $status['notice_type'] = 'warning';
             $status['notice'] = 'O diagnóstico detalhado da impressora não está disponível neste servidor.';
             return;
         }
@@ -850,7 +862,7 @@ class CupsService
         if ($reason === 'offline') {
             $status['can_print'] = false;
             $status['notice_type'] = 'danger';
-            $status['notice'] = 'A impressora está offline ou desconectada da rede. Avise a equipe de TI.';
+            $status['notice'] = 'Impressora desligada ou sem conexão. Ligue a impressora ou avise a equipe de TI.';
             return;
         }
         if ($reason === 'tampa aberta') {
@@ -883,10 +895,27 @@ class CupsService
             $status['notice'] = 'A impressora está desativada no servidor. Avise a equipe de TI para reativar.';
             return;
         }
-        if ($accepting === false) {
+        if ($accepting === false || $reason === 'impressora não aceita impressões') {
             $status['can_print'] = false;
             $status['notice_type'] = 'warning';
             $status['notice'] = 'A impressora não está aceitando novas impressões no servidor. Avise a equipe de TI.';
+            return;
+        }
+        if ($reason === 'impressora parada' || $reason === 'falha no equipamento') {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'danger';
+            $status['notice'] = 'A impressora está parada com uma falha. Confira o painel da impressora ou avise a equipe de TI.';
+            return;
+        }
+        if (($status['physical_verified'] ?? false) !== true || ($status['queue_verified'] ?? false) !== true) {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'danger';
+            $status['notice'] = 'Não foi possível confirmar o estado da impressora. O envio está bloqueado; avise a equipe de TI.';
+            return;
+        }
+        if ($reason === 'suprimento baixo') {
+            $status['notice_type'] = 'warning';
+            $status['notice'] = 'Toner ou tinta em nível baixo. Ainda é possível imprimir; avise a equipe de TI.';
             return;
         }
         if ($reason !== '') {
@@ -960,6 +989,9 @@ class CupsService
             return false;
         }
 
+        if (($status['physical_verified'] ?? false) !== true || ($status['queue_verified'] ?? false) !== true
+            || ($status['physical_reachable'] ?? null) === false
+            || in_array($status['reason'] ?? '', ['falta de papel','atolamento de papel','toner ou suprimento','tampa aberta','offline','falha no equipamento','impressora parada'], true)) return false;
         return $this->autoEnableThrottleAllows();
     }
 
@@ -1018,24 +1050,43 @@ class CupsService
             || str_contains($text, 'unauthorized');
     }
 
-    public function run($command)
+    public function run($command, $timeoutSeconds = 10)
     {
         $descriptor = [
             0 => ['pipe', 'r'],
             1 => ['pipe', 'w'],
             2 => ['pipe', 'w'],
         ];
-        $process = @proc_open($command, $descriptor, $pipes);
+        $process = @proc_open($this->isWindows() ? $command : 'exec ' . $command, $descriptor, $pipes);
         if (!is_resource($process)) {
             return ['stdout' => '', 'stderr' => 'Falha ao iniciar comando', 'return_code' => 127];
         }
 
         fclose($pipes[0]);
-        $stdout = stream_get_contents($pipes[1]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+        $stdout = $stderr = '';
+        $deadline = microtime(true) + max(1, min(30, (int) $timeoutSeconds));
+        $timedOut = false;
+        do {
+            $state = proc_get_status($process);
+            $stdout = substr($stdout . stream_get_contents($pipes[1]), 0, 1048576);
+            $stderr = substr($stderr . stream_get_contents($pipes[2]), 0, 1048576);
+            if (!$state['running']) break;
+            if (microtime(true) >= $deadline) {
+                $timedOut = true;
+                proc_terminate($process, 9);
+                break;
+            }
+            usleep(50000);
+        } while (true);
+        $stdout = substr($stdout . stream_get_contents($pipes[1]), 0, 1048576);
+        $stderr = substr($stderr . stream_get_contents($pipes[2]), 0, 1048576);
         fclose($pipes[1]);
-        $stderr = stream_get_contents($pipes[2]);
         fclose($pipes[2]);
-        $code = proc_close($process);
+        $closedCode = proc_close($process);
+        $code = $timedOut ? 124 : ($state['exitcode'] >= 0 ? $state['exitcode'] : $closedCode);
+        if ($timedOut) $stderr .= '\nConsulta da impressora expirou (timeout).';
 
         $this->log(
             'CUPS CMD: ' . $this->truncate($command, 2000)

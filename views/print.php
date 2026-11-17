@@ -27,7 +27,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/print.css?v=20261117-6">
+    <link rel="stylesheet" href="/css/print.css?v=20261117-8">
 
 </head>
 
@@ -257,7 +257,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
                             <div class="print-confirmation mt-3">
                                 <div class="<?= $sharedMode ? 'print-actions' : '' ?>">
-                                    <button type="submit" form="printForm" id="btnPrint" class="btn btn-primary w-100" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
+                                    <button type="submit" form="printForm" id="btnPrint" class="btn btn-primary w-100" aria-describedby="printerBlockNotice" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
                                         <span class="text"><?= $sharedMode ? 'Confirmar impressão' : 'Enviar para impressão' ?></span>
                                         <span class="spinner-border spinner-border-sm d-none"></span>
                                     </button>
@@ -268,6 +268,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                                         </button>
                                     <?php endif; ?>
                                 </div>
+                                <p id="printerBlockNotice" class="printer-block-notice d-none mb-0 mt-2" role="alert"></p>
                                 <div id="progressBar" class="d-none" role="status"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Aguardando resposta do servidor…</div>
                             </div>
 
@@ -307,7 +308,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         const sharedFile = <?= json_encode($sharedFile, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         const shareToken = <?= json_encode($shareToken) ?>;
         const adminUsers = <?= json_encode($userList ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-        let printerStatus = <?= json_encode($printerStatus ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        let printerStatus = <?= json_encode(array_intersect_key($printerStatus ?? [], array_flip(['can_print', 'notice', 'notice_type'])), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         let pageCountToken = 0;
         let previewToken = 0;
         let previewObjectUrl = '';
@@ -325,6 +326,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         let submissionLocked = false;
         let documentRecalculating = false;
         let sharedPrintCompleted = false;
+        let printerStatusRequest = null;
+        let printerStatusController = null;
+        let printerStatusVersion = 0;
+        let printerStatusCheckedAt = Date.now();
+        let submissionChecking = false;
         let postPrintWatchTimer = null;
         let postPrintWatchUntil = 0;
         const scaleSelect = document.querySelector('[name="scale"]');
@@ -332,6 +338,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         const targetUserSearch = document.getElementById('targetUserSearch');
         const targetUserCpf = document.getElementById('targetUserCpf');
         const printerStatusBox = document.getElementById('printerStatusBox');
+        const printerBlockNotice = document.getElementById('printerBlockNotice');
         const numberUpSelect = document.querySelector('[name="number_up"]');
         const sidesSelect = document.querySelector('[name="sides"]');
         const largeDocumentLayout = document.querySelector('[name="large_document_layout"]');
@@ -940,22 +947,26 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         }
 
         function renderPrinterStatus(status) {
-            printerStatus = status || {};
-            const notice = printerStatus.notice || '';
+            printerStatus = status && typeof status.can_print === 'boolean' ? status : {
+                can_print: false, notice_type: 'danger', notice: 'Não foi possível confirmar o estado da impressora. Aguarde a próxima consulta ou avise a equipe de TI.'
+            };
+            const blocked = printerStatus.can_print !== true;
+            const notice = printerStatus.notice || (blocked ? 'A impressora está indisponível. Aguarde ou avise a equipe de TI.' : '');
             const awaitingUpload = !uploadToken || documentRecalculating || submissionLocked;
             updateEstimate();
+            const blockText = blocked ? notice : '';
+            if (printerBlockNotice.textContent !== blockText) printerBlockNotice.textContent = blockText;
+            printerBlockNotice.classList.toggle('d-none', !blocked);
+            if (!printingActive) btnPrint.disabled = submissionChecking || awaitingUpload || blocked || (sharedMode && sharedPrintCompleted);
             if (!notice) {
                 printerStatusBox.classList.add('d-none');
-                if (!printingActive) {
-                    btnPrint.disabled = awaitingUpload || (sharedMode && sharedPrintCompleted);
-                }
                 return;
             }
-
             const type = ['warning', 'danger', 'info', 'success'].includes(printerStatus.notice_type)
-                ? printerStatus.notice_type : (printerStatus.can_print === false ? 'warning' : 'success');
+                ? printerStatus.notice_type : (blocked ? 'danger' : 'success');
+            const title = blocked ? 'Atenção: impressora indisponível' : (['warning', 'danger'].includes(type) ? 'Atenção à impressora' : 'Situação da impressora');
             printerStatusBox.className = `alert print-notice print-notice-${type}`;
-            const title = printerStatus.can_print === false ? 'Atenção: impressora indisponível' : (['warning', 'danger'].includes(type) ? 'Atenção à impressora' : 'Situação da impressora');
+            printerStatusBox.setAttribute('role', blocked ? 'alert' : 'status');
             if (printerStatusBox.dataset.notice !== notice || printerStatusBox.dataset.title !== title || printerStatusBox.dataset.type !== type) {
                 printerStatusBox.innerHTML = `<i aria-hidden="true" class="bi bi-printer-fill"></i><div><strong>${title}</strong><p>${escapeHtml(notice)}</p></div>`;
                 printerStatusBox.dataset.notice = notice;
@@ -963,24 +974,45 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 printerStatusBox.dataset.type = type;
             }
             printerStatusBox.classList.remove('d-none');
-            if (!printingActive) {
-                btnPrint.disabled = awaitingUpload || printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
-            }
         }
 
         function refreshPrinterStatus() {
-            return fetch('/printer/status', {
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success && data.status) {
-                        renderPrinterStatus(data.status);
+            if (navigator.onLine === false) {
+                renderPrinterStatus(null);
+                return Promise.resolve(printerStatus);
+            }
+            if (printerStatusRequest) return printerStatusRequest;
+            const version = ++printerStatusVersion;
+            const controller = new AbortController();
+            printerStatusController = controller;
+            const timeout = setTimeout(() => controller.abort(), 12000);
+            printerStatusRequest = (async () => {
+                try {
+                    const response = await fetch('/printer/status', {
+                        cache: 'no-store', signal: controller.signal,
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+                    if (!response.ok) throw new Error('Consulta indisponível');
+                    const data = await response.json();
+                    if (data.success !== true || typeof data.status?.can_print !== 'boolean') throw new Error('Estado inválido');
+                    if (version !== printerStatusVersion || navigator.onLine === false) return printerStatus;
+                    renderPrinterStatus(data.status);
+                    printerStatusCheckedAt = Date.now();
+                    return printerStatus;
+                } catch {
+                    if (version !== printerStatusVersion) return printerStatus;
+                    renderPrinterStatus(null);
+                    printerStatusCheckedAt = 0;
+                    return printerStatus;
+                } finally {
+                    clearTimeout(timeout);
+                    if (version === printerStatusVersion) {
+                        printerStatusRequest = null;
+                        printerStatusController = null;
                     }
-                })
-                .catch(() => {});
+                }
+            })();
+            return printerStatusRequest;
         }
 
         function startPostPrintStatusWatch() {
@@ -1007,7 +1039,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             const text = btnPrint.querySelector('.text');
             const spinner = btnPrint.querySelector('.spinner-border');
             const awaitingUpload = !uploadToken || documentRecalculating || submissionLocked;
-            btnPrint.disabled = active || awaitingUpload || printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
+            btnPrint.disabled = active || submissionChecking || awaitingUpload || printerStatus.can_print !== true || (sharedMode && sharedPrintCompleted);
             text.textContent = active ? 'Enviando...' : (submissionLocked ? 'Confira em Meus envios' : null) || (sharedMode && sharedPrintCompleted ? 'Enviado' : (sharedMode ? 'Confirmar impressão' : 'Enviar para impressão'));
             spinner.classList.toggle('d-none', !active);
             progress.classList.toggle('d-none', !active);
@@ -1020,9 +1052,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         }
 
         // envio AJAX para exibir erros sem deixar a pagina presa carregando
-        printForm.addEventListener('submit', (event) => {
+        printForm.addEventListener('submit', async (event) => {
             event.preventDefault();
-            if (printingActive || submissionLocked || documentRecalculating) return;
+            if (printingActive || submissionChecking || submissionLocked || documentRecalculating) return;
             if (!validatePrintOptions()) return;
             if (!uploadToken) {
                 showPrintResult('Aguarde o término do envio e da validação do arquivo antes de imprimir.', false);
@@ -1032,9 +1064,18 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 showFieldError(targetUserSearch, 'Selecione um professor da lista.');
                 return;
             }
-            if (printerStatus.can_print === false) {
+            const checkingUploadToken = uploadToken;
+            submissionChecking = true;
+            btnPrint.disabled = true;
+            btnPrint.querySelector('.text').textContent = 'Verificando impressora…';
+            try { await refreshPrinterStatus(); }
+            finally {
+                submissionChecking = false;
+                setPrintingState(false);
+            }
+            if (!uploadToken || uploadToken !== checkingUploadToken || documentRecalculating || !validatePrintOptions()) return;
+            if (printerStatus.can_print !== true) {
                 showPrintResult(printerStatus.notice || 'A impressora não está disponível agora. Avise a equipe de TI.', false);
-                refreshPrinterStatus();
                 return;
             }
             clearTimeout(previewDebounceTimer);
@@ -1123,7 +1164,25 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             schedulePreview(0);
         }
         refreshPrinterStatus();
-        setInterval(refreshPrinterStatus, 30000);
+        setInterval(() => {
+            if (Date.now() - printerStatusCheckedAt > 15000) renderPrinterStatus(null);
+            if (!document.hidden) refreshPrinterStatus();
+        }, 10000);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                if (Date.now() - printerStatusCheckedAt > 15000) renderPrinterStatus(null);
+                refreshPrinterStatus();
+            }
+        });
+        window.addEventListener('offline', () => {
+            printerStatusVersion++;
+            if (printerStatusController) printerStatusController.abort();
+            printerStatusController = null;
+            printerStatusRequest = null;
+            printerStatusCheckedAt = 0;
+            renderPrinterStatus(null);
+        });
+        window.addEventListener('online', refreshPrinterStatus);
 
     </script>
     <script src="/js/pwa.js?v=20260623"></script>

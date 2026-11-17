@@ -355,3 +355,13 @@
 .pdf-preview-open { margin-left: auto; }
 .pdf-preview-page { padding: 8px; min-width: 0; }
 .pdf-preview-canvas { display: block; max-width: 100%; height: auto; margin: 0 auto; background: #fff; box-shadow: 0 1px 4px rgba(23,32,51,.12); }
+
+.printer-block-notice {
+    color: var(--app-danger);
+    font-weight: 650;
+    line-height: 1.45;
+    padding: 10px 12px;
+    border-left: 4px solid currentColor;
+    background: #fff1f0;
+    border-radius: 6px;
+}

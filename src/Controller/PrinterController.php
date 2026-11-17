@@ -6,6 +6,7 @@ class PrinterController
     public function status()
     {
         header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store, private');
 
         if (!isset($_SESSION['user'])) {
             http_response_code(401);
@@ -13,7 +14,11 @@ class PrinterController
             return;
         }
 
+        // A printer query must not hold up uploads/preview requests from this session.
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
         $status = (new CupsService())->diagnostics(true);
+        // Device URIs/command diagnostics belong to the administrator, not the teacher API.
+        unset($status['raw'], $status['auto_enable_result'], $status['last_error']);
         echo json_encode(['success' => true, 'status' => $status], JSON_UNESCAPED_UNICODE);
     }
 

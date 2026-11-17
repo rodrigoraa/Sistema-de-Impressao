@@ -42,6 +42,14 @@ PRINT_JOB_AFTER_QUEUE_MONITOR_SECONDS=45
 PRINT_JOB_IDLE_CONFIRM_SECONDS=6
 ```
 
+## Disponibilidade da impressora
+
+O envio exige uma consulta saudável ao equipamento, além da fila CUPS. Impressora desligada ou sem comunicação, falta de papel, atolamento, toner vazio, tampa aberta, estado parado e falhas impeditivas desativam o botão e bloqueiam o envio no servidor. O aviso aparece no topo e junto ao botão. Toner/tinta baixos geram aviso sem impedir uma impressão ainda possível.
+
+No Linux, instale `cups-ipp-utils` (comando `ipptool`). A URI IPP/IPPS/HTTP da fila é consultada diretamente. Para filas `socket://` ou `lpd://`, o sistema testa o transporte da fila e consulta `ipp://MESMO_HOST:631/ipp/print`. Se o equipamento tiver outro endpoint, configure `PRINTER_STATUS_URI=ipp://IP_DA_IMPRESSORA:631/ipp/print` (ou a URI IPPS correta). Essa URI deve consultar o equipamento físico. Dispositivos USB ou outras conexões precisam de uma URI de status configurada. A detecção dos motivos depende dos estados informados pelo equipamento; estado não confirmado bloqueia o envio e pede auxílio da TI.
+
+A conexão de rede tem limite padrão de 2 segundos (`PRINTER_CONNECT_TIMEOUT_SECONDS`, 1–5), a consulta IPP tem limite padrão de 5 segundos (`IPP_DIAGNOSTIC_TIMEOUT_SECONDS`, 1–30) e os comandos têm limite de execução. A interface consulta a cada 10 segundos, ao voltar à página e antes do envio; erros e estado vencido bloqueiam até recuperação. Consultas não enviam trabalhos de impressão. Uma falha surgida depois do envio continua sujeita ao acompanhamento CUPS; o diagnóstico não garante saída física de cada folha.
+
 ## Pré-visualização fiel da impressão
 
 O arquivo é enviado uma única vez para uma pasta temporária fora de `public/`. O navegador recebe somente um token aleatório associado ao usuário e à sessão; contagem de páginas, mudanças de configuração e prévias seguintes usam esse token, sem reenviar o arquivo completo. O token não contém caminho de arquivo e expira por padrão em 30 minutos.
