@@ -27,7 +27,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/print.css?v=20261117-3">
+    <link rel="stylesheet" href="/css/print.css?v=20261117-4">
 
 </head>
 
@@ -72,8 +72,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                     <p>Escolha o arquivo, confira as cópias e revise antes de enviar.</p>
                 </div>
                 <div class="d-flex gap-2">
-                    <a href="/prints" class="btn btn-outline-secondary btn-sm">
-                        <i aria-hidden="true" class="bi bi-clock-history"></i> Histórico
+                    <a href="/prints" id="trackPrint" class="btn btn-outline-secondary btn-sm">
+                        <i aria-hidden="true" class="bi bi-clock-history"></i> Meus envios
                     </a>
                     <?php if ($sessionRole === 'admin'): ?>
                         <a href="/admin" class="btn btn-outline-secondary btn-sm">
@@ -245,23 +245,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
                             <div class="card-title-line"><h2 class="h5">Confira antes de imprimir</h2></div>
                             <div id="paperEstimate" class="paper-estimate" role="status" aria-live="polite">
-                                <strong id="estimateTotal">Escolha um arquivo para começar</strong>
-                                <p id="estimateDetails" class="mb-1">A estimativa de papel aparecerá aqui.</p>
-                                <small>Estimativa de folhas físicas. O acumulado do sistema segue a regra de contabilização da escola.</small>
+                                <strong id="estimateTotal">Estimativa: —</strong>
                             </div>
-                            <p id="sendState" class="send-state" role="status" aria-live="polite">Nenhum arquivo pronto para envio.</p>
-                                    <!-- PREVIEW -->
-                                    <div id="previewSummary" class="preview-summary mt-3 d-none">
-                                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-                                            <strong>Prévia de amostra</strong>
-                                            <span id="previewConfiguration" class="text-muted small"></span>
-                                        </div>
-                                        <div id="previewCoverage" class="small text-muted mt-1"></div>
-                                    </div>
-                                    <button type="button" id="expandPreview" class="btn btn-outline-secondary btn-sm mt-2" disabled>Abrir prévia ampliada</button>
-                                    <a id="openPreviewPdf" class="btn btn-outline-secondary btn-sm mt-2 d-none" target="_blank" rel="noopener">Abrir PDF em nova aba</a>
-                                    <div id="preview" class="mt-3"></div>
-
+                            <p id="sendState" class="visually-hidden" role="status" aria-live="polite">Nenhum arquivo pronto para envio.</p>
+                            <p id="previewSummary" class="preview-heading mt-3 mb-2 d-none">Prévia de amostra de como vai ficar a impressão</p>
+                            <div id="preview"></div>
 
                             <div class="print-confirmation mt-3">
                                 <div class="<?= $sharedMode ? 'print-actions' : '' ?>">
@@ -276,15 +264,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                                         </button>
                                     <?php endif; ?>
                                 </div>
-
-
-                            <a href="/prints" id="trackPrint" class="btn btn-outline-secondary w-100 mt-2">Acompanhar meus envios</a>
-                            <p class="small text-muted mt-2">Enviar não confirma que o papel já saiu. Confira a situação em Meus envios antes de repetir.</p>
-
-                            <div id="progressBar" class="d-none" role="status"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Aguardando resposta do servidor…</div>
+                                <div id="progressBar" class="d-none" role="status"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Aguardando resposta do servidor…</div>
                             </div>
-
-                            <details class="mobile-help mt-3"><summary>Como enviar pelo celular</summary><p class="small mt-2">Você pode escolher o arquivo acima. Para compartilhar do WhatsApp, abra o documento e use Compartilhar. Instale o sistema na tela inicial; a disponibilidade depende do celular. No iPhone, use Safari → Compartilhar → Adicionar à Tela de Início.</p></details>
 
                         </div>
                     </div>
@@ -297,23 +278,6 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
     </div>
 
-    <div class="modal fade" id="previewModal" tabindex="-1" aria-labelledby="previewModalTitle" aria-hidden="true">
-        <div class="modal-dialog modal-xl modal-dialog-centered">
-            <div class="modal-content">
-
-                <div class="modal-header">
-                    <h5 class="modal-title" id="previewModalTitle">Visualização do arquivo</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar prévia"></button>
-                </div>
-
-                <div class="modal-body text-center">
-                    <div id="modalContent"></div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-
     <script src="/js/print-estimate.js?v=20261117"></script>
     <script>
         const dropArea = document.getElementById('drop-area');
@@ -322,8 +286,6 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         const info = document.getElementById('file-info');
         const preview = document.getElementById('preview');
         const previewSummary = document.getElementById('previewSummary');
-        const previewConfiguration = document.getElementById('previewConfiguration');
-        const previewCoverage = document.getElementById('previewCoverage');
         const uploadTokenInput = document.getElementById('uploadTokenInput');
         const progress = document.getElementById('progressBar');
 
@@ -376,15 +338,13 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
         function updateEstimate() {
             const total = document.getElementById('estimateTotal');
-            const details = document.getElementById('estimateDetails');
             const state = document.getElementById('sendState');
             const result = paperEstimate();
             if (!uploadToken || documentRecalculating || result.sheets === null) {
-                total.textContent = !uploadToken ? 'Escolha um arquivo para começar' : (documentRecalculating ? 'Recalculando páginas…' : 'Confira cópias e seleção de páginas');
-                details.textContent = 'A estimativa fica disponível após validar o arquivo e as opções.';
+                total.textContent = !uploadToken ? 'Estimativa: —' : (documentRecalculating ? 'Estimativa: calculando…' : 'Estimativa: confira as opções');
             } else {
-                total.textContent = `Estimativa: ${result.sheets} ${result.sheets === 1 ? 'folha' : 'folhas'} de papel`;
-                details.textContent = `${currentFileMeta.original_name} · ${result.selectedPages} ${result.selectedPages === 1 ? 'página selecionada' : 'páginas selecionadas'} · ${printForm.elements.copies.value} ${Number(printForm.elements.copies.value) === 1 ? 'cópia' : 'cópias'} · ${sidesSelect.value === 'one-sided' ? 'frente apenas' : 'frente e verso'}`;
+                total.textContent = `Estimativa: ${result.sheets} ${result.sheets === 1 ? 'folha' : 'folhas'}`;
+
             }
             if (!printingActive && !submissionLocked) state.textContent = uploadToken ? (documentRecalculating ? 'Recalculando o documento. Aguarde.' : 'Arquivo pronto. Confira as opções antes de enviar.') : (uploadController ? 'Enviando e validando o arquivo…' : 'Nenhum arquivo pronto para envio.');
         }
@@ -438,7 +398,6 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             renderPrinterStatus(printerStatus);
         }
 
-        document.getElementById('expandPreview').addEventListener('click', () => { if (previewObjectUrl) openModal(previewObjectUrl, 'pdf'); });
         printForm.addEventListener('input', event => {
             if (event.target.hasAttribute('aria-invalid')) {
                 event.target.removeAttribute('aria-invalid');
@@ -576,22 +535,6 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             return (bytes / 1024 / 1024).toFixed(2) + ' MB';
         }
 
-        // 🔥 abre modal
-        function openModal(url, ext) {
-            const modalContent = document.getElementById('modalContent');
-
-            if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
-                modalContent.innerHTML = `<img alt="Prévia do arquivo" src="${url}" style="max-width:100%;">`;
-            }
-
-            if (ext === 'pdf') {
-                modalContent.innerHTML = `<iframe title="Prévia ampliada da impressão" src="${url}" style="width:100%; height:80vh;"></iframe>`;
-            }
-
-            const modal = new bootstrap.Modal(document.getElementById('previewModal'));
-            modal.show();
-        }
-
         function appendPreviewOptions(formData) {
             ['paper', 'orientation', 'number_up', 'scale', 'scale_percent', 'page_ranges', 'page_set'].forEach(name => {
                 const element = document.querySelector(`[name="${name}"]`);
@@ -608,9 +551,6 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         function resetPreviewObjectUrl() {
             if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
             previewObjectUrl = '';
-            document.getElementById('expandPreview').disabled = true;
-            document.getElementById('openPreviewPdf').classList.add('d-none');
-            document.getElementById('openPreviewPdf').removeAttribute('href');
         }
 
         function pageInfoText(data) {
@@ -624,32 +564,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             return `${size}${size ? ' · ' : ''}${pages}${converted}${data.warning ? ` · atenção: ${data.warning}` : ''}`;
         }
 
-        function renderPreviewSummary(metadata = null) {
+        function renderPreviewSummary() {
             updateEstimate();
-            if (!uploadToken) {
-                previewSummary.classList.add('d-none');
-                return;
-            }
-            const numberUp = Number(numberUpSelect.value || 1);
-            const paper = document.querySelector('[name="paper"]').value === 'Letter' ? 'Carta' : 'A4';
-            const orientationValue = document.querySelector('[name="orientation"]').value;
-            const orientation = orientationValue === 'portrait' ? 'Retrato' : (orientationValue === 'landscape' ? 'Paisagem' : 'Automática');
-            const sides = sidesSelect.value === 'one-sided' ? 'Impressão simples' : 'Frente e verso';
-            previewConfiguration.textContent = `${numberUp} ${numberUp === 1 ? 'página' : 'páginas'} por lado • ${paper} • ${orientation} • ${sides}`;
-
-            if (metadata) {
-                const shown = Number(metadata.previewSheets || 0);
-                const total = Number(metadata.totalSheets || 0);
-                const documentPages = Number(metadata.documentPages || (currentPageData && currentPageData.pages) || 0);
-                const selectedPages = Number(metadata.selectedPages || documentPages);
-                const pageText = selectedPages === documentPages
-                    ? `${documentPages} ${documentPages === 1 ? 'página do documento' : 'páginas do documento'}`
-                    : `${selectedPages} de ${documentPages} páginas selecionadas`;
-                previewCoverage.textContent = `Exibindo ${shown === 1 ? 'o primeiro lado' : `os primeiros ${shown} lados`} de ${total}. ${pageText} → ${total} ${total === 1 ? 'lado impresso' : 'lados impressos'} por cópia.`;
-            } else {
-                previewCoverage.textContent = 'A prévia é uma amostra limitada dos primeiros lados da impressão.';
-            }
-            previewSummary.classList.remove('d-none');
+            previewSummary.classList.toggle('d-none', !uploadToken);
         }
 
         async function uploadSelectedFile(file) {
@@ -664,7 +581,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             currentPageData = null;
             currentFileMeta = { original_name: file.name, extension: file.name.split('.').pop().toLowerCase(), size: file.size };
             info.textContent = `${formatSize(file.size)} · enviando e contando páginas...`;
-            preview.innerHTML = '<div class="preview-loading"><span class="spinner-border spinner-border-sm"></span><span>Preparando o arquivo...</span></div>';
+            preview.innerHTML = '<div class="preview-loading"><span class="spinner-border spinner-border-sm"></span><span>Preparando arquivo…</span></div>';
             previewSummary.classList.add('d-none');
             btnPrint.disabled = true;
             updateEstimate();
@@ -725,7 +642,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             if (previewController) previewController.abort();
             const controller = new AbortController();
             previewController = controller;
-            preview.innerHTML = '<div class="preview-loading"><span class="spinner-border spinner-border-sm"></span><span>Gerando pré-visualização da impressão...</span></div>';
+            preview.innerHTML = '<div class="preview-loading"><span class="spinner-border spinner-border-sm"></span><span>Preparando prévia…</span></div>';
             renderPreviewSummary();
             const formData = new FormData();
             appendPreviewOptions(formData);
@@ -738,21 +655,12 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                     signal: controller.signal
                 });
                 if (!response.ok) throw new Error(await response.text() || 'Não foi possível gerar a pré-visualização.');
-                const metadata = {
-                    documentPages: response.headers.get('X-Preview-Document-Pages'),
-                    selectedPages: response.headers.get('X-Preview-Selected-Pages'),
-                    totalSheets: response.headers.get('X-Preview-Total-Sheets'),
-                    previewSheets: response.headers.get('X-Preview-Sheets')
-                };
                 const blob = await response.blob();
                 if (token !== previewToken) return;
                 resetPreviewObjectUrl();
                 previewObjectUrl = URL.createObjectURL(blob);
                 preview.innerHTML = `<iframe src="${previewObjectUrl}" title="Pré-visualização da impressão"></iframe>`;
-                document.getElementById('expandPreview').disabled = false;
-                document.getElementById('openPreviewPdf').href = previewObjectUrl;
-                document.getElementById('openPreviewPdf').classList.remove('d-none');
-                renderPreviewSummary(metadata);
+                renderPreviewSummary();
             } catch (error) {
                 if (error.name === 'AbortError' || token !== previewToken) return;
                 resetPreviewObjectUrl();

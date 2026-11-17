@@ -97,9 +97,22 @@ const net = require('node:net');
   await page.locator('#page_ranges').fill('9');
   await page.locator('#btnPrint').click();
   assert.match(await page.locator('#formError').textContent(),/intervalo/);assert.equal(submissions,0);
+  const previousPreviewUrl=await page.evaluate(()=>previewObjectUrl);
   await page.locator('#page_ranges').fill('');
   await page.locator('#advancedOptions summary').click();
+  await page.waitForFunction(previous=>previewObjectUrl && previewObjectUrl!==previous && !previewController && document.querySelector('#preview iframe'),previousPreviewUrl);
   await page.locator('#preview iframe').waitFor();
+  const reviewPanel=page.locator('.info-panel');
+  await reviewPanel.getByText('Prévia de amostra de como vai ficar a impressão',{exact:true}).waitFor();
+  const reviewText=await reviewPanel.evaluate(panel=>{
+   const visibleContent=panel.cloneNode(true);
+   visibleContent.querySelectorAll('.visually-hidden, .d-none').forEach(element=>element.remove());
+   return visibleContent.textContent;
+  });
+  for(const redundant of ['Atividade.pdf','contabilização','Arquivo pronto','Exibindo','por cópia','Abrir prévia ampliada','Abrir PDF em nova aba','Como enviar pelo celular']) {
+   assert.ok(!reviewText.includes(redundant),`A revisão deve ser direta, sem texto extra: ${redundant}`);
+  }
+  assert.deepEqual(await reviewPanel.getByRole('button').allTextContents().then(labels=>labels.map(label=>label.trim())),['Enviar para impressão']);
   async function assertPreviewNearConfirmation() {
    const previewBox=await page.locator('#preview').boundingBox();
    const buttonBox=await page.locator('#btnPrint').boundingBox();
@@ -222,7 +235,7 @@ const net = require('node:net');
   releaseRemovedUpload();await removedFinished;
   assert.equal(await page.locator('#uploadTokenInput').inputValue(),'');
   assert.equal(await page.locator('#btnPrint').isDisabled(),true);
-  assert.ok(!(await page.locator('#estimateDetails').textContent()).includes('Removido.pdf'));
+  assert.equal(await page.locator('#estimateTotal').textContent(),'Estimativa: —');
   await page.unroute('**/print/upload',removedHandler);
   // Conversion warnings remain prominent when the automatic layout is changed manually.
   await page.goto(base+'/');
