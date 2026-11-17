@@ -305,7 +305,7 @@
 .upload-box.drag-over { border-color: var(--app-brand); background: var(--app-brand-soft); }
 #btnPrint { min-height: 48px; }
 #progressBar { min-height: 40px; color: var(--app-muted); }
-#preview iframe { min-height: 280px; height: min(55vh, 520px); }
+#preview iframe { min-height: 220px; height: clamp(220px, 42vh, 360px); }
 #estimateDetails { line-height: 1.6; }
 .file-actions .btn, .favorite-actions .btn { min-height: 44px; }
 @media (max-width: 575px) {
@@ -315,5 +315,12 @@
 }
 
 @media (min-width: 576px) {
-    .primary-options { grid-template-columns: minmax(120px, .65fr) minmax(0, 1.35fr); }
+    .primary-options { grid-template-columns: minmax(96px, 120px) minmax(0, 1fr); }
 }
+
+.primary-options > div { min-width: 0; }
+.primary-options .form-label { display: block; }
+.primary-options .form-control,
+.primary-options .form-select { min-height: 44px; }
+.primary-options .copies-help { margin-top: -6px; }
+.print-confirmation > .print-actions { margin-top: 0; }

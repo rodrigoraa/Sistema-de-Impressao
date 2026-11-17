@@ -27,7 +27,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/print.css?v=20261117">
+    <link rel="stylesheet" href="/css/print.css?v=20261117-2">
 
 </head>
 
@@ -172,18 +172,18 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
                                 <div class="option-grid primary-options mb-3">
                                     <div>
-                                        <label class="form-label" for="copies">Quantidade de cópias</label>
+                                        <label class="form-label" for="copies">Cópias</label>
                                         <input id="copies" type="number" class="form-control" name="copies" value="1" min="1" step="1" inputmode="numeric" aria-describedby="copies-help">
-                                        <small id="copies-help" class="text-muted">Ex.: 30 alunos → 30 cópias.</small>
                                     </div>
                                     <div>
                                         <label class="form-label" for="sides">Como imprimir</label>
                                         <select id="sides" class="form-select" name="sides">
                                             <option value="one-sided">Frente apenas</option>
-                                            <option value="two-sided-long-edge">Frente e verso — como um livro</option>
-                                            <option value="two-sided-short-edge">Frente e verso — como um bloco</option>
+                                            <option value="two-sided-long-edge">Frente e verso — livro</option>
+                                            <option value="two-sided-short-edge">Frente e verso — bloco</option>
                                         </select>
                                     </div>
+                                    <small id="copies-help" class="wide text-muted copies-help">Para 30 alunos, use 30 cópias.</small>
                                 </div>
                                 <details class="advanced-options mb-3" id="advancedOptions">
                                     <summary>Mais opções de impressão</summary>
@@ -254,7 +254,20 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                                 <small>Estimativa de folhas físicas. O acumulado do sistema segue a regra de contabilização da escola.</small>
                             </div>
                             <p id="sendState" class="send-state" role="status" aria-live="polite">Nenhum arquivo pronto para envio.</p>
-                            <div id="progressBar" class="d-none" role="status"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Aguardando resposta do servidor…</div>
+                                    <!-- PREVIEW -->
+                                    <div id="previewSummary" class="preview-summary mt-3 d-none">
+                                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                            <strong>Prévia de amostra</strong>
+                                            <span id="previewConfiguration" class="text-muted small"></span>
+                                        </div>
+                                        <div id="previewCoverage" class="small text-muted mt-1"></div>
+                                    </div>
+                                    <button type="button" id="expandPreview" class="btn btn-outline-secondary btn-sm mt-2" disabled>Abrir prévia ampliada</button>
+                                    <a id="openPreviewPdf" class="btn btn-outline-secondary btn-sm mt-2 d-none" target="_blank" rel="noopener">Abrir PDF em nova aba</a>
+                                    <div id="preview" class="mt-3"></div>
+
+
+                            <div class="print-confirmation mt-3">
                                 <div class="<?= $sharedMode ? 'print-actions' : '' ?>">
                                     <button type="submit" form="printForm" id="btnPrint" class="btn btn-primary w-100" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
                                         <span class="text"><?= $sharedMode ? 'Confirmar impressão' : 'Enviar para impressão' ?></span>
@@ -271,18 +284,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
                             <a href="/prints" id="trackPrint" class="btn btn-outline-secondary w-100 mt-2">Acompanhar meus envios</a>
                             <p class="small text-muted mt-2">Enviar não confirma que o papel já saiu. Confira a situação em Meus envios antes de repetir.</p>
-                                    <!-- PREVIEW -->
-                                    <div id="previewSummary" class="preview-summary mt-3 d-none">
-                                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
-                                            <strong>Prévia de amostra</strong>
-                                            <span id="previewConfiguration" class="text-muted small"></span>
-                                        </div>
-                                        <div id="previewCoverage" class="small text-muted mt-1"></div>
-                                    </div>
-                                    <button type="button" id="expandPreview" class="btn btn-outline-secondary btn-sm mt-2" disabled>Abrir prévia ampliada</button>
-                                    <a id="openPreviewPdf" class="btn btn-outline-secondary btn-sm mt-2 d-none" target="_blank" rel="noopener">Abrir PDF em nova aba</a>
-                                    <div id="preview" class="mt-3"></div>
 
+                            <div id="progressBar" class="d-none" role="status"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Aguardando resposta do servidor…</div>
+                            </div>
 
                             <details class="mobile-help mt-3"><summary>Como enviar pelo celular</summary><p class="small mt-2">Você pode escolher o arquivo acima. Para compartilhar do WhatsApp, abra o documento e use Compartilhar. Instale o sistema na tela inicial; a disponibilidade depende do celular. No iPhone, use Safari → Compartilhar → Adicionar à Tela de Início.</p></details>
 

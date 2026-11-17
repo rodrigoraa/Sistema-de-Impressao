@@ -46,6 +46,14 @@ const net = require('node:net');
   assert.equal(await page.locator('.row.g-4').evaluate(e=>getComputedStyle(e).display),'flex','Bootstrap local deve estar carregado');
   assert.equal(await page.locator('#advancedOptions').getAttribute('open'),null);
   assert.equal(await page.locator('#btnPrint').isDisabled(),true);
+  for (const width of [1280, 1024, 768]) {
+   await page.setViewportSize({width,height:900});
+   const copiesBox=await page.locator('#copies').boundingBox();
+   const sidesBox=await page.locator('#sides').boundingBox();
+   assert.ok(Math.abs(copiesBox.y-sidesBox.y)<=1,`Cópias e modo devem alinhar em ${width}px`);
+   assert.equal(copiesBox.height,sidesBox.height);
+  }
+  await page.setViewportSize({width:1280,height:900});
   // Generate a genuine 4-page PDF with Chromium, then exercise actual PHP upload/count/preview.
   const document=await context.newPage();
   await document.setContent('<style>@page{size:A4;margin:20mm}section{break-after:page}</style>'+[1,2,3,4].map(n=>`<section>Atividade - página ${n}</section>`).join(''));
@@ -74,7 +82,15 @@ const net = require('node:net');
   await page.locator('#page_ranges').fill('');
   await page.locator('#advancedOptions summary').click();
   await page.locator('#preview iframe').waitFor();
+  async function assertPreviewNearConfirmation() {
+   const previewBox=await page.locator('#preview').boundingBox();
+   const buttonBox=await page.locator('#btnPrint').boundingBox();
+   const gap=buttonBox.y-(previewBox.y+previewBox.height);
+   assert.ok(gap>=0 && gap<=24,`Confirmação deve ficar logo abaixo da prévia, distância atual ${gap}px`);
+  }
+  await assertPreviewNearConfirmation();
   await page.setViewportSize({width:390,height:844});
+  await assertPreviewNearConfirmation();
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:path.join(root,'mobile.png'),fullPage:true});
   await page.setViewportSize({width:1280,height:900});
