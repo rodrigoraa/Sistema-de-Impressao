@@ -251,7 +251,7 @@ Se a mensagem informar um tamanho muito pequeno, por exemplo `502 B`, o limite d
 
 ## Fluxo do professor
 
-- A tela principal destaca arquivo, cópias e frente e verso. Papel, orientação, páginas por lado, qualidade e escala ficam em **Mais opções de impressão**.
+- A tela principal destaca arquivo, cópias, frente e verso e páginas por folha (1, 2, 4 ou 8). Papel, orientação, qualidade e escala ficam em **Mais opções de impressão**. O ajuste automático para 2 por folha é destacado junto das opções; avisos de conversão continuam visíveis mesmo após uma escolha manual.
 - O resumo mostra uma **estimativa de folhas físicas**, com arredondamento por cópia para frente e verso. Isso não muda o acumulado contabilizado pelo sistema.
 - **Salvar estas opções** guarda preferências somente neste navegador, sem arquivo, CPF, token, intervalo ou quantidade de cópias. Aplicá-las começa em 1 cópia.
 - Em **Meus envios**, busque pelo nome do arquivo. **Usar arquivo novamente** abre revisão com 1 cópia; não imprime automaticamente. Intervalos parciais íntegros são recuperados. Registros antigos com seleção truncada/especial exigem nova seleção para evitar páginas incorretas.

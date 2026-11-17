@@ -27,7 +27,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/print.css?v=20261117-2">
+    <link rel="stylesheet" href="/css/print.css?v=20261117-3">
 
 </head>
 
@@ -85,9 +85,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
             <!-- ALERT -->
             <?php if (!empty($_SESSION['flash'])): ?>
-                <div class="alert alert-<?= ($_SESSION['flash_type'] ?? '') === 'error' ? 'danger' : 'success' ?>">
-                    <?= htmlspecialchars($_SESSION['flash']);
-                    unset($_SESSION['flash']); ?>
+                <div class="alert print-notice print-notice-<?= ($_SESSION['flash_type'] ?? '') === 'error' ? 'danger' : 'success' ?>" role="status">
+                    <i aria-hidden="true" class="bi bi-info-circle-fill"></i>
+                    <div><strong><?= ($_SESSION['flash_type'] ?? '') === 'error' ? 'Atenção' : 'Informação sobre seu envio' ?></strong>
+                        <p><?= htmlspecialchars($_SESSION['flash']); unset($_SESSION['flash']); ?></p>
+                    </div>
                 </div>
             <?php endif; ?>
             <div id="printResult" class="alert d-none" role="status" aria-live="polite" tabindex="-1"></div>
@@ -127,21 +129,6 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                                             <?= htmlspecialchars(($sharedFile['size_label'] ?? '') . (!empty($sharedFile['page_label']) ? ' · ' . $sharedFile['page_label'] : '')) ?>
                                         </div>
 
-                                        <?php if (!empty($sharedFile['page_warning'])): ?>
-                                            <div class="print-advice" id="pageAdvice">
-                                                <i aria-hidden="true" class="bi bi-exclamation-triangle"></i>
-                                                <span><?= htmlspecialchars($sharedFile['page_warning']) ?></span>
-                                            </div>
-                                        <?php elseif (!empty($sharedFile['page_advice'])): ?>
-                                            <div class="print-advice" id="pageAdvice">
-                                                <i aria-hidden="true" class="bi bi-lightbulb"></i>
-                                                <span><?= htmlspecialchars($sharedFile['page_advice']) ?></span>
-                                            </div>
-                                        <?php elseif (!empty($sharedFile['page_error'])): ?>
-                                            <div class="text-muted small mt-2" id="pageAdvice">
-                                                <?= htmlspecialchars($sharedFile['page_error']) ?>
-                                            </div>
-                                        <?php endif; ?>
                                     <?php else: ?>
                                         <button type="button" class="upload-box w-100" id="drop-area" aria-describedby="file-help">
                                             <i aria-hidden="true" class="bi bi-cloud-upload fs-1"></i>
@@ -183,14 +170,23 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                                             <option value="two-sided-short-edge">Frente e verso — bloco</option>
                                         </select>
                                     </div>
+                                    <div class="layout-option" id="layoutOption">
+                                        <label class="form-label" for="number_up">Por folha</label>
+                                        <select id="number_up" class="form-select" name="number_up" aria-label="Páginas por folha" aria-describedby="layout-help">
+                                            <option value="1">1 por folha</option><option value="2">2 por folha</option><option value="4">4 por folha</option><option value="8">8 por folha</option>
+                                        </select>
+                                        <input type="hidden" name="large_document_layout" value="auto">
+                                    </div>
                                     <small id="copies-help" class="wide text-muted copies-help">Para 30 alunos, use 30 cópias.</small>
                                 </div>
+                                <p id="layout-help" class="small text-muted">Em frente e verso, a quantidade por folha vale para cada lado do papel.</p>
+                                <div id="pageAdviceHost" aria-live="polite" aria-atomic="true"></div>
                                 <details class="advanced-options mb-3" id="advancedOptions">
                                     <summary>Mais opções de impressão</summary>
                                     <div class="option-grid mt-3">
                                         <div><label class="form-label" for="orientation">Orientação</label><select id="orientation" class="form-select" name="orientation"><option value="auto">Automática</option><option value="portrait">Retrato</option><option value="landscape">Paisagem</option></select></div>
                                         <div><label class="form-label" for="quality">Qualidade</label><select id="quality" class="form-select" name="quality"><option value="3">Normal</option><option value="5">Alta</option></select></div>
-                                        <div><label class="form-label" for="number_up">Páginas em cada lado do papel</label><select id="number_up" class="form-select" name="number_up"><option value="1">1 página por lado</option><option value="2">2 páginas por lado</option><option value="4">4 páginas por lado</option><option value="8">8 páginas por lado</option></select><input type="hidden" name="large_document_layout" value="auto"></div>
+
                                         <div><label class="form-label" for="paper">Tamanho do papel</label><select id="paper" class="form-select" name="paper"><option value="A4">A4</option><option value="Letter">Carta</option></select></div>
                                         <div><label class="form-label" for="scale">Escala</label><select id="scale" class="form-select" name="scale"><option value="fit">Ajustar à página</option><option value="100">100%</option><option value="95">95%</option><option value="90">90%</option><option value="80">80%</option><option value="custom">Personalizada</option></select></div>
                                         <div class="d-none" id="scaleCustomBox"><label class="form-label" for="scale_percent">Escala personalizada (%)</label><input id="scale_percent" type="number" class="form-control" name="scale_percent" value="100" min="10" max="400"></div>
@@ -353,6 +349,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         let currentPageData = null;
         let currentFileMeta = (sharedMode || reviewMode) ? sharedFile : null;
         let currentPageAdvice = '';
+        let currentPageWarning = (sharedMode || reviewMode) ? (sharedFile.page_warning || sharedFile.warning || sharedFile.page_error || '') : '';
         let printingActive = false;
         let submissionLocked = false;
         let documentRecalculating = false;
@@ -433,6 +430,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             info.textContent = '';
             preview.innerHTML = '';
             currentPageAdvice = '';
+            currentPageWarning = '';
             renderPageAdvice();
             previewSummary.classList.add('d-none');
             dropArea.classList.remove('success', 'error', 'drag-over');
@@ -483,6 +481,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 printForm.elements.page_ranges.value = '';
                 largeDocumentLayout.value = 'manual';
                 layoutChangedByUser = true;
+                currentPageAdvice = '';
+                renderPageAdvice();
                 scaleCustomBox.classList.toggle('d-none', scaleSelect.value !== 'custom');
                 document.getElementById('favoriteFeedback').textContent = 'Opções aplicadas. Confira a quantidade: 1 cópia.';
                 if (uploadToken) {
@@ -555,10 +555,10 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             select.addEventListener('change', () => {
                 layoutChangedByUser = true;
                 currentPageAdvice = '';
-                renderPageAdvice();
                 if (largeDocumentLayout) {
                     largeDocumentLayout.value = 'manual';
                 }
+                renderPageAdvice();
             });
         });
 
@@ -697,6 +697,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 currentFileMeta = { ...currentFileMeta, ...data };
                 info.textContent = pageInfoText(data);
                 currentPageAdvice = layoutChangedByUser ? '' : (data.advice || '');
+                currentPageWarning = data.warning || '';
                 applyLargeDocumentLayout(data);
                 renderPageAdvice();
                 renderPreviewSummary();
@@ -711,6 +712,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 dropArea.classList.add('error');
                 preview.innerHTML = `<p class="text-danger">${escapeHtml(error.message)}</p>`;
                 info.textContent = `${formatSize(file.size)} · falha no envio`;
+                currentPageWarning = error.message;
+                renderPageAdvice();
             } finally {
                 if (uploadController === controller) uploadController = null;
                 if (!printingActive) renderPrinterStatus(printerStatus);
@@ -753,7 +756,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             } catch (error) {
                 if (error.name === 'AbortError' || token !== previewToken) return;
                 resetPreviewObjectUrl();
-                preview.innerHTML = `<div class="alert alert-warning mb-0">${escapeHtml(error.message || 'Não foi possível gerar a pré-visualização, mas o arquivo pode ser enviado para impressão.')}</div>`;
+                preview.innerHTML = `<div class="print-notice print-notice-warning mb-0"><i aria-hidden="true" class="bi bi-exclamation-triangle-fill"></i><div><strong>Prévia indisponível</strong><p>${escapeHtml(error.message || 'Não foi possível gerar a pré-visualização, mas o arquivo pode ser enviado para impressão.')}</p></div></div>`;
             } finally {
                 if (previewController === controller) previewController = null;
             }
@@ -786,12 +789,15 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 currentPageData = data;
                 info.textContent = pageInfoText(data);
                 currentPageAdvice = layoutChangedByUser ? '' : (data.advice || '');
+                currentPageWarning = data.warning || '';
                 applyLargeDocumentLayout(data);
                 renderPageAdvice();
                 schedulePreview();
             } catch (error) {
                 if (error.name === 'AbortError' || token !== pageCountToken) return;
                 currentPageData = null;
+                currentPageWarning = 'Não foi possível recalcular as páginas. Confira a conexão e tente alterar o papel ou orientação novamente.';
+                renderPageAdvice();
                 info.textContent = 'Não foi possível recalcular. Confira a conexão e tente alterar o papel ou orientação novamente.';
                 schedulePreview();
             } finally {
@@ -822,12 +828,16 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 dropArea.classList.remove('error', 'success');
                 if (!allowed.includes(ext)) {
                     label.textContent = 'Tipo não permitido';
+                    currentPageWarning = 'Este tipo de arquivo não é aceito. Escolha PDF, DOC, DOCX, TXT ou imagem.';
+                    renderPageAdvice();
                     dropArea.classList.add('error');
                     input.value = '';
                     return;
                 }
                 if (file.size > maxUploadMb * 1024 * 1024) {
                     label.textContent = `Arquivo muito grande (máx ${maxUploadMb}MB)`;
+                    currentPageWarning = `O arquivo ultrapassa o limite de ${maxUploadMb} MB. Escolha um arquivo menor.`;
+                    renderPageAdvice();
                     dropArea.classList.add('error');
                     input.value = '';
                     return;
@@ -840,15 +850,20 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         }
 
         function renderPageAdvice() {
-            const existing = document.getElementById('pageAdvice');
-            if (existing) existing.remove();
-            if (!currentPageAdvice) return;
-
-            const box = document.createElement('div');
-            box.id = 'pageAdvice';
-            box.className = 'print-advice';
-            box.innerHTML = `<i aria-hidden="true" class="bi bi-lightbulb"></i><span>${escapeHtml(currentPageAdvice)}</span>`;
-            info.insertAdjacentElement('afterend', box);
+            const host = document.getElementById('pageAdviceHost');
+            const automatic = Boolean(uploadToken) && largeDocumentLayout.value === 'auto_applied' && numberUpSelect.value === '2';
+            document.getElementById('layoutOption').classList.toggle('is-automatic', automatic);
+            const notices = [];
+            if (automatic) {
+                notices.push(`<div id="pageAdvice" class="print-notice print-notice-warning"><i aria-hidden="true" class="bi bi-exclamation-triangle-fill"></i><div><strong>Atenção: 2 por folha ativado automaticamente</strong><p>O sistema ajustou este documento para 2 páginas em cada lado do papel. Confira a prévia antes de enviar. Para mudar, use o campo “Por folha” acima.</p></div></div>`);
+            } else if (currentPageAdvice && (!currentPageData?.large_document || reviewMode)) {
+                notices.push(`<div id="pageAdvice" class="print-notice print-notice-info"><i aria-hidden="true" class="bi bi-info-circle-fill"></i><div><strong>Confira antes de imprimir</strong><p>${escapeHtml(currentPageAdvice)}</p></div></div>`);
+            }
+            if (currentPageWarning) {
+                notices.push(`<div class="print-notice print-notice-warning"><i aria-hidden="true" class="bi bi-exclamation-triangle-fill"></i><div><strong>Atenção ao arquivo</strong><p>${escapeHtml(currentPageWarning)}</p></div></div>`);
+            }
+            const markup = notices.join('');
+            if (host.innerHTML !== markup) host.innerHTML = markup;
         }
 
         function applyLargeDocumentLayout(data) {
@@ -911,8 +926,10 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         }
 
         function showPrintResult(message, success) {
-            resultBox.className = `alert alert-${success ? 'success' : 'danger'}`;
-            resultBox.textContent = message;
+            resultBox.className = `alert print-notice print-notice-${success ? 'success' : 'danger'}`;
+            resultBox.setAttribute('role', success ? 'status' : 'alert');
+            resultBox.setAttribute('aria-live', success ? 'polite' : 'assertive');
+            resultBox.innerHTML = `<i aria-hidden="true" class="bi ${success ? 'bi-check-circle-fill' : 'bi-exclamation-octagon-fill'}"></i><div><strong>${success ? 'Resposta do envio' : 'Atenção ao envio'}</strong><p>${escapeHtml(message)}</p></div>`;
             resultBox.focus({ preventScroll: true });
             resultBox.classList.remove('d-none');
             resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -957,9 +974,16 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 return;
             }
 
-            const type = printerStatus.notice_type || (printerStatus.can_print === false ? 'warning' : 'success');
-            printerStatusBox.className = `alert alert-${type} printer-status-alert`;
-            printerStatusBox.innerHTML = `<i aria-hidden="true" class="bi bi-printer"></i><span>${escapeHtml(notice)}</span>`;
+            const type = ['warning', 'danger', 'info', 'success'].includes(printerStatus.notice_type)
+                ? printerStatus.notice_type : (printerStatus.can_print === false ? 'warning' : 'success');
+            printerStatusBox.className = `alert print-notice print-notice-${type}`;
+            const title = printerStatus.can_print === false ? 'Atenção: impressora indisponível' : (['warning', 'danger'].includes(type) ? 'Atenção à impressora' : 'Situação da impressora');
+            if (printerStatusBox.dataset.notice !== notice || printerStatusBox.dataset.title !== title || printerStatusBox.dataset.type !== type) {
+                printerStatusBox.innerHTML = `<i aria-hidden="true" class="bi bi-printer-fill"></i><div><strong>${title}</strong><p>${escapeHtml(notice)}</p></div>`;
+                printerStatusBox.dataset.notice = notice;
+                printerStatusBox.dataset.title = title;
+                printerStatusBox.dataset.type = type;
+            }
             printerStatusBox.classList.remove('d-none');
             if (!printingActive) {
                 btnPrint.disabled = awaitingUpload || printerStatus.can_print === false || (sharedMode && sharedPrintCompleted);
@@ -1115,6 +1139,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             currentPageData = sharedFile;
             currentPageAdvice = sharedFile.page_advice || '';
             if (sharedMode && sharedFile.large_document) applyLargeDocumentLayout(sharedFile);
+            renderPageAdvice();
             renderPreviewSummary();
             schedulePreview(0);
         }

@@ -324,3 +324,39 @@
 .primary-options .form-select { min-height: 44px; }
 .primary-options .copies-help { margin-top: -6px; }
 .print-confirmation > .print-actions { margin-top: 0; }
+
+/* Keep paper layout visible with the choices that affect every print. */
+@media (min-width: 576px) {
+    .primary-options { grid-template-columns: minmax(80px, 96px) minmax(0, 1fr) 144px; }
+}
+@media (min-width: 992px) and (max-width: 1199px) {
+    .primary-options { grid-template-columns: 96px minmax(0, 1fr); }
+    .primary-options .layout-option { grid-column: 1 / -1; }
+}
+.layout-option.is-automatic .form-select {
+    border: 2px solid #925000;
+    background-color: #fff4d6;
+    color: #623700;
+    font-weight: 750;
+}
+.print-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    margin: 0 0 16px;
+    border: 2px solid;
+    border-left-width: 6px;
+    border-radius: 8px;
+    overflow-wrap: anywhere;
+}
+.print-notice > i { flex: 0 0 auto; font-size: 1.5rem; line-height: 1.2; }
+.print-notice > div { min-width: 0; }
+.print-notice strong { display: block; font-size: 1.05rem; font-weight: 800; line-height: 1.4; margin-bottom: 6px; }
+.print-notice p { margin: 0; line-height: 1.6; }
+.print-notice-warning { color: #623700; background: #fff4d6; border-color: #925000; }
+.print-notice-danger { color: #7f1d1d; background: #fff1f2; border-color: var(--app-danger); }
+.print-notice-info { color: var(--app-brand-dark); background: var(--app-brand-soft); border-color: var(--app-brand); }
+.print-notice-success { color: #14532d; background: #f0fdf4; border-color: var(--app-success); }
+#formError:not(:empty) { padding: 16px; border: 2px solid var(--app-danger); border-left-width: 6px; border-radius: 8px; background: #fff1f2; color: #7f1d1d; font-weight: 650; }
+#formError:not(:empty)::before { content: 'Confira antes de imprimir'; display: block; font-weight: 800; margin-bottom: 6px; }
