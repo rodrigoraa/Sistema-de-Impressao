@@ -27,7 +27,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/print.css?v=20261117-5">
+    <link rel="stylesheet" href="/css/print.css?v=20261117-6">
 
 </head>
 
@@ -283,12 +283,14 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     </div>
 
     <script src="/js/print-estimate.js?v=20261117"></script>
+    <script src="/js/print-preview.js?v=20261117"></script>
     <script>
         const dropArea = document.getElementById('drop-area');
         const input = document.getElementById('fileInput');
         const label = document.getElementById('file-label');
         const info = document.getElementById('file-info');
         const preview = document.getElementById('preview');
+        const previewViewer = createPrintPreview(preview);
         const previewSummary = document.getElementById('previewSummary');
         const fullPreviewButton = document.getElementById('loadFullPreview');
         const previewNotice = document.getElementById('previewNotice');
@@ -380,6 +382,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         }
 
         function clearSelectedFile() {
+            previewViewer.clear();
             clearTimeout(previewDebounceTimer);
             [uploadController, pageCountController, previewController].forEach(controller => { if (controller) controller.abort(); });
             uploadController = pageCountController = previewController = null;
@@ -464,6 +467,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                     clearTimeout(previewDebounceTimer);
                     previewToken++;
                     if (previewController) previewController.abort();
+                    previewViewer.cancelPending();
                     previewInfo = null;
                     previewNotice.classList.add('d-none');
                     documentRecalculating = true;
@@ -682,6 +686,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             appendPreviewOptions(formData);
             if (fullRequested) formData.append('preview_mode', 'full');
 
+            let candidateUrl = '';
             try {
                 const response = await fetch('/print/preview', {
                     method: 'POST',
@@ -697,11 +702,14 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 };
                 const blob = await response.blob();
                 if (token !== previewToken) return;
+                candidateUrl = URL.createObjectURL(blob);
+                const shown = await previewViewer.load(blob, candidateUrl, () => token === previewToken);
+                if (!shown || token !== previewToken) return;
                 resetPreviewObjectUrl();
                 previewInfo = metadata;
                 previewNotice.classList.add('d-none');
-                previewObjectUrl = URL.createObjectURL(blob);
-                preview.innerHTML = `<iframe src="${previewObjectUrl}" title="Pré-visualização da impressão"></iframe>`;
+                previewObjectUrl = candidateUrl;
+                candidateUrl = '';
                 renderPreviewSummary();
             } catch (error) {
                 if (error.name === 'AbortError' || token !== previewToken) return;
@@ -710,9 +718,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                     previewNotice.textContent = 'Não foi possível carregar tudo. A amostra continua disponível.';
                     return;
                 }
+                previewViewer.clear();
                 resetPreviewObjectUrl();
                 preview.innerHTML = `<div class="print-notice print-notice-warning mb-0"><i aria-hidden="true" class="bi bi-exclamation-triangle-fill"></i><div><strong>Prévia indisponível</strong><p>${escapeHtml(error.message || 'Não foi possível gerar a pré-visualização, mas o arquivo pode ser enviado para impressão.')}</p></div></div>`;
             } finally {
+                if (candidateUrl) URL.revokeObjectURL(candidateUrl);
                 if (previewController === controller) {
                     previewController = null;
                     renderPreviewSummary();
@@ -723,6 +733,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         function schedulePreview(delay = 350) {
             clearTimeout(previewDebounceTimer);
             if (previewController) previewController.abort();
+            previewViewer.cancelPending();
             previewInfo = null;
             previewNotice.classList.add('d-none');
             renderPreviewSummary();
@@ -850,6 +861,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 clearTimeout(previewDebounceTimer);
                 previewToken++;
                 if (previewController) previewController.abort();
+                previewViewer.cancelPending();
                 info.textContent = `${currentFileMeta && currentFileMeta.size_label ? currentFileMeta.size_label : ''} · recalculando páginas...`;
                 documentRecalculating = true;
                 renderPreviewSummary();
@@ -1023,6 +1035,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             }
             clearTimeout(previewDebounceTimer);
             if (previewController) previewController.abort();
+            previewViewer.cancelPending();
             if (pageCountController) pageCountController.abort();
             previewToken++;
             pageCountToken++;

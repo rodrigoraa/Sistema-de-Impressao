@@ -17,3 +17,5 @@ Estilo e tokens: DESIGN.md.
 - Estados: sem arquivo, preparando, pronto, enviando, enviado, erro recuperável e resultado incerto.
 - Busca por nome via URL; manter outros filtros, propriedade e limite de resultados. Mostrar limite de 150 registros.
 - Sem novas permissões ou mudanças de retenção. Nada de nomes de documentos/tokens em localStorage.
+
+Prévia PDF: o proprietário é `public/js/print-preview.js`, com PDF.js local e controles nativos. Renderizar uma folha inteira por vez, preservar proporção e ajustar a largura. Descartar workers/renders de documentos antigos; não reinstalar uma resposta obsoleta. Link de ampliar usa somente blob local com rel=noopener. Não inserir PDF nativo em iframe.

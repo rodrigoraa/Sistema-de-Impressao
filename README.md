@@ -52,6 +52,8 @@ DOC/DOCX, TXT e imagens reutilizam o PDF convertido enquanto papel, orientação
 
 A completa solicitada pelo professor inclui todas as páginas selecionadas, com o mesmo N-up da impressão, e tem cache separado da amostra. O timeout de geração continua em 30 segundos; a transferência é limitada a 50 MiB. Se a completa falhar, a amostra permanece disponível. Os limites são configuráveis pelas variáveis `PRINT_PREVIEW_AUTO_MAX_SHEETS`, `PRINT_PREVIEW_AUTO_MAX_BYTES`, `PRINT_PREVIEW_MAX_SHEETS`, `PRINT_PREVIEW_MAX_BYTES` e `PRINT_PREVIEW_TIMEOUT_SECONDS`.
 
+No navegador, PDF.js legacy 6.5.438 renderiza uma página por vez em canvas, ajustada à largura, com navegação e ícone de ampliar. Isso evita cortes do leitor PDF embutido no Safari. Os assets são locais, com licença e origem em `public/js/vendor/pdfjs-6.5.438/SOURCE.txt`; não há Node ou npm exigido no servidor de produção. Apache e o roteador PHP incluem MIME para `.mjs` e `.wasm`.
+
 A prévia é assíncrona e não altera o documento da impressão física. A impressão continua enviando o PDF preparado ao CUPS e aplicando `number-up` somente no comando `lp`; portanto não há dupla aplicação de N-up. Se a prévia falhar ou atingir o timeout, o usuário recebe um aviso amigável e ainda pode imprimir depois que upload e validações obrigatórias terminarem.
 
 Não foi introduzida biblioteca ou framework novo. `cupsfilter` pertence ao pacote `cups`; `pdftopdf` é fornecido por `cups-filters`. Para limitar PDFs grandes às páginas da amostra, o sistema usa o primeiro mecanismo disponível entre `qpdf`, Ghostscript e `pdfseparate`/`pdfunite` do Poppler.

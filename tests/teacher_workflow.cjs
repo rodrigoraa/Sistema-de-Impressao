@@ -29,10 +29,15 @@ const net = require('node:net');
   const base=`http://127.0.0.1:${port}`;
   for(let i=0;i<40;i++){try{await fetch(base);break;}catch{await new Promise(r=>setTimeout(r,100));}}
   browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',headless:true,args:['--no-sandbox']});
-  const context=await browser.newContext({serviceWorkers:'block'});
+  const context=await browser.newContext({serviceWorkers:'block',deviceScaleFactor:3});
   const page=await context.newPage();
   const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Browser:',e.message);});
 
+  async function expectPdfWorkers(expected) {
+   const deadline=Date.now()+2000;
+   while(Date.now()<deadline) { if(page.workers().length===expected)return; await new Promise(resolve=>setTimeout(resolve,25)); }
+   assert.equal(page.workers().length,expected,'Workers de prévias substituídas ou removidas devem ser liberados');
+  }
   await page.route('**/printer/status',r=>r.fulfill({json:{success:true,status:{can_print:true}}}));
   let submissions=0; let submittedBody=''; let submissionMode='success';
   await page.route(base+'/',async r=>{
@@ -61,7 +66,7 @@ const net = require('node:net');
   await page.setViewportSize({width:1280,height:900});
   // Generate a genuine 4-page PDF with Chromium, then exercise actual PHP upload/count/preview.
   const document=await context.newPage();
-  await document.setContent('<style>@page{size:A4;margin:20mm}section{break-after:page}</style>'+[1,2,3,4].map(n=>`<section>Atividade - página ${n}</section>`).join(''));
+  await document.setContent('<style>@page{size:A4;margin:20mm}section{break-after:page;height:240mm;box-sizing:border-box;border:2px solid #155e75;display:flex;align-items:center;justify-content:center;font-size:28px}</style>'+[1,2,3,4].map(n=>`<section>Atividade - página ${n}</section>`).join(''));
   const pdf=await document.pdf();await document.close();
   await page.locator('#fileInput').setInputFiles({name:'Atividade.pdf',mimeType:'application/pdf',buffer:pdf});
   await page.waitForFunction(()=>document.querySelector('#uploadTokenInput').value.length===64);
@@ -100,8 +105,10 @@ const net = require('node:net');
   const previousPreviewUrl=await page.evaluate(()=>previewObjectUrl);
   await page.locator('#page_ranges').fill('');
   await page.locator('#advancedOptions summary').click();
-  await page.waitForFunction(previous=>previewObjectUrl && previewObjectUrl!==previous && !previewController && document.querySelector('#preview iframe'),previousPreviewUrl);
-  await page.locator('#preview iframe').waitFor();
+  await page.waitForFunction(previous=>previewObjectUrl && previewObjectUrl!==previous && !previewController && document.querySelector('#preview canvas'),previousPreviewUrl);
+  await page.locator('#preview canvas').waitFor();
+  assert.equal(await page.locator('#preview iframe').count(),0,'A prévia deve renderizar a folha inteira sem depender do PDF nativo em iframe');
+  await expectPdfWorkers(1);
   const reviewPanel=page.locator('.info-panel');
   assert.equal(await reviewPanel.locator('#previewSummary').textContent(),'Prévia completa da impressão');
   const reviewText=await reviewPanel.evaluate(panel=>{
@@ -112,7 +119,7 @@ const net = require('node:net');
   for(const redundant of ['Atividade.pdf','contabilização','Arquivo pronto','Exibindo','por cópia','Abrir prévia ampliada','Abrir PDF em nova aba','Como enviar pelo celular']) {
    assert.ok(!reviewText.includes(redundant),`A revisão deve ser direta, sem texto extra: ${redundant}`);
   }
-  assert.deepEqual(await reviewPanel.getByRole('button').allTextContents().then(labels=>labels.map(label=>label.trim())),['Enviar para impressão']);
+  assert.deepEqual(await reviewPanel.locator('.print-confirmation').getByRole('button').allTextContents().then(labels=>labels.map(label=>label.trim())),['Enviar para impressão']);
   async function assertPreviewNearConfirmation() {
    const previewBox=await page.locator('#preview').boundingBox();
    const buttonBox=await page.locator('#btnPrint').boundingBox();
@@ -120,7 +127,37 @@ const net = require('node:net');
    assert.ok(gap>=0 && gap<=24,`Confirmação deve ficar logo abaixo da prévia, distância atual ${gap}px`);
   }
   await assertPreviewNearConfirmation();
-  await page.setViewportSize({width:390,height:844});
+  async function assertWholePageFits() {
+   await page.waitForFunction(()=>{
+    const canvas=document.querySelector('#preview canvas'),area=document.querySelector('#preview .pdf-preview-page');
+    if(!canvas||!area)return false;
+    const style=getComputedStyle(area),available=area.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+    return Math.abs(canvas.getBoundingClientRect().width-available)<2 && Math.abs(parseFloat(canvas.style.width)-available)<2 && document.querySelector('.pdf-preview').getAttribute('aria-busy')==='false';
+   });
+   const size=await page.locator('#preview canvas').evaluate(canvas=>{
+    const box=canvas.getBoundingClientRect(),parent=canvas.parentElement.getBoundingClientRect();
+    const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+    let marks=0;for(let i=0;i<pixels.length;i+=148)if(pixels[i]<220||pixels[i+1]<220||pixels[i+2]<220)marks++;
+    return {width:box.width,height:box.height,ratio:canvas.height/canvas.width,left:box.left,right:box.right,parentLeft:parent.left,parentRight:parent.right,marks,pixels:canvas.width*canvas.height};
+   });
+   assert.ok(Math.abs(size.height/size.width-size.ratio)<.01,'Folha deve manter a proporção inteira');
+   assert.ok(size.left>=size.parentLeft && size.right<=size.parentRight,'Página não pode ultrapassar sua moldura');
+   assert.ok(size.marks>10,'A prévia deve conter pixels do documento real');
+   assert.ok(size.pixels<=4010000,'Uma página não deve alocar canvas sem limite');
+  }
+  await page.getByRole('button',{name:'Próxima página',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.pdf-preview-counter').textContent==='2 / 4');
+  await page.getByRole('button',{name:'Página anterior',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('.pdf-preview-counter').textContent==='1 / 4');
+  assert.equal(await page.getByRole('button',{name:'Página anterior',exact:true}).isDisabled(),true);
+  const zoom=page.getByRole('link',{name:'Ampliar prévia em nova aba',exact:true});
+  assert.equal(await zoom.getAttribute('target'),'_blank');
+  assert.ok((await zoom.getAttribute('href')).startsWith('blob:'));
+  for(const viewport of [{width:320,height:568},{width:844,height:390},{width:390,height:844}]) {
+   await page.setViewportSize(viewport);
+   await assertWholePageFits();
+   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  }
   await assertPreviewNearConfirmation();
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:path.join(root,'mobile.png'),fullPage:true});
@@ -154,6 +191,7 @@ const net = require('node:net');
   assert.equal(await page.locator('#uploadTokenInput').inputValue().then(t=>t.length),64);
   assert.equal(submissions,1);
   await page.getByRole('button',{name:'Remover arquivo',exact:true}).click();
+  await expectPdfWorkers(0);
   assert.equal(await page.locator('#uploadTokenInput').inputValue(),'');
   assert.equal(await page.locator('#btnPrint').isDisabled(),true);
   // Drag/drop uses the same actual upload path and rejects invalid replacements.
@@ -244,16 +282,24 @@ const net = require('node:net');
   await page.goto(base+'/');
   await page.locator('#fileInput').setInputFiles({name:'Documento-completo.pdf',mimeType:'application/pdf',buffer:longPdf});
   await page.waitForFunction(()=>document.querySelector('#previewSummary').textContent.includes('3 de 30'));
-  await page.locator('#preview iframe').waitFor();
-  const sampleUrl=await page.locator('#preview iframe').getAttribute('src');
+  await page.locator('#preview canvas').waitFor();
+  const sampleUrl=await page.locator('#preview .pdf-preview-open').getAttribute('href');
   const rejectFull=route=>route.request().postData()?.includes('name="preview_mode"')
     ? route.fulfill({status:500,body:'A prévia completa demorou mais que o esperado.'}) : route.continue();
   await page.route('**/print/preview',rejectFull);
   await page.getByRole('button',{name:'Ver prévia completa',exact:true}).click();
   await page.locator('#previewNotice').getByText('Não foi possível carregar tudo. A amostra continua disponível.',{exact:true}).waitFor();
-  assert.equal(await page.locator('#preview iframe').getAttribute('src'),sampleUrl,'Falha na completa deve preservar a amostra');
+  assert.equal(await page.locator('#preview .pdf-preview-open').getAttribute('href'),sampleUrl,'Falha na completa deve preservar a amostra');
   assert.equal(await page.locator('#btnPrint').isDisabled(),false);
   await page.unroute('**/print/preview',rejectFull);
+  const invalidRenderedPdf=route=>route.request().postData()?.includes('name="preview_mode"')
+   ? route.fulfill({status:200,contentType:'application/pdf',headers:{'X-Preview-Total-Sheets':'30','X-Preview-Sheets':'30','X-Preview-Additional-Sheets':'0'},body:'%PDF-1.7\ninvalid-document'}) : route.continue();
+  await page.route('**/print/preview',invalidRenderedPdf);
+  await page.getByRole('button',{name:'Ver prévia completa',exact:true}).click();
+  await page.waitForFunction(()=>!previewController && document.querySelector('#previewNotice').textContent==='Não foi possível carregar tudo. A amostra continua disponível.');
+  assert.equal(await page.locator('#preview .pdf-preview-open').getAttribute('href'),sampleUrl,'Falha do renderer também deve preservar a amostra');
+  await expectPdfWorkers(1);
+  await page.unroute('**/print/preview',invalidRenderedPdf);
   const completeResponse=page.waitForResponse(response=>response.url().endsWith('/print/preview') && response.ok() && response.headers()['x-preview-sheets']==='30');
   await page.getByRole('button',{name:'Ver prévia completa',exact:true}).click();
   const complete=await completeResponse;
@@ -292,7 +338,7 @@ const net = require('node:net');
   // Applying favorites during a full preview must invalidate old visual settings immediately.
   await page.locator('#number_up').selectOption('1');
   await page.waitForFunction(()=>document.querySelector('#previewSummary').textContent.includes('3 de 60') && !previewController);
-  const beforeFavoritesUrl=await page.locator('#preview iframe').getAttribute('src');
+  const beforeFavoritesUrl=await page.locator('#preview .pdf-preview-open').getAttribute('href');
   await page.evaluate(()=>localStorage.setItem('impressao.opcoes.v1',JSON.stringify({paper:'Letter',orientation:'landscape',number_up:'4'})));
   let fullReady, releaseOldFull, oldFullDone, recountReady, releaseRecount;
   const fullReadyGate=new Promise(resolve=>fullReady=resolve);
@@ -314,7 +360,7 @@ const net = require('node:net');
   await recountReadyGate;
   releaseOldFull();await oldFullFinished;
   await page.waitForFunction(()=>!previewController);
-  assert.equal(await page.locator('#preview iframe').getAttribute('src'),beforeFavoritesUrl,'Prévia antiga não pode substituir amostra durante recálculo de favoritos');
+  assert.equal(await page.locator('#preview .pdf-preview-open').getAttribute('href'),beforeFavoritesUrl,'Prévia antiga não pode substituir amostra durante recálculo de favoritos');
   releaseRecount();
   await page.unroute('**/print/preview',heldFull);
   await page.waitForFunction(()=>document.querySelector('#previewSummary').textContent==='Prévia completa da impressão' && !previewController && !documentRecalculating);
@@ -344,6 +390,19 @@ const net = require('node:net');
   await page.evaluate(()=>{window.firstPrinterNotice=document.querySelector('#printerStatusBox').firstElementChild;});
   await page.evaluate(()=>refreshPrinterStatus());
   assert.equal(await page.evaluate(()=>window.firstPrinterNotice===document.querySelector('#printerStatusBox').firstElementChild),true);
+  // If the module cannot load, offer the PDF directly rather than a broken/cropped iframe.
+  await page.route('**/printer/status',route=>route.fulfill({json:{success:true,status:{can_print:true}}}));
+  const blockedRenderer=route=>route.abort();
+  await page.route('**/pdfjs-6.5.438/pdf.mjs',blockedRenderer);
+  await page.goto(base+'/');
+  await page.locator('#fileInput').setInputFiles({name:'Fallback.pdf',mimeType:'application/pdf',buffer:pdf});
+  const fallback=page.getByRole('link',{name:'Abrir prévia no navegador',exact:true});
+  await fallback.waitFor();
+  assert.ok((await fallback.getAttribute('href')).startsWith('blob:'));
+  assert.equal(await fallback.getAttribute('target'),'_blank');
+  assert.equal(await page.locator('#preview iframe').count(),0);
+  assert.equal(await page.locator('#btnPrint').isDisabled(),false);
+  await page.unroute('**/pdfjs-6.5.438/pdf.mjs',blockedRenderer);
   assert.deepEqual(errors,[]);
   console.log('Professor: upload real, estimativa, favoritos, validação, responsividade, envio único, busca e autorização de reaproveitamento: OK');
   console.log('Artefatos: '+root);

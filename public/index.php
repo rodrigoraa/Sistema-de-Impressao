@@ -115,6 +115,8 @@ function servePublicAssetIfRequested($projectRoot)
     $types = [
         'css' => 'text/css; charset=utf-8',
         'js' => 'application/javascript; charset=utf-8',
+        'mjs' => 'application/javascript; charset=utf-8',
+        'wasm' => 'application/wasm',
         'png' => 'image/png',
         'jpg' => 'image/jpeg',
         'jpeg' => 'image/jpeg',

@@ -94,15 +94,6 @@
     background: #fff;
 }
 
-#preview iframe {
-    width: 100%;
-    height: min(70vh, 680px);
-    min-height: 460px;
-    border: 1px solid var(--app-line);
-    border-radius: 8px;
-    background: #fff;
-}
-
 .preview-loading {
     display: flex;
     align-items: center;
@@ -297,7 +288,6 @@
 .upload-box.drag-over { border-color: var(--app-brand); background: var(--app-brand-soft); }
 #btnPrint { min-height: 48px; }
 #progressBar { min-height: 40px; color: var(--app-muted); }
-#preview iframe { min-height: 220px; height: clamp(220px, 42vh, 360px); }
 .file-actions .btn, .favorite-actions .btn { min-height: 44px; }
 @media (max-width: 575px) {
     .info-panel .card-body { padding: 16px; }
@@ -354,3 +344,14 @@
 
 .preview-heading-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 #loadFullPreview { min-width: 180px; min-height: 44px; }
+
+/* Render the actual preview PDF at page width; never embed a native PDF viewport. */
+.pdf-preview { border: 1px solid var(--app-line); border-radius: 8px; background: var(--app-surface-2); min-width: 0; }
+.pdf-preview-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--app-line); }
+.pdf-preview-navigation { display: flex; align-items: center; gap: 8px; }
+.pdf-preview-navigation[hidden] { display: none; }
+.pdf-preview-toolbar .btn { min-width: 44px; min-height: 44px; font-size: 1.4rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.pdf-preview-counter { font-size: .875rem; font-variant-numeric: tabular-nums; min-width: 52px; text-align: center; }
+.pdf-preview-open { margin-left: auto; }
+.pdf-preview-page { padding: 8px; min-width: 0; }
+.pdf-preview-canvas { display: block; max-width: 100%; height: auto; margin: 0 auto; background: #fff; box-shadow: 0 1px 4px rgba(23,32,51,.12); }
