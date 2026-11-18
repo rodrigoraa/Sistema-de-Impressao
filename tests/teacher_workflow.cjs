@@ -68,7 +68,9 @@ const net = require('node:net');
   // Generate a genuine 4-page PDF with Chromium, then exercise actual PHP upload/count/preview.
   const document=await context.newPage();
   await document.setContent('<style>@page{size:A4;margin:20mm}section{break-after:page;height:240mm;box-sizing:border-box;border:2px solid #155e75;display:flex;align-items:center;justify-content:center;font-size:28px}</style>'+[1,2,3,4].map(n=>`<section>Atividade - página ${n}</section>`).join(''));
-  const pdf=await document.pdf();await document.close();
+  const pdf=await document.pdf();
+  const twoPagePdf=await document.pdf({pageRanges:'1-2'});
+  await document.close();
   await page.locator('#fileInput').setInputFiles({name:'Atividade.pdf',mimeType:'application/pdf',buffer:pdf});
   await page.waitForFunction(()=>document.querySelector('#uploadTokenInput').value.length===64);
   assert.equal(await page.locator('#number_up').inputValue(),'2');
@@ -129,14 +131,20 @@ const net = require('node:net');
   }
   await assertPreviewNearConfirmation();
   async function assertWholePageFits() {
-   await page.waitForFunction(()=>{
-    const canvas=document.querySelector('#preview canvas'),area=document.querySelector('#preview .pdf-preview-page');
-    if(!canvas||!area)return false;
+   const selector='#preview canvas, #preview img.pdf-preview-image';
+   await page.waitForFunction(selector=>{
+    const surface=document.querySelector(selector),area=document.querySelector('#preview .pdf-preview-page');
+    if(!surface||!area)return false;
     const style=getComputedStyle(area),available=area.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
-    return Math.abs(canvas.getBoundingClientRect().width-available)<2 && Math.abs(parseFloat(canvas.style.width)-available)<2 && document.querySelector('.pdf-preview').getAttribute('aria-busy')==='false';
-   });
-   const size=await page.locator('#preview canvas').evaluate(canvas=>{
-    const box=canvas.getBoundingClientRect(),parent=canvas.parentElement.getBoundingClientRect();
+    return Math.abs(surface.getBoundingClientRect().width-available)<2 && document.querySelector('.pdf-preview').getAttribute('aria-busy')==='false';
+   },selector);
+   const size=await page.locator(selector).evaluate(surface=>{
+    const box=surface.getBoundingClientRect(),parent=surface.parentElement.getBoundingClientRect();
+    const canvas=surface instanceof HTMLCanvasElement ? surface : document.createElement('canvas');
+    if (canvas!==surface) {
+     canvas.width=surface.naturalWidth;canvas.height=surface.naturalHeight;
+     canvas.getContext('2d').drawImage(surface,0,0);
+    }
     const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
     let marks=0;for(let i=0;i<pixels.length;i+=148)if(pixels[i]<220||pixels[i+1]<220||pixels[i+2]<220)marks++;
     return {width:box.width,height:box.height,ratio:canvas.height/canvas.width,left:box.left,right:box.right,parentLeft:parent.left,parentRight:parent.right,marks,pixels:canvas.width*canvas.height};
@@ -466,11 +474,15 @@ const net = require('node:net');
   const blockedRenderer=route=>route.abort();
   await page.route('**/pdfjs-6.5.438/pdf.mjs',blockedRenderer);
   await page.goto(base+'/');
-  const fallbackResponse=page.waitForResponse(response=>response.url().endsWith('/print/preview') && response.ok());
-  await page.locator('#fileInput').setInputFiles({name:'Fallback.pdf',mimeType:'application/pdf',buffer:pdf});
+  await page.evaluate(()=>{HTMLImageElement.prototype.decode = undefined;});
+  const fallbackResponse=page.waitForResponse(response=>response.url().endsWith('/print/preview') && response.ok() && response.headers()['x-preview-sheets']==='2');
+  await page.locator('#fileInput').setInputFiles({name:'Fallback.pdf',mimeType:'application/pdf',buffer:twoPagePdf});
+  await page.waitForFunction(()=>uploadToken && document.querySelector('#number_up').value==='2');
+  await page.locator('#number_up').selectOption('1');
   const fallbackPdf=await fallbackResponse;
-  await page.waitForFunction(()=>previewObjectUrl && !previewController);
-  assert.equal(await page.locator('#preview canvas').count(),1,'PDF.js bloqueado deve exibir imagem automaticamente');
+  await page.waitForFunction(()=>previewObjectUrl && !previewController && document.querySelector('.pdf-preview-counter')?.textContent==='1 / 2');
+  assert.equal(await page.locator('#preview img.pdf-preview-image').count(),1,'A imagem deve aparecer mesmo sem PDF.js e sem Image.decode()');
+  assert.equal(await page.locator('#preview canvas').count(),0,'A alternativa em PNG não depende de canvas');
   assert.equal(await page.getByRole('link',{name:'Abrir prévia no navegador',exact:true}).count(),0);
   await assertWholePageFits();
   assert.equal(await page.locator('.pdf-preview-counter').textContent(),'1 / 2');
@@ -501,8 +513,14 @@ const net = require('node:net');
   await anonymous.close();
   for(const width of [320,390,844]) {await page.setViewportSize({width,height:844});await assertWholePageFits();}
   await page.screenshot({path:path.join(root,'automatic-image-fallback-mobile.png'),fullPage:true});
+  const unavailableImage=route=>route.abort();
+  await page.route('**/print/preview-image',unavailableImage);
+  await page.locator('#number_up').selectOption('2');
+  await page.getByRole('link',{name:'Abrir prévia no navegador',exact:true}).waitFor();
+  assert.match(await page.locator('#preview').textContent(),/A prévia não pôde ser exibida nesta tela/);
+  await page.unroute('**/print/preview-image',unavailableImage);
   await page.getByRole('button',{name:'Remover arquivo',exact:true}).click();
-  assert.equal(await page.locator('#preview canvas').count(),0);
+  assert.equal(await page.locator('#preview img.pdf-preview-image').count(),0);
   assert.equal(submissions,2,'Prévias automáticas não devem enviar impressões');
   await page.unroute('**/pdfjs-6.5.438/pdf.mjs',blockedRenderer);
   // Deixar na fila usa o POST real e funciona mesmo quando a impressora está indisponível.

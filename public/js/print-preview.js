@@ -28,15 +28,22 @@
             this.context = context;
             this.numPages = context.pages;
             this.pending = null;
-            this.frames = new Set();
+            this.frames = new Map();
             this.closed = false;
         }
 
         destroy() {
             this.closed = true;
             if (this.pending) this.pending.abort();
-            this.frames.forEach(cleanup => cleanup());
-            this.frames.clear();
+            this.frames.forEach((url, image) => this.release(image));
+        }
+
+        release(image) {
+            const url = this.frames.get(image);
+            if (!url) return;
+            this.frames.delete(image);
+            image.removeAttribute('src');
+            URL.revokeObjectURL(url);
         }
 
         async getPage(number) {
@@ -44,7 +51,8 @@
             if (this.pending) this.pending.abort();
             const controller = new AbortController();
             this.pending = controller;
-            let cleanup;
+            const timeout = setTimeout(() => controller.abort(), 45000);
+            let image;
             try {
                 const body = new FormData();
                 body.append('upload_token', this.context.token);
@@ -56,39 +64,34 @@
                 if (!response.ok) throw new Error('Não foi possível carregar a imagem da prévia.');
                 const blob = await response.blob();
                 if (this.closed || controller.signal.aborted) throw new Error('Prévia cancelada.');
+
                 const url = URL.createObjectURL(blob);
-                const image = new Image();
-                let released = false;
-                cleanup = () => {
-                    if (released) return;
-                    released = true;
-                    URL.revokeObjectURL(url);
-                    image.src = '';
-                    this.frames.delete(cleanup);
-                };
-                this.frames.add(cleanup);
-                image.src = url;
-                await image.decode();
+                image = new Image();
+                image.className = 'pdf-preview-image';
+                image.alt = `Página ${number} de ${this.numPages} da prévia`;
+                this.frames.set(image, url);
+                await new Promise((resolve, reject) => {
+                    const finish = (error) => {
+                        image.onload = image.onerror = null;
+                        controller.signal.removeEventListener('abort', cancel);
+                        if (error) reject(error);
+                        else resolve();
+                    };
+                    const cancel = () => finish(new Error('Prévia cancelada.'));
+                    image.onload = () => finish();
+                    image.onerror = () => finish(new Error('Não foi possível abrir a imagem da prévia.'));
+                    controller.signal.addEventListener('abort', cancel, { once: true });
+                    image.src = url;
+                });
                 if (this.closed || controller.signal.aborted) throw new Error('Prévia cancelada.');
-                return {
-                    getViewport: ({ scale }) => ({ width: image.naturalWidth * scale, height: image.naturalHeight * scale }),
-                    render: ({ canvasContext, viewport, transform }) => {
-                        let cancelled = false;
-                        const promise = Promise.resolve().then(() => {
-                            if (cancelled || this.closed || controller.signal.aborted) throw new Error('Prévia cancelada.');
-                            canvasContext.setTransform(...transform);
-                            canvasContext.fillStyle = '#fff';
-                            canvasContext.fillRect(0, 0, viewport.width, viewport.height);
-                            canvasContext.drawImage(image, 0, 0, viewport.width, viewport.height);
-                        });
-                        return { promise, cancel: () => { cancelled = true; } };
-                    },
-                    cleanup
-                };
+                return image;
             } catch (error) {
-                if (cleanup) cleanup();
+                if (image) this.release(image);
                 throw error;
-            } finally { if (this.pending === controller) this.pending = null; }
+            } finally {
+                clearTimeout(timeout);
+                if (this.pending === controller) this.pending = null;
+            }
         }
     }
 
@@ -141,7 +144,15 @@
             return Math.max(100, this.host.clientWidth - 18);
         }
 
-        async canvas(pdf, number, width, current, registerTask) {
+        async renderPage(pdf, number, width, current, registerTask) {
+            if (pdf instanceof ServerPreviewDocument) {
+                const image = await pdf.getPage(number);
+                if (!current()) {
+                    pdf.release(image);
+                    throw new Error('Prévia substituída.');
+                }
+                return image;
+            }
             const page = await pdf.getPage(number);
             try {
                 if (!current()) throw new Error('Prévia substituída.');
@@ -186,9 +197,9 @@
                 const pdf = await loading.promise;
                 if (!current()) { destroy(loading); return false; }
                 const width = this.width();
-                const canvas = await this.canvas(pdf, 1, width, current, task => { this.initialRender = task; });
+                const pageElement = await this.renderPage(pdf, 1, width, current, task => { this.initialRender = task; });
                 if (!current()) { destroy(loading); return false; }
-                this.commit(pdf, loading, canvas, url, width, imageContext);
+                this.commit(pdf, loading, pageElement, url, width, imageContext);
                 return true;
             } catch (error) {
                 destroy(loading);
@@ -198,9 +209,9 @@
                         loading = new ServerPreviewDocument(imageContext);
                         this.loadingTask = loading;
                         const width = this.width();
-                        const canvas = await this.canvas(loading, 1, width, current, task => { this.initialRender = task; });
+                        const pageElement = await this.renderPage(loading, 1, width, current, task => { this.initialRender = task; });
                         if (!current()) { destroy(loading); return false; }
-                        this.commit(loading, loading, canvas, url, width, imageContext);
+                        this.commit(loading, loading, pageElement, url, width, imageContext);
                         return true;
                     } catch (imageError) {
                         destroy(loading);
@@ -208,14 +219,19 @@
                     }
                 }
                 // Keep a working sample when a complete document fails to render.
-                if (this.document) throw error;
+                if (this.document && this.root?.isConnected) throw error;
+                if (this.document) this.clear();
                 const fallback = document.createElement('a');
                 fallback.className = 'btn btn-outline-secondary pdf-preview-open';
                 fallback.href = url;
                 fallback.target = '_blank';
                 fallback.rel = 'noopener';
                 fallback.textContent = 'Abrir prévia no navegador';
-                this.host.replaceChildren(fallback);
+                const notice = document.createElement('p');
+                notice.className = 'small text-muted mb-2';
+                notice.setAttribute('role', 'status');
+                notice.textContent = 'A prévia não pôde ser exibida nesta tela.';
+                this.host.replaceChildren(notice, fallback);
                 return true;
             } finally {
                 if (this.loadingTask === loading) this.loadingTask = null;
@@ -223,7 +239,7 @@
             }
         }
 
-        commit(pdf, loading, canvas, url, width, imageContext, page = 1) {
+        commit(pdf, loading, pageElement, url, width, imageContext, page = 1) {
             if (this.loadingTask === loading) {
                 this.loadingTask = null;
                 this.initialRender = null;
@@ -244,10 +260,10 @@
             this.imageContext = imageContext;
             this.url = url;
             this.lastWidth = width;
-            this.mount(canvas, url);
+            this.mount(pageElement, url);
         }
 
-        mount(canvas, url) {
+        mount(pageElement, url) {
             this.root = document.createElement('div');
             this.root.className = 'pdf-preview';
             const toolbar = document.createElement('div');
@@ -271,7 +287,7 @@
             open.textContent = '⤢';
             this.pageArea = document.createElement('div');
             this.pageArea.className = 'pdf-preview-page';
-            this.pageArea.append(canvas);
+            this.pageArea.append(pageElement);
             this.pageError = document.createElement('p');
             this.pageError.className = 'small text-danger mb-0 px-2';
             this.pageError.setAttribute('role', 'status');
@@ -280,7 +296,7 @@
             this.root.append(toolbar, this.pageArea, this.pageError);
             this.host.replaceChildren(this.root);
             this.controls(false);
-            if (typeof ResizeObserver !== 'undefined') {
+            if (!(this.document instanceof ServerPreviewDocument) && typeof ResizeObserver !== 'undefined') {
                 this.observer = new ResizeObserver(() => {
                     if (!this.root?.isConnected || Math.abs(this.width() - this.lastWidth) <= 1) return;
                     if (this.resizeFrame) cancelAnimationFrame(this.resizeFrame);
@@ -320,9 +336,13 @@
             this.pageError.hidden = true;
             try {
                 const width = this.width();
-                const canvas = await this.canvas(pdf, number, width, current, task => { this.pageRender = task; });
-                if (!current()) return;
-                this.pageArea.replaceChildren(canvas);
+                const pageElement = await this.renderPage(pdf, number, width, current, task => { this.pageRender = task; });
+                if (!current()) {
+                    if (pdf instanceof ServerPreviewDocument) pdf.release(pageElement);
+                    return;
+                }
+                if (pdf instanceof ServerPreviewDocument) pdf.release(this.pageArea.firstElementChild);
+                this.pageArea.replaceChildren(pageElement);
                 this.currentPage = number;
                 this.lastWidth = width;
             } catch (error) {
@@ -334,9 +354,9 @@
                         this.pageLoadingTask = fallback;
                         const width = this.width();
                         const valid = () => current() && this.pageLoadingTask === fallback;
-                        const canvas = await this.canvas(fallback, number, width, valid, task => { this.pageRender = task; });
+                        const pageElement = await this.renderPage(fallback, number, width, valid, task => { this.pageRender = task; });
                         if (!valid()) { destroy(fallback); return; }
-                        this.commit(fallback, fallback, canvas, this.url, width, this.imageContext, number);
+                        this.commit(fallback, fallback, pageElement, this.url, width, this.imageContext, number);
                         return;
                     } catch {
                         destroy(fallback);
