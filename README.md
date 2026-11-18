@@ -16,7 +16,7 @@
 
 ## Fila persistente de impressão
 
-**Deixar na fila** guarda o trabalho para envio automático pelo servidor Linux.
+Quando a impressora está indisponível, **Deixar na fila** guarda o trabalho para envio automático pelo servidor Linux.
 O professor pode cancelar em **Meus envios** enquanto o trabalho continua pendente.
 Use o [passo a passo de instalação da fila](docs/instalacao-fila-impressao.md) para ativar o worker no systemd.
 

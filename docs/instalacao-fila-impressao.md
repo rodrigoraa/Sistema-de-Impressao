@@ -52,9 +52,9 @@ O timer inicia após o boot e volta a chamar o worker cerca de 15 segundos após
 
 Retome o uso do site após ativar o timer.
 
-1. Em **Enviar impressão**, selecione um PDF de teste e clique em **Deixar na fila**. Abra **Meus envios** pelo link de confirmação.
-2. Para testar o cancelamento com tempo, pare o timer e aguarde qualquer leitura em andamento. Enfileire outro PDF e use **Cancelar** em **Meus envios** antes de reativar o timer. O histórico deve mostrar **Cancelada**, com zero folhas contabilizadas.
-3. Com a impressora pronta e o timer ativo, enfileire uma página cuja impressão esteja autorizada. Confirme a situação em **Meus envios**, a saída física e a contabilização. A indicação **Aceito** significa que o CUPS aceitou o trabalho. O comportamento de acompanhamento físico continua respeitando `PRINT_JOB_WAIT_FOR_COMPLETION`.
+1. Com a fila do CUPS temporariamente indisponível durante a manutenção, abra **Enviar impressão**, selecione um PDF de teste e clique em **Deixar na fila**. Abra **Meus envios** pelo link de confirmação.
+2. Com a fila do CUPS ainda indisponível, pare o timer e aguarde qualquer leitura em andamento para testar o cancelamento. Enfileire outro PDF e use **Cancelar** em **Meus envios** antes de reativar o timer. O histórico deve mostrar **Cancelada**, com zero folhas contabilizadas.
+3. Restabeleça a fila do CUPS e prepare a impressora. Confirme que **Deixar na fila** desaparece e que o primeiro PDF é processado com o timer ativo. Confira a situação em **Meus envios**, a saída física e a contabilização. A indicação **Aceito** significa que o CUPS aceitou o trabalho. O comportamento de acompanhamento físico continua respeitando `PRINT_JOB_WAIT_FOR_COMPLETION`.
 4. Para validar o boot em uma janela de manutenção, deixe um trabalho de teste pendente, com a fila do CUPS indisponível, e reinicie o servidor. Confirme que o timer voltou e que o trabalho é processado quando a impressora estiver pronta.
 
 ## Trabalhos interrompidos

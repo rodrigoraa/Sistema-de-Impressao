@@ -257,14 +257,15 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
                             <div class="print-confirmation mt-3">
                                 <?php $canQueue = PrintQueueService::supported() && !empty($_ENV['PRINTER_NAME']); ?>
-                                <div class="<?= ($sharedMode || $canQueue) ? 'print-actions' : '' ?>">
+                                <?php $showQueue = $canQueue && ($printerStatus['can_print'] ?? null) === false; ?>
+                                <div id="printActionButtons" class="<?= ($sharedMode || $showQueue) ? 'print-actions' : '' ?>">
                                     <button type="submit" form="printForm" id="btnPrint" class="btn btn-primary w-100" aria-describedby="printerBlockNotice" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
                                         <span class="text"><?= $sharedMode ? 'Confirmar impressão' : 'Enviar para impressão' ?></span>
                                         <span class="spinner-border spinner-border-sm d-none"></span>
                                     </button>
 
                                     <?php if ($canQueue): ?>
-                                        <button type="submit" form="printForm" id="btnQueue" name="print_action" value="queue" class="btn btn-outline-primary w-100" disabled>
+                                        <button type="submit" form="printForm" id="btnQueue" name="print_action" value="queue" class="btn btn-outline-primary w-100<?= $showQueue ? '' : ' d-none' ?>" disabled>
                                             Deixar na fila
                                         </button>
                                     <?php endif; ?>
@@ -308,6 +309,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         const printForm = document.getElementById('printForm');
         const btnPrint = document.getElementById('btnPrint');
         const btnQueue = document.getElementById('btnQueue');
+        const printActionButtons = document.getElementById('printActionButtons');
         const resultBox = document.getElementById('printResult');
         const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
         const reviewOptions = <?= json_encode($reviewOptions ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
@@ -361,7 +363,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         }
 
         function updateEstimate() {
-            if (btnQueue) btnQueue.disabled = printingActive || submissionChecking || submissionLocked || documentRecalculating || !uploadToken || sharedPrintCompleted;
+            if (btnQueue) btnQueue.disabled = printerStatus.can_print !== false || printingActive || submissionChecking || submissionLocked || documentRecalculating || !uploadToken || sharedPrintCompleted;
             const total = document.getElementById('estimateTotal');
             const state = document.getElementById('sendState');
             const result = paperEstimate();
@@ -957,9 +959,14 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
         function renderPrinterStatus(status) {
             printerStatus = status && typeof status.can_print === 'boolean' ? status : {
-                can_print: false, notice_type: 'danger', notice: 'Não foi possível confirmar o estado da impressora. Aguarde a próxima consulta ou avise a equipe de TI.'
+                can_print: null, notice_type: 'danger', notice: 'Não foi possível confirmar o estado da impressora. Aguarde a próxima consulta ou avise a equipe de TI.'
             };
             const blocked = printerStatus.can_print !== true;
+            if (btnQueue) {
+                const showQueue = printerStatus.can_print === false;
+                btnQueue.classList.toggle('d-none', !showQueue);
+                printActionButtons.classList.toggle('print-actions', sharedMode || showQueue);
+            }
             const notice = printerStatus.notice || (blocked ? 'A impressora está indisponível. Aguarde ou avise a equipe de TI.' : '');
             const awaitingUpload = !uploadToken || documentRecalculating || submissionLocked;
             updateEstimate();

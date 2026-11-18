@@ -120,7 +120,7 @@ const net = require('node:net');
   for(const redundant of ['Atividade.pdf','contabilização','Arquivo pronto','Exibindo','por cópia','Abrir prévia ampliada','Abrir PDF em nova aba','Como enviar pelo celular']) {
    assert.ok(!reviewText.includes(redundant),`A revisão deve ser direta, sem texto extra: ${redundant}`);
   }
-  assert.deepEqual(await reviewPanel.locator('.print-confirmation').getByRole('button').allTextContents().then(labels=>labels.map(label=>label.trim())),['Enviar para impressão','Deixar na fila']);
+  assert.deepEqual(await reviewPanel.locator('.print-confirmation').getByRole('button').allTextContents().then(labels=>labels.map(label=>label.trim())),['Enviar para impressão']);
   async function assertPreviewNearConfirmation() {
    const previewBox=await page.locator('#preview').boundingBox();
    const buttonBox=await page.locator('#btnPrint').boundingBox();
@@ -496,10 +496,23 @@ const net = require('node:net');
   assert.equal(submissions,2,'Prévias automáticas não devem enviar impressões');
   await page.unroute('**/pdfjs-6.5.438/pdf.mjs',blockedRenderer);
   // Deixar na fila usa o POST real e funciona mesmo quando a impressora está indisponível.
-  await page.route('**/printer/status',route=>route.fulfill({json:{success:true,status:{can_print:false,notice_type:'warning',notice:'Sem papel.'}}}));
+  let canPrint = true;
+  await page.route('**/printer/status',route=>route.fulfill({json:{success:true,status:{can_print:canPrint,notice_type:'warning',notice:canPrint ? 'Suprimento baixo.' : 'Sem papel.'}}}));
   await page.goto(base+'/');
   await page.locator('#fileInput').setInputFiles({name:'Na fila.pdf',mimeType:'application/pdf',buffer:pdf});
-  await page.waitForFunction(()=>!document.querySelector('#btnQueue').disabled && document.querySelector('#btnPrint').disabled);
+  const queueButton=page.locator('#btnQueue');
+  await page.waitForFunction(()=>!document.querySelector('#btnPrint').disabled);
+  assert.equal(await queueButton.isVisible(),false,'Um aviso que permite imprimir não deve mostrar a fila');
+  canPrint = false;
+  await page.evaluate(()=>refreshPrinterStatus());
+  await queueButton.waitFor({state:'visible'});
+  assert.equal(await queueButton.isEnabled(),true);
+  canPrint = true;
+  await page.evaluate(()=>refreshPrinterStatus());
+  await queueButton.waitFor({state:'hidden'});
+  assert.equal(await page.locator('#btnPrint').isEnabled(),true);
+  canPrint = false;
+  await page.evaluate(()=>refreshPrinterStatus());
   const queueResponse=page.waitForResponse(response=>response.url()===base+'/' && response.request().method()==='POST');
   await page.getByRole('button',{name:'Deixar na fila',exact:true}).click();
   const queued=await (await queueResponse).json();
