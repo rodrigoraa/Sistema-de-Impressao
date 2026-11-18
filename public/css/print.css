@@ -365,3 +365,8 @@
     background: #fff1f0;
     border-radius: 6px;
 }
+
+.printer-block-notice.print-notice-info {
+    color: var(--app-brand-dark);
+    background: var(--app-brand-soft);
+}

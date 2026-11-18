@@ -46,6 +46,8 @@ class DiagnosticsHealthFixture extends CupsService {
     public $attributes;
     public $enabled = true;
     public $acceptTimeout = false;
+    public $printerTimeout = false;
+    public $printing = false;
     public $queueMessage = '';
     public $enableCalls = 0;
     public $faultAfterEnable = false;
@@ -55,6 +57,8 @@ class DiagnosticsHealthFixture extends CupsService {
         if (str_contains($command, ' -v ')) $stdout = 'device for fixture: ' . $this->uri;
         elseif (str_contains($command, ' -a ') && $this->acceptTimeout) return ['return_code'=>124,'stdout'=>'','stderr'=>'timed out'];
         elseif (str_contains($command, ' -a ')) $stdout = 'fixture accepting requests since Mon';
+        elseif (str_contains($command, ' -p ') && $this->printerTimeout) return ['return_code'=>124,'stdout'=>'','stderr'=>'timed out'];
+        elseif (str_contains($command, ' -p ') && $this->printing) $stdout = 'printer fixture now printing fixture-42.  enabled since Mon';
         elseif (str_contains($command, ' -p ')) $stdout = 'printer fixture is ' . ($this->enabled ? 'idle. enabled' : 'disabled') . " since Mon
 " . $this->queueMessage;
         return ['return_code'=>0,'stdout'=>$stdout,'stderr'=>''];
@@ -75,9 +79,28 @@ $diag->uri='socket://'.stream_socket_get_name($server,false);
 $diag->attributes=$ipp('none','idle','marker-names (nameWithoutLanguage) = Black Toner');
 $healthy=$diag->diagnostics();
 healthAssert($healthy['can_print']===true,'Diagnóstico saudável foi bloqueado.');
+$diag->attributes = $ipp('none', 'processing');
+$diag->printing = true;
+$busy = $diag->diagnostics();
+healthAssert($busy['queue_verified'] && $busy['can_print'] && $busy['printer_state'] === 'printing',
+    'Fila CUPS ativa durante uma impressão foi tratada como indisponível: ' . $busy['notice']);
+$diag->attributes = $ipp('media-jam-error', 'processing');
+$busyWithFault = $diag->diagnostics();
+healthAssert(!$busyWithFault['can_print'] && !$busyWithFault['availability_unknown'] && $busyWithFault['reason'] === 'atolamento de papel',
+    'Fila ocupada mascarou um atolamento confirmado pela impressora.');
+$diag->printing = false;
+$diag->attributes = $ipp('none');
 $diag->acceptTimeout=true;
-healthAssert(!$diag->diagnostics()['can_print'],'Falha na consulta da fila foi liberada.');
+$unknownQueue = $diag->diagnostics();
+healthAssert(!$unknownQueue['can_print'] && $unknownQueue['availability_unknown'] && $unknownQueue['notice_type'] === 'info',
+    'Falha de consulta deve pausar novos envios e informar que o estado ainda é desconhecido.');
 $diag->acceptTimeout=false;
+$diag->printerTimeout = true;
+$initialTimeout = $diag->diagnostics();
+healthAssert(!$initialTimeout['can_print'] && $initialTimeout['availability_unknown']
+    && $initialTimeout['cups_active'] === null && $initialTimeout['notice_type'] === 'info',
+    'Timeout de lpstat não comprova que o CUPS parou.');
+$diag->printerTimeout = false;
 foreach (['media-empty-error','media-jam-error','toner-empty-error','door-open-error'] as $reason) {
     $diag->attributes=$ipp($reason,'idle','media-ready (keyword) = iso_a4_210x297mm');
     $status=$diag->diagnostics(true);

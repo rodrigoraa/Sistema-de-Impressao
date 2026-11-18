@@ -218,6 +218,16 @@ const net = require('node:net');
   assert.match(submittedBody,/name="csrf_token"/,'Envio deve conter CSRF');
   assert.match(submittedBody,/name="copies"/,'Envio deve conter cópias');
   assert.match(submittedBody,/name="sides"/,'Envio deve conter frente e verso');
+  // Uma consulta inconclusiva depois do aceite não deve sugerir falha no envio.
+  simulatedPrinter={can_print:false,availability_unknown:true,notice_type:'info',notice:'A fila ainda não confirmou a disponibilidade para novos envios.'};
+  await page.route('**/printer/status',printerFaultRoute);
+  await page.evaluate(()=>refreshPrinterStatus());
+  await page.locator('#printerStatusBox').getByText('Disponibilidade para novos envios em verificação',{exact:true}).waitFor();
+  assert.equal(await page.locator('#printerStatusBox').getAttribute('role'),'status');
+  assert.match(await page.locator('#printResult').textContent(),/aceito/);
+  assert.equal(await page.locator('#btnQueue').isVisible(),false);
+  await page.unroute('**/printer/status',printerFaultRoute);
+  await page.evaluate(()=>refreshPrinterStatus());
   // History search, ownership checks and editable reuse must not send a print.
   await page.goto(base+'/prints');
   await page.getByLabel('Buscar arquivo').fill('Atividade');

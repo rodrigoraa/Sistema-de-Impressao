@@ -27,7 +27,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/print.css?v=20261118-1">
+    <link rel="stylesheet" href="/css/print.css?v=20261118-2">
 
 </head>
 
@@ -257,7 +257,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
                             <div class="print-confirmation mt-3">
                                 <?php $canQueue = PrintQueueService::supported() && !empty($_ENV['PRINTER_NAME']); ?>
-                                <?php $showQueue = $canQueue && ($printerStatus['can_print'] ?? null) === false; ?>
+                                <?php $showQueue = $canQueue && ($printerStatus['can_print'] ?? null) === false
+                                    && empty($printerStatus['availability_unknown']); ?>
                                 <div id="printActionButtons" class="<?= ($sharedMode || $showQueue) ? 'print-actions' : '' ?>">
                                     <button type="submit" form="printForm" id="btnPrint" class="btn btn-primary w-100" aria-describedby="printerBlockNotice" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
                                         <span class="text"><?= $sharedMode ? 'Confirmar impressão' : 'Enviar para impressão' ?></span>
@@ -318,7 +319,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         const sharedFile = <?= json_encode($sharedFile, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         const shareToken = <?= json_encode($shareToken) ?>;
         const adminUsers = <?= json_encode($userList ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-        let printerStatus = <?= json_encode(array_intersect_key($printerStatus ?? [], array_flip(['can_print', 'notice', 'notice_type'])), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        let printerStatus = <?= json_encode(array_intersect_key($printerStatus ?? [], array_flip(['can_print', 'availability_unknown', 'notice', 'notice_type'])), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         let pageCountToken = 0;
         let previewToken = 0;
         let previewObjectUrl = '';
@@ -363,7 +364,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         }
 
         function updateEstimate() {
-            if (btnQueue) btnQueue.disabled = printerStatus.can_print !== false || printingActive || submissionChecking || submissionLocked || documentRecalculating || !uploadToken || sharedPrintCompleted;
+            if (btnQueue) btnQueue.disabled = printerStatus.can_print !== false || printerStatus.availability_unknown === true || printingActive || submissionChecking || submissionLocked || documentRecalculating || !uploadToken || sharedPrintCompleted;
             const total = document.getElementById('estimateTotal');
             const state = document.getElementById('sendState');
             const result = paperEstimate();
@@ -959,11 +960,12 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
         function renderPrinterStatus(status) {
             printerStatus = status && typeof status.can_print === 'boolean' ? status : {
-                can_print: null, notice_type: 'danger', notice: 'Não foi possível confirmar o estado da impressora. Aguarde a próxima consulta ou avise a equipe de TI.'
+                can_print: null, availability_unknown: true, notice_type: 'info', notice: 'O servidor ainda precisa confirmar se a impressora está disponível para novos envios. Aguarde a próxima consulta.'
             };
             const blocked = printerStatus.can_print !== true;
+            const unknown = printerStatus.availability_unknown === true;
             if (btnQueue) {
-                const showQueue = printerStatus.can_print === false;
+                const showQueue = printerStatus.can_print === false && !unknown;
                 btnQueue.classList.toggle('d-none', !showQueue);
                 printActionButtons.classList.toggle('print-actions', sharedMode || showQueue);
             }
@@ -972,7 +974,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             updateEstimate();
             const blockText = blocked ? notice : '';
             if (printerBlockNotice.textContent !== blockText) printerBlockNotice.textContent = blockText;
-            printerBlockNotice.classList.toggle('d-none', !blocked);
+            printerBlockNotice.classList.toggle('d-none', !blocked || (unknown && awaitingUpload));
+            printerBlockNotice.classList.toggle('print-notice-info', unknown);
+            printerBlockNotice.setAttribute('role', unknown ? 'status' : 'alert');
             if (!printingActive) btnPrint.disabled = submissionChecking || awaitingUpload || blocked || (sharedMode && sharedPrintCompleted);
             if (!notice) {
                 printerStatusBox.classList.add('d-none');
@@ -980,9 +984,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             }
             const type = ['warning', 'danger', 'info', 'success'].includes(printerStatus.notice_type)
                 ? printerStatus.notice_type : (blocked ? 'danger' : 'success');
-            const title = blocked ? 'Atenção: impressora indisponível' : (['warning', 'danger'].includes(type) ? 'Atenção à impressora' : 'Situação da impressora');
+            const title = unknown ? 'Disponibilidade para novos envios em verificação' : blocked ? 'Atenção: impressora indisponível' : (['warning', 'danger'].includes(type) ? 'Atenção à impressora' : 'Situação da impressora');
             printerStatusBox.className = `alert print-notice print-notice-${type}`;
-            printerStatusBox.setAttribute('role', blocked ? 'alert' : 'status');
+            printerStatusBox.setAttribute('role', blocked && !unknown ? 'alert' : 'status');
             if (printerStatusBox.dataset.notice !== notice || printerStatusBox.dataset.title !== title || printerStatusBox.dataset.type !== type) {
                 printerStatusBox.innerHTML = `<i aria-hidden="true" class="bi bi-printer-fill"></i><div><strong>${title}</strong><p>${escapeHtml(notice)}</p></div>`;
                 printerStatusBox.dataset.notice = notice;
@@ -1096,7 +1100,9 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 }
                 if (!uploadToken || uploadToken !== checkingUploadToken || documentRecalculating || !validatePrintOptions()) return;
                 if (printerStatus.can_print !== true) {
-                    showPrintResult(printerStatus.notice || 'A impressora não está disponível agora. Avise a equipe de TI.', false);
+                    if (printerStatus.availability_unknown !== true) {
+                        showPrintResult(printerStatus.notice || 'A impressora não está disponível agora. Avise a equipe de TI.', false);
+                    }
                     return;
                 }
             }

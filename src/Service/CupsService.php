@@ -35,6 +35,7 @@ class CupsService
             'canceled_jobs' => 0,
             'failed_jobs' => 0,
             'queue_verified' => false,
+            'availability_unknown' => false,
             'physical_verified' => false,
             'physical_reachable' => null,
             'can_print' => false,
@@ -67,17 +68,20 @@ class CupsService
         }
 
         $printer = escapeshellarg($this->printerName);
-        $printerStatus = $this->run(escapeshellarg($lpstat) . ' -p ' . $printer . ' 2>&1');
-        if ($printerStatus['return_code'] !== 0 && ($printerStatus['return_code'] === 124
+        $statusCommand = 'env LC_ALL=C ' . escapeshellarg($lpstat);
+        $printerStatus = $this->run($statusCommand . ' -p ' . $printer . ' 2>&1');
+        $statusTimedOut = $printerStatus['return_code'] === 124;
+        if ($printerStatus['return_code'] !== 0 && ($statusTimedOut
             || $this->looksLikeCupsDown($printerStatus['stdout'] . "\n" . $printerStatus['stderr']))) {
-            $status['cups_active'] = false;
-            $status['reason'] = 'CUPS parado ou erro de comunicação';
+            $status['cups_active'] = $statusTimedOut ? null : false;
+            $status['printer_exists'] = $statusTimedOut ? null : false;
+            $status['reason'] = $statusTimedOut ? 'tempo esgotado' : 'CUPS parado ou erro de comunicação';
             $status['raw']['printer'] = $printerStatus;
             $this->applyUserNotice($status);
             return $status;
         }
-        $acceptStatus = $this->run(escapeshellarg($lpstat) . ' -a ' . $printer . ' 2>&1');
-        $stateStatus = $this->run(escapeshellarg($lpstat) . ' -l -p ' . $printer . ' 2>&1');
+        $acceptStatus = $this->run($statusCommand . ' -a ' . $printer . ' 2>&1');
+        $stateStatus = $this->run($statusCommand . ' -l -p ' . $printer . ' 2>&1');
         $pending = $this->run(escapeshellarg($lpstat) . ' -o ' . $printer . ' 2>&1');
         $completed = $this->run(escapeshellarg($lpstat) . ' -W completed -o ' . $printer . ' 2>&1');
         $ippStatus = $this->queryPrinterIppAttributes($lpstat);
@@ -109,7 +113,7 @@ class CupsService
             : $printerKnownByAnyCommand;
         if (preg_match('/\bis\s+disabled\b/i', $printerText)) {
             $status['enabled'] = false;
-        } elseif (preg_match('/\bis\s+idle\b|\bis\s+printing\b|\bis\s+enabled\b/i', $printerText)) {
+        } elseif (preg_match('/\bis\s+(?:idle|printing|enabled)\b|\bnow\s+printing\b/i', $printerText)) {
             $status['enabled'] = true;
         }
 
@@ -121,6 +125,8 @@ class CupsService
 
         if (preg_match('/printer-state\s*=\s*([^\s]+)/i', $stateText, $match)) {
             $status['printer_state'] = trim($match[1]);
+        } elseif (preg_match('/^printer\s+' . preg_quote($this->printerName, '/') . '\s+now\s+printing\b/im', $printerText)) {
+            $status['printer_state'] = 'printing';
         } elseif (preg_match('/printer\s+' . preg_quote($this->printerName, '/') . '\s+is\s+([^\n]+)/i', $printerText, $match)) {
             $status['printer_state'] = trim($match[1]);
         }
@@ -940,17 +946,19 @@ class CupsService
         }
         if (($status['queue_verified'] ?? false) !== true) {
             $status['can_print'] = false;
-            $status['notice_type'] = 'danger';
+            $status['availability_unknown'] = true;
+            $status['notice_type'] = 'info';
             $status['notice'] = match ($reason) {
                 'permissão negada' => 'O serviço de impressão negou acesso à fila. Avise a equipe de TI para verificar as permissões.',
                 'tempo esgotado' => 'A consulta à fila de impressão demorou demais. Aguarde uma nova consulta ou avise a equipe de TI.',
-                default => 'O servidor não conseguiu confirmar o estado da fila de impressão. Aguarde uma nova consulta ou avise a equipe de TI.',
+                default => 'A fila ainda não confirmou a disponibilidade para novos envios. Aguarde a próxima consulta ou avise a equipe de TI se o aviso continuar.',
             };
             return;
         }
         if (($status['physical_verified'] ?? false) !== true) {
             $status['can_print'] = false;
-            $status['notice_type'] = 'danger';
+            $status['availability_unknown'] = true;
+            $status['notice_type'] = 'info';
             $status['notice'] = 'A fila do servidor respondeu, mas o equipamento não forneceu um estado válido. Confira o painel da impressora ou avise a equipe de TI.';
             return;
         }
