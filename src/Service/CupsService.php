@@ -141,11 +141,14 @@ class CupsService
         $ippText = $this->ippAttributesText($ippStatus);
         $physical = (new PrinterHealthService())->interpret($ippStatus['attributes'] ?? null);
         $status['physical_verified'] = $physical['verified'];
+        $status['physical_detail'] = $physical['detail'] ?? '';
         $status['physical_reachable'] = $ippStatus['reachable'] ?? null;
         $status['reason'] = $this->classifyReason($combined, $ippText);
         if ($status['physical_reachable'] === false) {
             $status['reason'] = 'offline';
-        } elseif ($physical['verified'] && !$physical['can_print']) {
+        } elseif ($physical['verified'] && !$physical['can_print']
+            && !(in_array($physical['reason'], ['impressora parada', 'falha no equipamento'], true)
+                && $status['reason'] === 'bandeja de papel aberta')) {
             $status['reason'] = $physical['reason'];
         } elseif ($status['reason'] === '') {
             $status['reason'] = $physical['reason'];
@@ -604,6 +607,7 @@ class CupsService
             'falta de papel',
             'atolamento de papel',
             'tampa aberta',
+            'bandeja de papel aberta',
             'toner ou suprimento',
             'offline',
             'erro de comunicação',
@@ -619,6 +623,9 @@ class CupsService
     public function classifyReason($text, $ippAttributesText = null)
     {
         $text = strtolower((string) $text);
+        if (PrinterHealthService::hasPaperTrayFault($text)) {
+            return 'bandeja de papel aberta';
+        }
         $paperAvailableByIpp = $ippAttributesText !== null
             && $this->ippShowsPaperAvailable((string) $ippAttributesText);
         $map = [
@@ -750,7 +757,7 @@ class CupsService
             '  ATTR charset attributes-charset utf-8',
             '  ATTR naturalLanguage attributes-natural-language en',
             '  ATTR uri printer-uri $uri',
-            '  ATTR keyword requested-attributes printer-state,printer-state-reasons,printer-state-message,printer-is-accepting-jobs,media-ready,printer-input-tray',
+            '  ATTR keyword requested-attributes printer-state,printer-state-reasons,printer-state-message,printer-is-accepting-jobs,media-ready,printer-input-tray,printer-alert,printer-alert-description',
             '}',
             '',
         ]);
@@ -865,6 +872,12 @@ class CupsService
             $status['notice'] = 'Impressora desligada ou sem conexão. Ligue a impressora ou avise a equipe de TI.';
             return;
         }
+        if ($reason === 'bandeja de papel aberta') {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'warning';
+            $status['notice'] = 'A bandeja de papel está aberta ou desencaixada. Feche e encaixe a bandeja até o fim. O envio será liberado quando a impressora estiver pronta.';
+            return;
+        }
         if ($reason === 'tampa aberta') {
             $status['can_print'] = false;
             $status['notice_type'] = 'warning';
@@ -904,7 +917,10 @@ class CupsService
         if ($reason === 'impressora parada' || $reason === 'falha no equipamento') {
             $status['can_print'] = false;
             $status['notice_type'] = 'danger';
-            $status['notice'] = 'A impressora está parada com uma falha. Confira o painel da impressora ou avise a equipe de TI.';
+            $detail = $status['physical_detail'] ?? '';
+            $status['notice'] = $detail !== ''
+                ? 'O equipamento bloqueou a impressão e exibiu a mensagem “' . $detail . '”. Confira o painel da impressora ou avise a equipe de TI.'
+                : 'A impressora informou uma falha sem detalhar a causa. Confira a mensagem no painel da impressora ou avise a equipe de TI.';
             return;
         }
         if (($status['physical_verified'] ?? false) !== true || ($status['queue_verified'] ?? false) !== true) {
@@ -991,7 +1007,7 @@ class CupsService
 
         if (($status['physical_verified'] ?? false) !== true || ($status['queue_verified'] ?? false) !== true
             || ($status['physical_reachable'] ?? null) === false
-            || in_array($status['reason'] ?? '', ['falta de papel','atolamento de papel','toner ou suprimento','tampa aberta','offline','falha no equipamento','impressora parada'], true)) return false;
+            || in_array($status['reason'] ?? '', ['falta de papel','atolamento de papel','toner ou suprimento','tampa aberta','bandeja de papel aberta','offline','falha no equipamento','impressora parada'], true)) return false;
         return $this->autoEnableThrottleAllows();
     }
 

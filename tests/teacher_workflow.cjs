@@ -497,7 +497,7 @@ const net = require('node:net');
   await page.unroute('**/pdfjs-6.5.438/pdf.mjs',blockedRenderer);
   // Deixar na fila usa o POST real e funciona mesmo quando a impressora está indisponível.
   let canPrint = true;
-  await page.route('**/printer/status',route=>route.fulfill({json:{success:true,status:{can_print:canPrint,notice_type:'warning',notice:canPrint ? 'Suprimento baixo.' : 'Sem papel.'}}}));
+  await page.route('**/printer/status',route=>route.fulfill({json:{success:true,status:{can_print:canPrint,notice_type:'warning',notice:canPrint ? 'Suprimento baixo.' : 'A bandeja de papel está aberta ou desencaixada. Feche e encaixe a bandeja até o fim.'}}}));
   await page.goto(base+'/');
   await page.locator('#fileInput').setInputFiles({name:'Na fila.pdf',mimeType:'application/pdf',buffer:pdf});
   const queueButton=page.locator('#btnQueue');
@@ -506,6 +506,7 @@ const net = require('node:net');
   canPrint = false;
   await page.evaluate(()=>refreshPrinterStatus());
   await queueButton.waitFor({state:'visible'});
+  await page.locator('#printerBlockNotice').getByText('A bandeja de papel está aberta ou desencaixada.',{exact:false}).waitFor();
   assert.equal(await queueButton.isEnabled(),true);
   canPrint = true;
   await page.evaluate(()=>refreshPrinterStatus());

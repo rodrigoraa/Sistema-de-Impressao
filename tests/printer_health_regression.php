@@ -9,6 +9,8 @@ foreach (['media-empty-error','media-jam-error','toner-empty-error','marker-supp
     $result = $health->interpret($ipp($reason, 'idle', 'media-ready (keyword) = iso_a4_210x297mm'));
     healthAssert($result['verified'] && !$result['can_print'] && $result['reason'] !== '', "Falha física foi liberada: $reason");
 }
+$trayReport = $health->interpret($ipp('input-tray-missing-report'));
+healthAssert($trayReport['can_print'], 'Um relatório de bandeja opcional bloqueou uma impressora pronta.');
 $ready=$health->interpret($ipp('none','idle',"marker-names (nameWithoutLanguage) = Black Toner\nmarker-levels (integer) = 80\nprinter-state-reasons-supported (keyword) = media-empty-error,toner-empty-error"));
 healthAssert($ready['verified'] && $ready['can_print'] && $ready['reason']==='', 'Nomes/capacidades foram tratados como falha.');
 healthAssert(!$health->interpret($ipp('none','stopped'))['can_print'], 'Equipamento parado foi liberado.');
@@ -44,6 +46,7 @@ class DiagnosticsHealthFixture extends CupsService {
     public $attributes;
     public $enabled = true;
     public $acceptTimeout = false;
+    public $queueMessage = '';
     public $enableCalls = 0;
     public $faultAfterEnable = false;
     public function run($command, $timeoutSeconds = 10) {
@@ -52,7 +55,8 @@ class DiagnosticsHealthFixture extends CupsService {
         if (str_contains($command, ' -v ')) $stdout = 'device for fixture: ' . $this->uri;
         elseif (str_contains($command, ' -a ') && $this->acceptTimeout) return ['return_code'=>124,'stdout'=>'','stderr'=>'timed out'];
         elseif (str_contains($command, ' -a ')) $stdout = 'fixture accepting requests since Mon';
-        elseif (str_contains($command, ' -p ')) $stdout = 'printer fixture is ' . ($this->enabled ? 'idle. enabled' : 'disabled') . ' since Mon';
+        elseif (str_contains($command, ' -p ')) $stdout = 'printer fixture is ' . ($this->enabled ? 'idle. enabled' : 'disabled') . " since Mon
+" . $this->queueMessage;
         return ['return_code'=>0,'stdout'=>$stdout,'stderr'=>''];
     }
     public function enablePrinter($source='manual') {
@@ -78,6 +82,30 @@ foreach (['media-empty-error','media-jam-error','toner-empty-error','door-open-e
     $status=$diag->diagnostics(true);
     healthAssert(!$status['can_print'],'Fila idle mascarou falha IPP: '.$reason);
 }
+$traySignals = [
+    $ipp('input-tray-missing-error', 'stopped'),
+    $ipp('media-tray-open-error', 'stopped'),
+    $ipp('other-error', 'stopped', 'printer-state-message (textWithoutLanguage) = Cassette 1 is open'),
+    $ipp('other-error', 'stopped', 'printer-alert (octetString) = code=inputMediaTrayMissing;severity=critical'),
+    $ipp('other-error', 'stopped', 'printer-alert-description (textWithoutLanguage) = Feche a bandeja de papel'),
+];
+foreach ($traySignals as $attributes) {
+    $diag->attributes = $attributes;
+    $status = $diag->diagnostics();
+    healthAssert(!$status['can_print'] && $status['reason'] === 'bandeja de papel aberta'
+        && str_contains($status['notice'], 'Feche e encaixe'), 'Diagnóstico da bandeja não chegou ao aviso: ' . $attributes['stdout']);
+}
+$diag->attributes = $ipp('other-error', 'stopped');
+$diag->queueMessage = 'printer-state-message=Paper tray 2 open';
+healthAssert($diag->diagnostics()['reason'] === 'bandeja de papel aberta', 'Estado genérico do IPP mascarou o detalhe disponível no CUPS.');
+$diag->queueMessage = '';
+$diag->attributes = $ipp('other-error', 'stopped', 'printer-state-message (textWithoutLanguage) = Erro E042: manutenção necessária');
+healthAssert(str_contains($diag->diagnostics()['notice'], 'Erro E042: manutenção necessária'), 'Mensagem específica do equipamento foi perdida.');
+$diag->attributes = $ipp('other-error', 'stopped', "printer-state-message (textWithoutLanguage) = Stopped
+printer-alert-description (textWithoutLanguage) = Erro E049: confira a unidade de imagem");
+healthAssert(str_contains($diag->diagnostics()['notice'], 'Erro E049'), 'Mensagem genérica mascarou a descrição específica do alerta.');
+$diag->attributes = $ipp('other-error', 'stopped');
+healthAssert(str_contains($diag->diagnostics()['notice'], 'sem detalhar a causa'), 'Aviso deve indicar que o equipamento não detalhou a falha.');
 $diag->attributes=$ipp('none','idle','printer-is-accepting-jobs (boolean) = false');
 healthAssert(!$diag->diagnostics()['can_print'],'Recusa do equipamento foi liberada.');
 $diag->enabled=false;$diag->attributes=$ipp('media-jam-error');

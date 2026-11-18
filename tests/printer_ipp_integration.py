@@ -71,12 +71,13 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 try:
     with tempfile.TemporaryDirectory(prefix='ipp-health-') as work:
         for reason, expected in [('none', ''), ('media-jam-error', 'atolamento de papel'),
-                                 ('media-empty-error', 'falta de papel'), ('toner-empty', 'toner ou suprimento')]:
+                                 ('media-empty-error', 'falta de papel'), ('toner-empty', 'toner ou suprimento'),
+                                 ('input-tray-missing-error', 'bandeja de papel aberta')]:
             Equipment.reason = reason
             subprocess.run(['php', '-r', PHP, f'ipp://127.0.0.1:{server.server_port}/ipp/print',
                             work + '/test.log', reason, expected],
                            cwd=Path(__file__).resolve().parent.parent, check=True, timeout=15)
-    print('IPP real local + ipptool + parser: pronta, atolamento, papel e toner: OK')
+    print('IPP real local + ipptool + parser: pronta, atolamento, papel, toner e bandeja: OK')
 finally:
     server.shutdown()
     server.server_close()
