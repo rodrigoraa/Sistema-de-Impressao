@@ -6,9 +6,9 @@ class PrintJobService
 {
     private $db;
 
-    public function __construct()
+    public function __construct(?SQLite3 $db = null)
     {
-        $this->db = Database::connect();
+        $this->db = $db ?? Database::connect();
     }
 
     public function create($user, $originalName, $storedFile, $sourceExt, $copies, $numberUp, $sides, $orientation, $paper, $meta = [])
@@ -221,7 +221,7 @@ class PrintJobService
 
         if ($status === 'active') {
             $where[] = "pj.status IN ('queued', 'processing')";
-        } elseif (in_array($status, ['queued', 'processing', 'completed', 'failed'], true)) {
+        } elseif (in_array($status, ['queued', 'processing', 'completed', 'failed', 'canceled', 'interrupted'], true)) {
             $where[] = 'pj.status = :status';
             $params[':status'] = [$status, SQLITE3_TEXT];
         }

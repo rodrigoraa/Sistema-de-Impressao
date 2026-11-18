@@ -4,6 +4,7 @@ require_once __DIR__ . '/../Service/PageCounter.php';
 require_once __DIR__ . '/../Service/QuotaService.php';
 require_once __DIR__ . '/../Service/Database.php';
 require_once __DIR__ . '/../Service/PrintJobService.php';
+require_once __DIR__ . '/../Service/PrintQueueService.php';
 require_once __DIR__ . '/../Service/CupsService.php';
 require_once __DIR__ . '/../Service/TemporaryPrintFileService.php';
 
@@ -441,6 +442,11 @@ class PrintController
     private function processSavedFile($dest, $origName, $ext, $size, $mimeType, $user, $jobService, $preparedFileHint = null)
     {
 
+        $enqueue = ($_POST['print_action'] ?? '') === 'queue';
+        if ($enqueue && (!PrintQueueService::supported() || empty($_ENV['PRINTER_NAME']))) {
+            $this->fail('A fila de impressão precisa de uma impressora CUPS configurada no servidor.');
+        }
+
         // Parâmetros de impressão vindos do formulário
         $copies = max(1, intval($_POST['copies'] ?? 1));
         $sides = ($_POST['sides'] ?? 'one-sided'); // "one-sided" ou "two-sided-short-edge"/"long-edge"
@@ -469,11 +475,16 @@ class PrintController
             }
         }
         $paper = $extraOptions['media'] ?? $extraOptions['paper'] ?? 'A4';
-        $jobId = $jobService->create($user, $origName, $dest, $sourceExt, $copies, $numberUp, $sides, $orientation, $paper, [
-            'mime_type' => $mimeType,
-            'file_size' => $size,
-            'printer' => $_ENV['PRINTER_NAME'] ?? '',
-        ]);
+        $createJob = static function (PrintJobService $jobs) use (
+            $user, $origName, $dest, $sourceExt, $copies, &$numberUp, $sides, &$orientation, $paper, $mimeType, $size
+        ) {
+            return $jobs->create($user, $origName, $dest, $sourceExt, $copies, $numberUp, $sides, $orientation, $paper, [
+                'mime_type' => $mimeType,
+                'file_size' => $size,
+                'printer' => $_ENV['PRINTER_NAME'] ?? '',
+            ]);
+        };
+        $jobId = $enqueue ? null : $createJob($jobService);
         $printedFile = $dest;
         $pages = 0;
         $chargedPages = 0;
@@ -499,17 +510,23 @@ class PrintController
                 if ($detectedOrientation !== null) {
                     $printer->log('Documento: orientacao automatica ' . $detectedOrientation . ' aplicada no lugar de ' . $orientation . ' arquivo=' . $printedFile);
                     $orientation = $detectedOrientation;
-                    $jobService->updateOrientation($jobId, $orientation);
+                    if ($jobId !== null) {
+                        $jobService->updateOrientation($jobId, $orientation);
+                    }
                 }
             }
             if ($this->shouldApplyLargeDocumentLayout($pages, $numberUp, $sides)) {
                 $numberUp = 2;
-                $jobService->updateLayout($jobId, $numberUp, $sides);
+                if ($jobId !== null) {
+                    $jobService->updateLayout($jobId, $numberUp, $sides);
+                }
                 $printer->log('Documento grande: aplicado automaticamente 2 por folha. paginas=' . $pages . ' arquivo=' . $printedFile);
             }
             $billableSourcePages = $this->selectedPageCount($pages, $extraOptions);
             $printedPagesLabel = $this->printedPagesLabel($pages, $extraOptions, $billableSourcePages);
-            $jobService->updateSelection($jobId, $printedPagesLabel, $billableSourcePages);
+            if ($jobId !== null) {
+                $jobService->updateSelection($jobId, $printedPagesLabel, $billableSourcePages);
+            }
             $printOptions = $extraOptions;
             if ($this->hasPageSelection($extraOptions)) {
                 $selectedFile = $printer->selectPdfPages($printedFile, $pages, $extraOptions);
@@ -522,6 +539,17 @@ class PrintController
                 }
             }
             $chargedPages = $this->billablePages($billableSourcePages, $copies, $numberUp);
+            if ($enqueue) {
+                $queue = new PrintQueueService();
+                $jobId = $queue->enqueue(
+                    $createJob, $printedFile, $pages, $chargedPages, $quality, $printOptions, $printedPagesLabel, $billableSourcePages
+                );
+                $message = 'Impressão deixada na fila. Acompanhe ou cancele em Meus envios enquanto aguarda.';
+                if ($this->isAjax()) {
+                    $this->respond($message, true, ['queued' => true, 'job_id' => $jobId, 'counted' => false]);
+                }
+                $this->flash($message);
+            }
             $jobService->markProcessing($jobId, $printedFile, $pages, $chargedPages);
 
             $completed = $printer->printPrepared($printedFile, $sourceExt, $copies, $sides, $orientation, $quality, $numberUp, $printOptions);
@@ -530,6 +558,7 @@ class PrintController
         } catch (Throwable $e) {
             $printer->log("Erro interno ao imprimir: " . $e->getMessage());
             $errorMessage = $this->safeErrorMessage($e->getMessage());
+            $jobId ??= $createJob($jobService);
             $jobService->updateCupsResult($jobId, $printer->lastPrintResult());
             $success = false;
         }

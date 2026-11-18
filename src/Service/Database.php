@@ -61,6 +61,7 @@ class Database
                 original_name TEXT NOT NULL,
                 stored_file TEXT NULL,
                 prepared_file TEXT NULL,
+                queue_payload TEXT NULL,
                 source_ext TEXT NULL,
                 mime_type TEXT NULL,
                 file_size INTEGER NOT NULL DEFAULT 0,
@@ -98,6 +99,7 @@ class Database
 
         $columns = [
             'nome_professor' => 'TEXT NULL',
+            'queue_payload' => 'TEXT NULL',
             'mime_type' => 'TEXT NULL',
             'file_size' => 'INTEGER NOT NULL DEFAULT 0',
             'confirmed_pages' => 'INTEGER NOT NULL DEFAULT 0',

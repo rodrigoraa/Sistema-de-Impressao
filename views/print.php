@@ -27,7 +27,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/print.css?v=20261117-8">
+    <link rel="stylesheet" href="/css/print.css?v=20261118-1">
 
 </head>
 
@@ -256,11 +256,18 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                             <div id="preview"></div>
 
                             <div class="print-confirmation mt-3">
-                                <div class="<?= $sharedMode ? 'print-actions' : '' ?>">
+                                <?php $canQueue = PrintQueueService::supported() && !empty($_ENV['PRINTER_NAME']); ?>
+                                <div class="<?= ($sharedMode || $canQueue) ? 'print-actions' : '' ?>">
                                     <button type="submit" form="printForm" id="btnPrint" class="btn btn-primary w-100" aria-describedby="printerBlockNotice" <?= (($printerStatus['can_print'] ?? true) === false) ? 'disabled' : '' ?>>
                                         <span class="text"><?= $sharedMode ? 'Confirmar impressão' : 'Enviar para impressão' ?></span>
                                         <span class="spinner-border spinner-border-sm d-none"></span>
                                     </button>
+
+                                    <?php if ($canQueue): ?>
+                                        <button type="submit" form="printForm" id="btnQueue" name="print_action" value="queue" class="btn btn-outline-primary w-100" disabled>
+                                            Deixar na fila
+                                        </button>
+                                    <?php endif; ?>
 
                                     <?php if ($sharedMode): ?>
                                         <button type="submit" form="shareCancelForm" class="btn btn-outline-danger w-100">
@@ -300,6 +307,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
 
         const printForm = document.getElementById('printForm');
         const btnPrint = document.getElementById('btnPrint');
+        const btnQueue = document.getElementById('btnQueue');
         const resultBox = document.getElementById('printResult');
         const csrfToken = <?= json_encode($_SESSION['csrf_token']) ?>;
         const reviewOptions = <?= json_encode($reviewOptions ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
@@ -353,6 +361,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
         }
 
         function updateEstimate() {
+            if (btnQueue) btnQueue.disabled = printingActive || submissionChecking || submissionLocked || documentRecalculating || !uploadToken || sharedPrintCompleted;
             const total = document.getElementById('estimateTotal');
             const state = document.getElementById('sendState');
             const result = paperEstimate();
@@ -910,11 +919,11 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 .replace(/'/g, '&#039;');
         }
 
-        function showPrintResult(message, success) {
+        function showPrintResult(message, success, queued = false) {
             resultBox.className = `alert print-notice print-notice-${success ? 'success' : 'danger'}`;
             resultBox.setAttribute('role', success ? 'status' : 'alert');
             resultBox.setAttribute('aria-live', success ? 'polite' : 'assertive');
-            resultBox.innerHTML = `<i aria-hidden="true" class="bi ${success ? 'bi-check-circle-fill' : 'bi-exclamation-octagon-fill'}"></i><div><strong>${success ? 'Resposta do envio' : 'Atenção ao envio'}</strong><p>${escapeHtml(message)}</p></div>`;
+            resultBox.innerHTML = `<i aria-hidden="true" class="bi ${success ? 'bi-check-circle-fill' : 'bi-exclamation-octagon-fill'}"></i><div><strong>${success ? 'Resposta do envio' : 'Atenção ao envio'}</strong><p>${escapeHtml(message)}</p>${queued ? '<a href="/prints">Acompanhar em Meus envios</a>' : ''}</div>`;
             resultBox.focus({ preventScroll: true });
             resultBox.classList.remove('d-none');
             resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1034,20 +1043,22 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             }, 5000);
         }
 
-        function setPrintingState(active) {
+        function setPrintingState(active, queueing = false) {
             printingActive = active;
             const text = btnPrint.querySelector('.text');
             const spinner = btnPrint.querySelector('.spinner-border');
             const awaitingUpload = !uploadToken || documentRecalculating || submissionLocked;
             btnPrint.disabled = active || submissionChecking || awaitingUpload || printerStatus.can_print !== true || (sharedMode && sharedPrintCompleted);
-            text.textContent = active ? 'Enviando...' : (submissionLocked ? 'Confira em Meus envios' : null) || (sharedMode && sharedPrintCompleted ? 'Enviado' : (sharedMode ? 'Confirmar impressão' : 'Enviar para impressão'));
-            spinner.classList.toggle('d-none', !active);
+            if (btnQueue) btnQueue.textContent = active && queueing ? 'Guardando na fila…' : 'Deixar na fila';
+            text.textContent = active && !queueing ? 'Enviando...' : (submissionLocked ? 'Confira em Meus envios' : null) || (sharedMode && sharedPrintCompleted ? 'Enviado' : (sharedMode ? 'Confirmar impressão' : 'Enviar para impressão'));
+            spinner.classList.toggle('d-none', !active || queueing);
             progress.classList.toggle('d-none', !active);
             printForm.querySelectorAll('input, select, button').forEach(element => { element.disabled = active; });
             if (!active) {
                 try { document.getElementById('loadFavorite').disabled = !localStorage.getItem(favoriteKey); } catch { document.getElementById('loadFavorite').disabled = true; }
             }
-            document.getElementById('sendState').textContent = active ? 'Enviando à impressora. Aguarde a resposta.' : (submissionLocked ? 'Confira o resultado em Meus envios antes de uma nova impressão.' : (uploadToken ? 'Arquivo pronto. Confira as opções antes de enviar.' : 'Escolha um arquivo para preparar o envio.'));
+            document.getElementById('sendState').textContent = active ? (queueing ? 'Guardando impressão na fila.' : 'Enviando à impressora. Aguarde a resposta.') : (submissionLocked ? 'Confira o resultado em Meus envios antes de uma nova impressão.' : (uploadToken ? 'Arquivo pronto. Confira as opções antes de enviar.' : 'Escolha um arquivo para preparar o envio.'));
+            updateEstimate();
             renderPreviewSummary();
         }
 
@@ -1064,19 +1075,23 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 showFieldError(targetUserSearch, 'Selecione um professor da lista.');
                 return;
             }
-            const checkingUploadToken = uploadToken;
-            submissionChecking = true;
-            btnPrint.disabled = true;
-            btnPrint.querySelector('.text').textContent = 'Verificando impressora…';
-            try { await refreshPrinterStatus(); }
-            finally {
-                submissionChecking = false;
-                setPrintingState(false);
-            }
-            if (!uploadToken || uploadToken !== checkingUploadToken || documentRecalculating || !validatePrintOptions()) return;
-            if (printerStatus.can_print !== true) {
-                showPrintResult(printerStatus.notice || 'A impressora não está disponível agora. Avise a equipe de TI.', false);
-                return;
+            const queueing = btnQueue !== null && event.submitter === btnQueue;
+            if (!queueing) {
+                const checkingUploadToken = uploadToken;
+                submissionChecking = true;
+                btnPrint.disabled = true;
+                updateEstimate();
+                btnPrint.querySelector('.text').textContent = 'Verificando impressora…';
+                try { await refreshPrinterStatus(); }
+                finally {
+                    submissionChecking = false;
+                    setPrintingState(false);
+                }
+                if (!uploadToken || uploadToken !== checkingUploadToken || documentRecalculating || !validatePrintOptions()) return;
+                if (printerStatus.can_print !== true) {
+                    showPrintResult(printerStatus.notice || 'A impressora não está disponível agora. Avise a equipe de TI.', false);
+                    return;
+                }
             }
             clearTimeout(previewDebounceTimer);
             if (previewController) previewController.abort();
@@ -1087,9 +1102,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
             resultBox.classList.add('d-none');
             progress.classList.remove('d-none');
             const printData = new FormData(printForm);
-            setPrintingState(true);
-
-
+            if (queueing) printData.set('print_action', 'queue');
+            setPrintingState(true, queueing);
 
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 300000);
@@ -1117,7 +1131,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                 })
                 .then(data => {
                     if (data.success === undefined) submissionLocked = true;
-                    showPrintResult(data.message || 'Confira Meus envios para verificar o resultado.', !!data.success);
+                    showPrintResult(data.message || 'Confira Meus envios para verificar o resultado.', !!data.success, data.queued === true);
                     if (data.success) {
                         if (sharedMode) {
                             sharedPrintCompleted = true;
@@ -1126,7 +1140,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
                             uploadTokenInput.value = '';
                         }
                         submissionLocked = true;
-                        startPostPrintStatusWatch();
+                        if (data.queued !== true) startPostPrintStatusWatch();
                     }
                 })
                 .catch(error => {

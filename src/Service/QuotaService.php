@@ -6,9 +6,9 @@ class QuotaService
 {
     private $db;
 
-    public function __construct()
+    public function __construct(?SQLite3 $db = null)
     {
-        $this->db = Database::connect();
+        $this->db = $db ?? Database::connect();
     }
 
     // ✔ registra uso

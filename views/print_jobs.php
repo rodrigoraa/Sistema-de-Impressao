@@ -28,6 +28,8 @@ $statusLabels = [
     'queued' => ['label' => 'Na fila', 'class' => 'text-bg-secondary', 'icon' => 'bi-hourglass-split'],
     'processing' => ['label' => 'Enviando', 'class' => 'text-bg-info', 'icon' => 'bi-arrow-repeat'],
     'completed' => ['label' => 'Impresso', 'class' => 'text-bg-success', 'icon' => 'bi-check-circle'],
+    'canceled' => ['label' => 'Cancelada', 'class' => 'text-bg-secondary', 'icon' => 'bi-x-circle'],
+    'interrupted' => ['label' => 'Envio interrompido', 'class' => 'text-bg-warning', 'icon' => 'bi-exclamation-triangle'],
     'failed' => ['label' => 'Erro', 'class' => 'text-bg-danger', 'icon' => 'bi-exclamation-triangle'],
 ];
 $cupsLabels = [
@@ -101,24 +103,19 @@ $hasPartialSelection = function ($job) {
 };
 $statusFilters = [
     '' => 'Todo o histórico',
+    'active' => 'Fila',
+    'queued' => 'Na fila',
+    'processing' => 'Enviando',
     'completed' => 'Concluídas',
+    'canceled' => 'Canceladas',
+    'interrupted' => 'Interrompidas',
     'failed' => 'Erros',
 ];
-if ($isAdmin) {
-    $statusFilters = [
-        '' => 'Todo o histórico',
-        'active' => 'Fila',
-        'queued' => 'Na fila',
-        'processing' => 'Enviando',
-        'completed' => 'Concluídas',
-        'failed' => 'Erros',
-    ];
-}
 $currentStatus = $_GET['status'] ?? '';
 $pageHeading = $isAdmin ? 'Histórico completo de impressão' : 'Meus envios';
 $pageDescription = $isAdmin ? 'Todas as impressões de todos os professores' : 'Acompanhe seus envios e use um arquivo novamente quando precisar.';
 if ($currentStatus === 'active') {
-    $pageHeading = 'Fila de impressão';
+    $pageHeading = $isAdmin ? 'Fila de impressão' : 'Meus envios';
     $pageDescription = 'Pendentes e em envio';
 } elseif ($currentStatus === 'completed') {
     $pageHeading = 'Impressões concluídas';
@@ -346,7 +343,10 @@ if ($currentStatus === 'active') {
                                         $selected = $selectedCount($job);
                                         $partialSelection = $hasPartialSelection($job);
                                         $sheetsPerCopy = max(1, (int) ceil(max(1, $selected) / max(1, (int) ($job['number_up'] ?? 1))));
-                                        $canCancel = $isAdmin && !$isLegacyUsage && in_array((string) ($job['status'] ?? ''), ['queued', 'processing'], true);
+                                        $managed = !empty($job['queue_payload']);
+                                        $waiting = $managed && $job['status'] === 'queued';
+                                        $canPrintAgain = PrintQueueService::canPrintAgain($job);
+                                        $canCancel = !$managed && $isAdmin && !$isLegacyUsage && in_array($job['status'], ['queued', 'processing'], true);
                                         $hasCupsJob = trim((string) ($job['cups_job_id'] ?? '')) !== '';
                                     ?>
                                     <tr>
@@ -361,6 +361,9 @@ if ($currentStatus === 'active') {
                                                 <small class="d-block text-muted">Registro antigo do acumulado mensal</small>
                                             <?php else: ?>
                                                 <small class="d-block text-muted">
+                                                    <?php if ($managed && !empty($job['printer'])): ?>
+                                                        <?= htmlspecialchars($job['printer']) ?> ·
+                                                    <?php endif; ?>
                                                     Servidor: <?= htmlspecialchars($job['cups_job_id'] ?: '-') ?>
                                                     <span class="badge <?= htmlspecialchars($cupsMeta['class']) ?>"><?= htmlspecialchars($cupsMeta['label']) ?></span>
                                                 </small>
@@ -407,7 +410,7 @@ if ($currentStatus === 'active') {
                                                 <?php if (!$isLegacyUsage): ?>
                                                     <div class="job-action-buttons">
                                                         <a class="btn btn-outline-secondary btn-sm" title="Baixar arquivo" href="/prints/download?id=<?= (int) $job['id'] ?>"><i aria-hidden="true" class="bi bi-download"></i> Baixar</a>
-                                                        <?php if ($canCancel && $hasCupsJob): ?>
+                                                        <?php if ($waiting || ($canCancel && $hasCupsJob)): ?>
                                                             <form novalidate method="post" action="/prints/cancel" class="d-inline">
                                                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                                                 <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
@@ -416,19 +419,21 @@ if ($currentStatus === 'active') {
                                                         <?php elseif ($canCancel): ?>
                                                             <button class="btn btn-outline-danger btn-sm" disabled title="Aguardando número no CUPS para cancelar"><i aria-hidden="true" class="bi bi-x-circle"></i> Cancelar</button>
                                                         <?php endif; ?>
-                                                        <form novalidate method="post" action="/prints/reuse" class="d-inline">
-                                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                                                            <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
-                                                            <button class="btn btn-outline-primary btn-sm">Usar arquivo novamente</button>
-                                                        </form>
-                                                        <?php if ($partialSelection): ?>
-                                                            <button class="btn btn-outline-secondary btn-sm" disabled title="Faça uma nova impressão para repetir a seleção de páginas"><i aria-hidden="true" class="bi bi-arrow-repeat"></i> Reimprimir</button>
-                                                        <?php else: ?>
-                                                            <form novalidate method="post" action="/prints/reprint" class="d-inline">
+                                                        <?php if ($canPrintAgain): ?>
+                                                            <form novalidate method="post" action="/prints/reuse" class="d-inline">
                                                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                                                 <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
-                                                                <button type="button" class="btn btn-outline-primary btn-sm" title="Reimprimir" data-confirm="Reimprimir com as mesmas opções e quantidade de cópias?"><i aria-hidden="true" class="bi bi-arrow-repeat"></i> Reimprimir</button>
+                                                                <button class="btn btn-outline-primary btn-sm">Usar arquivo novamente</button>
                                                             </form>
+                                                            <?php if ($partialSelection): ?>
+                                                                <button class="btn btn-outline-secondary btn-sm" disabled title="Faça uma nova impressão para repetir a seleção de páginas"><i aria-hidden="true" class="bi bi-arrow-repeat"></i> Reimprimir</button>
+                                                            <?php else: ?>
+                                                                <form novalidate method="post" action="/prints/reprint" class="d-inline">
+                                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                                                    <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
+                                                                    <button type="button" class="btn btn-outline-primary btn-sm" title="Reimprimir" data-confirm="Reimprimir com as mesmas opções e quantidade de cópias?"><i aria-hidden="true" class="bi bi-arrow-repeat"></i> Reimprimir</button>
+                                                                </form>
+                                                            <?php endif; ?>
                                                         <?php endif; ?>
                                                     </div>
                                                     <?php if ($isAdmin && ($job['status'] ?? '') === 'completed'): ?>

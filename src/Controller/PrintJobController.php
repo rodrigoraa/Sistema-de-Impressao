@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../Service/AuthService.php';
 require_once __DIR__ . '/../Service/CupsService.php';
 require_once __DIR__ . '/../Service/PrintJobService.php';
+require_once __DIR__ . '/../Service/PrintQueueService.php';
 require_once __DIR__ . '/../Service/PrintService.php';
 require_once __DIR__ . '/../Service/PageCounter.php';
 require_once __DIR__ . '/../Service/QuotaService.php';
@@ -18,10 +19,6 @@ class PrintJobController
 
         $status = $_GET['status'] ?? '';
         $isAdmin = AuthService::isAdmin();
-        if (!$isAdmin && in_array($status, ['active', 'queued', 'processing'], true)) {
-            $status = '';
-            $_GET['status'] = '';
-        }
         $service = new PrintJobService();
         $jobs = $service->listForUser($_SESSION['user'], $isAdmin, $status, 150, [
             'search' => is_string($_GET['search'] ?? '') ? substr($_GET['search'] ?? '', 0, 150) : '',
@@ -85,6 +82,9 @@ class PrintJobController
         if ($job === null || !$this->isDownloadableFile($job['stored_file'] ?? null)) {
             http_response_code(404);
             exit('Arquivo não encontrado para reutilização.');
+        }
+        if (!PrintQueueService::canPrintAgain($job)) {
+            $this->finish('Confira o resultado desta impressão antes de usar o arquivo novamente.', false);
         }
         require_once __DIR__ . '/PrintController.php';
         $controller = new PrintController();
@@ -171,6 +171,9 @@ class PrintJobController
         if ($job === null || empty($job['stored_file']) || !$this->isDownloadableFile($job['stored_file'])) {
             $this->finish('Arquivo original não encontrado para reimpressão', false);
         }
+        if (!PrintQueueService::canPrintAgain($job)) {
+            $this->finish('Confira o resultado desta impressão antes de reenviar.', false);
+        }
         if ($this->hasPartialSelection($job)) {
             $this->finish('Esta impressão usou seleção de páginas. Para evitar imprimir páginas a mais, faça uma nova impressão escolhendo o mesmo intervalo.', false);
         }
@@ -221,31 +224,45 @@ class PrintJobController
             header('Location: /login');
             exit;
         }
-        if (!AuthService::isAdmin()) {
-            http_response_code(403);
-            exit('Acesso negado');
-        }
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             http_response_code(405);
             exit('Método inválido');
         }
 
         $token = $_POST['csrf_token'] ?? '';
-        if (!is_string($token) || !hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
+        $expected = $_SESSION['csrf_token'] ?? '';
+        if (!is_string($token) || $expected === '' || !hash_equals($expected, $token)) {
             $this->finish('Token CSRF inválido', false, '/prints?status=active');
         }
 
         $service = new PrintJobService();
+        $isAdmin = AuthService::isAdmin();
+        $id = (int) ($_POST['id'] ?? 0);
         $cupsJobId = trim((string) ($_POST['cups_job_id'] ?? ''));
-        $job = null;
+        $job = $cupsJobId === '' ? $service->findVisible($id, $_SESSION['user'], $isAdmin) : null;
+        if (!empty($job['queue_payload'])) {
+            $canceled = (new PrintQueueService())->cancel($id, $_SESSION['user'], $isAdmin);
+            $this->finish(
+                $canceled ? 'Impressão cancelada antes do envio.' : 'O trabalho saiu da fila de espera. Confira a situação em Meus envios.',
+                $canceled
+            );
+        }
+        if (!$isAdmin) {
+            http_response_code(403);
+            exit('Acesso negado');
+        }
+
         if ($cupsJobId !== '') {
             $job = $service->findByCupsJobId($cupsJobId);
         } else {
-            $job = $service->findVisible((int) ($_POST['id'] ?? 0), $_SESSION['user'], true);
             if ($job === null || !empty($job['legacy_usage'])) {
                 $this->finish('Impressão não encontrada para cancelamento.', false, '/prints?status=active');
             }
             $cupsJobId = trim((string) ($job['cups_job_id'] ?? ''));
+        }
+
+        if (!empty($job['queue_payload']) && $job['status'] === 'processing') {
+            $this->finish('O servidor está registrando o envio. Atualize a fila do CUPS para cancelar depois.', false, '/prints?status=active');
         }
 
         if ($cupsJobId === '') {

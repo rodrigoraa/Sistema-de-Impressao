@@ -9,9 +9,14 @@ class PrintService
     private $lastPrintCompleted = null;
     private $lastPrintResult = [];
 
-    public function __construct()
+    private $onCupsJobId;
+    private $beforeCupsSend;
+
+    public function __construct($printerName = null, ?Closure $onCupsJobId = null, ?Closure $beforeCupsSend = null)
     {
-        $this->printerName = $_ENV['PRINTER_NAME'] ?? '';
+        $this->printerName = $printerName ?? ($_ENV['PRINTER_NAME'] ?? '');
+        $this->onCupsJobId = $onCupsJobId;
+        $this->beforeCupsSend = $beforeCupsSend;
         $this->isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
     }
 
@@ -753,9 +758,15 @@ class PrintService
         }
 
         $cupsOrientation = in_array($sourceExt, ['jpg', 'jpeg', 'png', 'webp'], true) ? '' : $orientation;
+        if ($this->beforeCupsSend !== null && !($this->beforeCupsSend)()) {
+            return false;
+        }
         $send = $cups->runLp($filePath, $copies, $sides, $cupsOrientation, $quality, $numberUp, $extraOptions);
         $send['diagnostics'] = $preflight['diagnostics'] ?? [];
         $this->lastPrintResult = $send;
+        if (!empty($send['job_id']) && $this->onCupsJobId !== null) {
+            ($this->onCupsJobId)($send);
+        }
 
         if (!$send['success']) {
             throw new RuntimeException($send['error_message'] ?: 'Falha ao enviar arquivo para a impressora');

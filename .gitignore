@@ -7,3 +7,4 @@ storage/uploads/
 storage/share-target/
 storage/print-temp/
 storage/print-debug/
+storage/print-queue/

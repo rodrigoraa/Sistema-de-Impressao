@@ -1,0 +1,11 @@
+[Unit]
+Description=Processa a fila persistente do Sistema de Impressão
+After=cups.service
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/impressao
+ExecStart=/usr/bin/php /var/www/impressao/scripts/print_queue_worker.php
+UMask=0077

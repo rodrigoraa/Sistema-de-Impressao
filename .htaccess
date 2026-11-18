@@ -1,4 +1,5 @@
 RewriteEngine On
+RewriteRule ^(?:public/)?storage/print-queue(?:/|$) - [F,L,NC]
 
 # Se o servidor estiver apontando para a raiz do projeto (e não para /public),
 # redireciona tudo para /public mantendo o path.

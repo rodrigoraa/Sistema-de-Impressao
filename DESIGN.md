@@ -32,3 +32,5 @@ Limitar rasterização a 4 megapixels e 4096px por borda, até densidade 2x. Red
 
 ## Impressora indisponível
 A disponibilidade deve vir da fila e de consulta ao equipamento físico; falha/ausência de status não é prontidão. Alertas bloqueantes aparecem no topo com título, ícone e borda existente e também em uma frase junto ao botão desativado. Não repetir anúncios idênticos a cada consulta. Suprimentos baixos são aviso; falta de suprimento, papel, atolamento, tampa aberta, equipamento parado, comunicação ou consulta falha impedem envio. Recuperar automaticamente após consulta saudável, preservando arquivo/opções. Consultar sem cache a cada 10s, ao retomar e antes de enviar; servidor repete a validação independentemente do navegador.
+
+Na confirmação de impressão, **Deixar na fila** é a ação secundária e usa o mesmo arquivo e as mesmas opções do envio imediato. Continua disponível com a impressora indisponível. Confirme o aceite da fila com um link para **Meus envios**. No histórico, mostre **Cancelar** enquanto o trabalho estiver em espera e indique **Envio interrompido** com instrução de conferência quando houver risco de duplicação.

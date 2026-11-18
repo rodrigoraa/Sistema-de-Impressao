@@ -14,6 +14,12 @@
 - Acesse `/setup` para criar o primeiro usuário administrador.
 - Depois faça login em `/login` e crie os demais usuários em `/admin/users`.
 
+## Fila persistente de impressão
+
+**Deixar na fila** guarda o trabalho para envio automático pelo servidor Linux.
+O professor pode cancelar em **Meus envios** enquanto o trabalho continua pendente.
+Use o [passo a passo de instalação da fila](docs/instalacao-fila-impressao.md) para ativar o worker no systemd.
+
 ## Configuração
 Você pode configurar via `config/config.php` ou criando um arquivo `.env` na raiz do projeto:
 
