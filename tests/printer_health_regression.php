@@ -66,7 +66,8 @@ class DiagnosticsHealthFixture extends CupsService {
         return ['success'=>true];
     }
 }
-$server=stream_socket_server('tcp://127.0.0.1:0',$errno,$error);
+$socketContext = stream_context_create(['socket' => ['backlog' => 128]]);
+$server=stream_socket_server('tcp://127.0.0.1:0',$errno,$error, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $socketContext);
 $logDir=sys_get_temp_dir().'/health-log-'.bin2hex(random_bytes(6));mkdir($logDir,0700);
 $_ENV['LOG_PATH']=$logDir.'/app.log';$_ENV['CUPS_AUTO_ENABLE']='1';
 $diag=new DiagnosticsHealthFixture('fixture');
@@ -99,6 +100,42 @@ $diag->attributes = $ipp('other-error', 'stopped');
 $diag->queueMessage = 'printer-state-message=Paper tray 2 open';
 healthAssert($diag->diagnostics()['reason'] === 'bandeja de papel aberta', 'Estado genérico do IPP mascarou o detalhe disponível no CUPS.');
 $diag->queueMessage = '';
+$notices = [
+    ['output-area-full-error', 'stopped', false, 'bandeja de saída está cheia'],
+    ['output-area-almost-full-warning', 'idle', true, 'bandeja de saída está quase cheia'],
+    ['output-tray-missing-error', 'stopped', false, 'bandeja de saída está ausente'],
+    ['media-low-warning', 'idle', true, 'nível de papel está baixo'],
+    ['marker-waste-full-error', 'stopped', false, 'coletor de resíduos está cheio'],
+    ['fuser-over-temp-error', 'stopped', false, 'fusor está acima da temperatura'],
+    ['fuser-under-temp-error', 'stopped', false, 'fusor está abaixo da temperatura'],
+    ['interlock-open-error', 'stopped', false, 'trava de segurança está aberta'],
+    ['spool-area-full-error', 'stopped', false, 'memória da fila da impressora está cheia'],
+    ['service-request-error', 'stopped', false, 'solicitou manutenção'],
+    ['shutdown-error', 'stopped', false, 'está desligando'],
+    ['developer-empty-error', 'stopped', false, 'unidade reveladora está vazia'],
+    ['opc-life-over-error', 'stopped', false, 'unidade de imagem atingiu o fim'],
+    ['paused', 'stopped', false, 'impressão foi pausada no equipamento'],
+    ['processing-to-stop-point', 'processing', false, 'está interrompendo o trabalho atual'],
+    ['moving-to-paused', 'processing', false, 'está entrando em pausa'],
+    ['stopped-partly-error', 'stopped', false, 'Parte do equipamento está parada'],
+    ['interpreter-resource-unavailable-error', 'stopped', false, 'precisa de um recurso para processar'],
+    ['connecting-to-device', 'processing', false, 'tentando conectar-se ao equipamento'],
+    ['output-area-full-report,vendor-feed-sensor-error', 'stopped', false, 'vendor-feed-sensor-error'],
+    ['vendor-feed-sensor-warning', 'idle', true, 'vendor-feed-sensor-warning'],
+];
+foreach ($notices as [$code, $state, $canPrint, $copy]) {
+    $diag->attributes = $ipp($code, $state);
+    $status = $diag->diagnostics();
+    healthAssert($status['can_print'] === $canPrint && str_contains($status['notice'], $copy), 'Aviso incorreto para ' . $code . ': ' . $status['notice']);
+}
+$diag->attributes = $ipp('other-error', 'stopped');
+$diag->queueMessage = 'printer-state-reasons=output-area-full-error';
+healthAssert(str_contains($diag->diagnostics()['notice'], 'bandeja de saída está cheia'), 'A causa informada pela fila foi mascarada por uma parada genérica.');
+$diag->queueMessage = '';
+$diag->enabled = false;
+$diag->attributes = $ipp('other-error', 'stopped', 'printer-state-message (textWithoutLanguage) = Erro E150: verifique a unidade de imagem');
+healthAssert(str_contains($diag->diagnostics()['notice'], 'Erro E150'), 'A desativação da fila mascarou a falha informada pela impressora.');
+$diag->enabled = true;
 $diag->attributes = $ipp('other-error', 'stopped', 'printer-state-message (textWithoutLanguage) = Erro E042: manutenção necessária');
 healthAssert(str_contains($diag->diagnostics()['notice'], 'Erro E042: manutenção necessária'), 'Mensagem específica do equipamento foi perdida.');
 $diag->attributes = $ipp('other-error', 'stopped', "printer-state-message (textWithoutLanguage) = Stopped

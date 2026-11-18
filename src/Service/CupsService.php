@@ -139,20 +139,28 @@ class CupsService
 
         $combined = trim($printerText . "\n" . $acceptText . "\n" . $stateText);
         $ippText = $this->ippAttributesText($ippStatus);
-        $physical = (new PrinterHealthService())->interpret($ippStatus['attributes'] ?? null);
+        $health = new PrinterHealthService();
+        $physical = $health->interpret($ippStatus['attributes'] ?? null);
+        $queueCondition = $health->interpretQueueReasons($combined);
         $status['physical_verified'] = $physical['verified'];
         $status['physical_detail'] = $physical['detail'] ?? '';
+        $status['physical_can_print'] = $physical['can_print'];
+        $status['physical_reason'] = $physical['reason'];
         $status['physical_reachable'] = $ippStatus['reachable'] ?? null;
         $status['reason'] = $this->classifyReason($combined, $ippText);
+        $genericPhysicalFault = in_array($physical['reason'], ['impressora parada', 'falha no equipamento'], true);
+        $queueBlocks = ($queueCondition['can_print'] ?? true) === false;
+        $queueReportsTray = $status['reason'] === 'bandeja de papel aberta' && $genericPhysicalFault;
         if ($status['physical_reachable'] === false) {
             $status['reason'] = 'offline';
-        } elseif ($physical['verified'] && !$physical['can_print']
-            && !(in_array($physical['reason'], ['impressora parada', 'falha no equipamento'], true)
-                && $status['reason'] === 'bandeja de papel aberta')) {
-            $status['reason'] = $physical['reason'];
-        } elseif ($status['reason'] === '') {
+        } elseif (!$queueReportsTray && $queueBlocks && ($genericPhysicalFault || !$physical['verified'] || $physical['can_print'])) {
+            $status['reason'] = $queueCondition['reason'];
+        } elseif (!$queueReportsTray && (($physical['verified'] && !$physical['can_print']) || $status['reason'] === '')) {
             $status['reason'] = $physical['reason'];
         }
+        $status['condition_blocks'] = ($queueBlocks && $status['reason'] === $queueCondition['reason'])
+            || ($status['physical_verified'] && !$physical['can_print'] && $status['reason'] === $physical['reason']
+                && PrinterHealthService::noticeFor($physical['reason']) !== null);
         if ($printerStatus['return_code'] !== 0 || $acceptStatus['return_code'] !== 0 || $stateStatus['return_code'] !== 0) {
             $status['last_error'] = $this->truncate($combined, 1000);
         } elseif ($status['reason'] !== '') {
@@ -349,7 +357,7 @@ class CupsService
 
                 $lastDiagnostics = $this->diagnostics(false);
                 $diagReason = $lastDiagnostics['reason'] ?? '';
-                if ($this->isBlockingPrinterReason($diagReason)) {
+                if ($this->isBlockingPrinterReason($diagReason) || !empty($lastDiagnostics['condition_blocks'])) {
                     return [
                         'completed' => false,
                         'status_cups' => 'printer_fault',
@@ -560,7 +568,7 @@ class CupsService
         while (time() <= $deadline) {
             $lastDiagnostics = $this->diagnostics(false);
             $reason = $lastDiagnostics['reason'] ?? '';
-            if ($this->isBlockingPrinterReason($reason)) {
+            if ($this->isBlockingPrinterReason($reason) || !empty($lastDiagnostics['condition_blocks'])) {
                 return [
                     'completed' => false,
                     'status_cups' => 'printer_fault',
@@ -902,6 +910,22 @@ class CupsService
             $status['notice'] = 'A impressora configurada não foi encontrada pelo servidor. Avise a equipe de TI.';
             return;
         }
+        $conditionNotice = PrinterHealthService::noticeFor($reason);
+        if ($conditionNotice !== null && !empty($status['condition_blocks'])) {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'danger';
+            $status['notice'] = $conditionNotice;
+            return;
+        }
+        if ($reason === 'impressora parada' || $reason === 'falha no equipamento') {
+            $status['can_print'] = false;
+            $status['notice_type'] = 'danger';
+            $detail = $status['physical_detail'] ?? '';
+            $status['notice'] = $detail !== ''
+                ? 'O equipamento bloqueou a impressão e informou “' . $detail . '”. Confira o painel da impressora ou avise a equipe de TI.'
+                : 'A impressora informou uma falha sem detalhar a causa. Confira a mensagem no painel da impressora ou avise a equipe de TI.';
+            return;
+        }
         if ($enabled === false) {
             $status['can_print'] = false;
             $status['notice_type'] = 'warning';
@@ -914,19 +938,33 @@ class CupsService
             $status['notice'] = 'A impressora não está aceitando novas impressões no servidor. Avise a equipe de TI.';
             return;
         }
-        if ($reason === 'impressora parada' || $reason === 'falha no equipamento') {
+        if (($status['queue_verified'] ?? false) !== true) {
             $status['can_print'] = false;
             $status['notice_type'] = 'danger';
-            $detail = $status['physical_detail'] ?? '';
-            $status['notice'] = $detail !== ''
-                ? 'O equipamento bloqueou a impressão e exibiu a mensagem “' . $detail . '”. Confira o painel da impressora ou avise a equipe de TI.'
-                : 'A impressora informou uma falha sem detalhar a causa. Confira a mensagem no painel da impressora ou avise a equipe de TI.';
+            $status['notice'] = match ($reason) {
+                'permissão negada' => 'O serviço de impressão negou acesso à fila. Avise a equipe de TI para verificar as permissões.',
+                'tempo esgotado' => 'A consulta à fila de impressão demorou demais. Aguarde uma nova consulta ou avise a equipe de TI.',
+                default => 'O servidor não conseguiu confirmar o estado da fila de impressão. Aguarde uma nova consulta ou avise a equipe de TI.',
+            };
             return;
         }
-        if (($status['physical_verified'] ?? false) !== true || ($status['queue_verified'] ?? false) !== true) {
+        if (($status['physical_verified'] ?? false) !== true) {
             $status['can_print'] = false;
             $status['notice_type'] = 'danger';
-            $status['notice'] = 'Não foi possível confirmar o estado da impressora. O envio está bloqueado; avise a equipe de TI.';
+            $status['notice'] = 'A fila do servidor respondeu, mas o equipamento não forneceu um estado válido. Confira o painel da impressora ou avise a equipe de TI.';
+            return;
+        }
+        if ($conditionNotice !== null) {
+            $status['notice_type'] = 'warning';
+            $status['notice'] = $conditionNotice . ' Ainda é possível imprimir.';
+            return;
+        }
+        if ($reason === 'aviso do equipamento') {
+            $status['notice_type'] = 'warning';
+            $detail = $status['physical_detail'] ?? '';
+            $status['notice'] = $detail !== ''
+                ? 'A impressora informou “' . $detail . '”. Ainda é possível imprimir.'
+                : 'A impressora emitiu um aviso. Confira o painel se o aviso persistir. Ainda é possível imprimir.';
             return;
         }
         if ($reason === 'suprimento baixo') {
@@ -1007,6 +1045,9 @@ class CupsService
 
         if (($status['physical_verified'] ?? false) !== true || ($status['queue_verified'] ?? false) !== true
             || ($status['physical_reachable'] ?? null) === false
+            || !empty($status['condition_blocks'])
+            || (($status['physical_can_print'] ?? true) === false
+                && ($status['physical_reason'] ?? '') !== 'impressora não aceita impressões')
             || in_array($status['reason'] ?? '', ['falta de papel','atolamento de papel','toner ou suprimento','tampa aberta','bandeja de papel aberta','offline','falha no equipamento','impressora parada'], true)) return false;
         return $this->autoEnableThrottleAllows();
     }
