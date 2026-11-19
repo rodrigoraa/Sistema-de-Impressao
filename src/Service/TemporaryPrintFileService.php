@@ -41,6 +41,23 @@ class TemporaryPrintFileService
 
     public function createFromExisting($sourcePath, $fileInfo)
     {
+        return $this->copyExistingSource($sourcePath, $fileInfo);
+    }
+
+    public function createPdfPreview(string $sourcePath): array
+    {
+        $key = bin2hex(random_bytes(32));
+        $name = 'preview-' . $key . '.pdf';
+        $metadata = $this->copyExistingSource($sourcePath, ['extension' => 'pdf'], $name);
+        return [
+            'token' => $metadata['token'],
+            'key' => $key,
+            'path' => $this->tokenDirectory($metadata['token']) . DIRECTORY_SEPARATOR . $name,
+        ];
+    }
+
+    private function copyExistingSource($sourcePath, $fileInfo, ?string $name = null)
+    {
         if (!is_file($sourcePath)) {
             throw new RuntimeException('Arquivo de origem não encontrado.');
         }
@@ -52,16 +69,19 @@ class TemporaryPrintFileService
         }
 
         $extension = strtolower((string) ($fileInfo['extension'] ?? pathinfo($sourcePath, PATHINFO_EXTENSION)));
-        $source = $dir . DIRECTORY_SEPARATOR . 'source-' . bin2hex(random_bytes(12)) . '.' . $extension;
-        if (!copy($sourcePath, $source)) {
+        $name ??= 'source-' . bin2hex(random_bytes(12)) . '.' . $extension;
+        $source = $dir . DIRECTORY_SEPARATOR . $name;
+        try {
+            if (!@copy($sourcePath, $source)) {
+                throw new RuntimeException('Não foi possível copiar o arquivo para a pré-visualização.');
+            }
+            $fileInfo['size'] = (int) ($fileInfo['size'] ?? filesize($source));
+            $metadata = $this->baseMetadata($token, $fileInfo, $name);
+            $this->writeMetadata($token, $metadata);
+        } catch (Throwable $e) {
             $this->removeDirectory($dir);
-            throw new RuntimeException('Não foi possível copiar o arquivo para a pré-visualização.');
+            throw $e;
         }
-
-        $fileInfo['size'] = (int) ($fileInfo['size'] ?? filesize($sourcePath));
-        $fileInfo['tmp_path'] = $source;
-        $metadata = $this->baseMetadata($token, $fileInfo, basename($source));
-        $this->writeMetadata($token, $metadata);
 
         return $metadata;
     }
@@ -300,7 +320,8 @@ class TemporaryPrintFileService
 
     private function ownerKey()
     {
-        $session = session_status() === PHP_SESSION_ACTIVE ? session_id() : '';
+        // session_write_close() releases the lock while preserving this request's identity.
+        $session = session_id();
         $user = (string) ($_SESSION['user'] ?? '');
 
         return hash('sha256', $session . '|' . $user);

@@ -294,7 +294,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     </div>
 
     <script src="/js/print-estimate.js?v=20261117"></script>
-    <script src="/js/print-preview.js?v=20261119"></script>
+    <script src="/js/print-preview.js?v=20261119-2"></script>
     <script>
         const dropArea = document.getElementById('drop-area');
         const input = document.getElementById('fileInput');

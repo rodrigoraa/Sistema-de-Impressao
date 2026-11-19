@@ -136,7 +136,7 @@ if ($currentStatus === 'active') {
     <link href="/css/vendor/bootstrap.min.css" rel="stylesheet">
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/admin.css?v=20261119">
+    <link rel="stylesheet" href="/css/admin.css?v=20261119-2">
     <link rel="stylesheet" href="/css/print-preview.css">
 </head>
 
@@ -319,7 +319,7 @@ if ($currentStatus === 'active') {
             <section class="panel history-table-panel">
                 <p class="small text-muted">Mostrando até 150 registros mais recentes. Use a busca e os filtros para encontrar envios anteriores. O acumulado segue a contabilização da escola.</p>
                 <div class="table-responsive history-table-wrap">
-                    <table class="table table-hover align-middle data-table history-table">
+                    <table class="table table-hover align-middle data-table history-table job-history-table">
                         <thead>
                             <tr>
                                 <th>Arquivo</th>
@@ -414,16 +414,22 @@ if ($currentStatus === 'active') {
                                                             <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#historyPreview" data-preview-url="/prints/preview?id=<?= (int) $job['id'] ?>"><i aria-hidden="true" class="bi bi-eye"></i> Visualizar</button>
                                                         <?php endif; ?>
                                                         <a class="btn btn-outline-secondary btn-sm" title="Baixar arquivo" href="/prints/download?id=<?= (int) $job['id'] ?>"><i aria-hidden="true" class="bi bi-download"></i> Baixar</a>
-                                                        <?php if ($waiting || ($canCancel && $hasCupsJob)): ?>
-                                                            <form novalidate method="post" action="/prints/cancel" class="d-inline">
-                                                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-                                                                <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
-                                                                <button type="button" class="btn btn-outline-danger btn-sm" title="Cancelar na fila" data-confirm="Cancelar esta impressão na fila?"><i aria-hidden="true" class="bi bi-x-circle"></i> Cancelar</button>
-                                                            </form>
-                                                        <?php elseif ($canCancel): ?>
-                                                            <button class="btn btn-outline-danger btn-sm" disabled title="Aguardando número no CUPS para cancelar"><i aria-hidden="true" class="bi bi-x-circle"></i> Cancelar</button>
-                                                        <?php endif; ?>
-                                                        <?php if ($canPrintAgain): ?>
+                                                    </div>
+                                                    <?php if ($waiting || $canCancel): ?>
+                                                        <div class="job-action-buttons">
+                                                            <?php if ($waiting || $hasCupsJob): ?>
+                                                                <form novalidate method="post" action="/prints/cancel" class="d-inline">
+                                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                                                    <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
+                                                                    <button type="button" class="btn btn-outline-danger btn-sm" title="Cancelar na fila" data-confirm="Cancelar esta impressão na fila?"><i aria-hidden="true" class="bi bi-x-circle"></i> Cancelar</button>
+                                                                </form>
+                                                            <?php else: ?>
+                                                                <button class="btn btn-outline-danger btn-sm" disabled title="Aguardando número no CUPS para cancelar"><i aria-hidden="true" class="bi bi-x-circle"></i> Cancelar</button>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                    <?php if ($canPrintAgain): ?>
+                                                        <div class="job-action-buttons">
                                                             <form novalidate method="post" action="/prints/reuse" class="d-inline">
                                                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
                                                                 <input type="hidden" name="id" value="<?= (int) $job['id'] ?>">
@@ -438,8 +444,8 @@ if ($currentStatus === 'active') {
                                                                     <button type="button" class="btn btn-outline-primary btn-sm" title="Reimprimir" data-confirm="Reimprimir com as mesmas opções e quantidade de cópias?"><i aria-hidden="true" class="bi bi-arrow-repeat"></i> Reimprimir</button>
                                                                 </form>
                                                             <?php endif; ?>
-                                                        <?php endif; ?>
-                                                    </div>
+                                                        </div>
+                                                    <?php endif; ?>
                                                     <?php if ($isAdmin && ($job['status'] ?? '') === 'completed'): ?>
                                                         <details class="accounting-adjust text-start">
                                                             <summary>Corrigir folhas</summary>
@@ -474,7 +480,7 @@ if ($currentStatus === 'active') {
             <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="historyKeep">Voltar</button><button type="button" class="btn btn-primary" id="historyProceed">Confirmar</button></div>
         </div></div>
     </div>
-    <div class="modal fade" id="historyPreview" tabindex="-1" aria-labelledby="historyPreviewTitle" aria-hidden="true">
+    <div class="modal fade" id="historyPreview" tabindex="-1" aria-labelledby="historyPreviewTitle" aria-hidden="true" data-csrf-token="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
         <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
             <div class="modal-content">
                 <div class="modal-header align-items-start gap-3">
@@ -492,8 +498,8 @@ if ($currentStatus === 'active') {
         </div>
     </div>
     <script src="/js/vendor/bootstrap.bundle.min.js"></script>
-    <script src="/js/print-preview.js?v=20261119"></script>
-    <script src="/js/print-history.js?v=20261119"></script>
+    <script src="/js/print-preview.js?v=20261119-2"></script>
+    <script src="/js/print-history.js?v=20261119-2"></script>
 </body>
 
 </html>

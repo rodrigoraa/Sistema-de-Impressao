@@ -960,7 +960,10 @@ class PrintController
             http_response_code(404);
             exit('Prévia não encontrada ou expirada.');
         }
-        if ($page > (new PrintService())->previewImagePageCount($pdfFile)) {
+        session_write_close();
+        $printer = new PrintService();
+        $pageCount = $printer->previewImagePageCount($pdfFile);
+        if ($page > $pageCount) {
             http_response_code(400);
             exit('Página fora da prévia.');
         }
@@ -969,12 +972,15 @@ class PrintController
             if (!is_file($imageFile)) {
                 $building = $imageFile . '.building-' . bin2hex(random_bytes(6)) . '.png';
                 try {
-                    (new PrintService())->renderPreviewPageImage($pdfFile, $building, $page);
-                    if (!rename($building, $imageFile)) throw new RuntimeException('Falha ao guardar imagem.');
+                    $printer->renderPreviewPageImage($pdfFile, $building, $page);
+                    if (!@rename($building, $imageFile) && !is_file($imageFile)) {
+                        throw new RuntimeException('Falha ao guardar imagem.');
+                    }
                 } finally { @unlink($building); }
             }
             clearstatcache(true, $imageFile);
             header('Content-Type: image/png');
+            header('X-Preview-Sheets: ' . $pageCount);
             header('Content-Length: ' . filesize($imageFile));
             header('Cache-Control: no-store, private');
             header('X-Content-Type-Options: nosniff');

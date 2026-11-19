@@ -41,6 +41,7 @@ async function run() {
                 $ids[$label] = $service->create('11111111111', 'Atividade ' . basename($file),
                     realpath($file) ?: getcwd() . '/' . $file, pathinfo($file, PATHINFO_EXTENSION), 1, 1, 'one-sided', 'auto', 'A4');
             }
+            $service->markCompleted($ids['pdf'], realpath($files['pdf']), 2, 2);
             echo json_encode($ids);`;
         const ids = JSON.parse(execFileSync('php', ['-r', seed], { cwd: root, encoding: 'utf8' }));
         const port = await new Promise(resolve => {
@@ -50,6 +51,7 @@ async function run() {
             });
         });
         server = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', 'public', 'public/index.php'], { cwd: root });
+        server.stderr.resume();
         const base = `http://127.0.0.1:${port}`;
         for (let attempt = 0; attempt < 40; attempt++) {
             try { await fetch(base + '/login'); break; } catch { await new Promise(resolve => setTimeout(resolve, 100)); }
@@ -128,6 +130,53 @@ async function run() {
         const admin = await browser.newPage();
         await login(admin, base, '00000000000', 'senha-teste');
         assert.equal((await admin.request.get(previewUrl(ids.pdf))).status(), 200);
+
+        const fallback = await browser.newPage({ serviceWorkers: 'block' });
+        await fallback.route('**/pdfjs-*/pdf.mjs', route => route.abort());
+        await login(fallback, base, '11111111111');
+        await fallback.goto(historyUrl);
+        const fallbackName = ids.docx ? 'Atividade atividade.docx' : 'Atividade atividade.pdf';
+        const fallbackDialog = fallback.getByRole('dialog', { name: 'Visualizar arquivo' });
+        const [firstImage] = await Promise.all([
+            fallback.waitForResponse(response => response.url().endsWith('/print/preview-image')),
+            fallback.waitForEvent('requestfailed', request => request.url().endsWith('/pdf.mjs')),
+            fallback.getByRole('row').filter({ hasText: fallbackName }).getByRole('button', { name: 'Visualizar' }).click(),
+        ]);
+        assert.equal(firstImage.status(), 200);
+        assert.match(firstImage.headers()['content-type'], /^image\/png/);
+        assert.equal(firstImage.headers()['x-preview-sheets'], '2');
+        await fallbackDialog.getByRole('img', { name: 'Página 1 de 2 da prévia' }).waitFor();
+        await fallbackDialog.getByRole('button', { name: 'Próxima página' }).click();
+        await fallbackDialog.getByRole('img', { name: 'Página 2 de 2 da prévia' }).waitFor();
+        assert.equal(await fallbackDialog.getByRole('link', { name: 'Abrir prévia no navegador' }).count(), 0);
+        const otherCsrf = await other.locator('input[name="csrf_token"]').first().inputValue();
+        const imageForm = firstImage.request().postData();
+        const token = imageForm.match(/name="upload_token"\r\n\r\n([a-f0-9]+)/)[1];
+        const key = imageForm.match(/name="preview_key"\r\n\r\n([a-f0-9]+)/)[1];
+        const forbiddenImage = await other.request.post(base + '/print/preview-image', { form: {
+            upload_token: token, preview_key: key, preview_page: '1', csrf_token: otherCsrf,
+        } });
+        assert.equal(forbiddenImage.status(), 404);
+
+        await admin.goto(historyUrl);
+        const row = admin.getByRole('row').filter({ hasText: 'Atividade atividade.pdf' });
+        for (const width of [1440, 1024, 390, 320]) {
+            await admin.setViewportSize({ width, height: 844 });
+            const pairs = [
+                [row.getByRole('button', { name: 'Visualizar' }), row.getByRole('link', { name: 'Baixar' })],
+                [row.getByRole('button', { name: 'Usar arquivo novamente' }), row.getByRole('button', { name: 'Reimprimir' })],
+            ];
+            for (const pair of pairs) {
+                const [left, right] = await Promise.all(pair.map(action => action.boundingBox()));
+                assert.equal(left.y, right.y);
+                assert.ok(Math.abs(left.width - right.width) < 1);
+                assert.ok(left.x + left.width <= right.x && left.height === right.height && left.height >= 44);
+            }
+            const actions = await row.locator('.job-action-buttons').first().boundingBox();
+            const accounting = await row.getByText('Corrigir folhas', { exact: true }).boundingBox();
+            assert.ok(Math.abs(actions.x - accounting.x) <= 1 && Math.abs(actions.width - accounting.width) <= 2);
+            assert.ok(await admin.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+        }
         assert.deepEqual(errors, []);
         console.log(`Visualização no histórico: PDF, imagem, TXT${ids.docx ? ', DOCX' : ''}, teclado, celular e permissões: OK`);
     } finally {
@@ -137,7 +186,7 @@ async function run() {
             server.kill();
             await stopped;
         }
-        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
 }
 

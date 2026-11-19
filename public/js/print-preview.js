@@ -22,11 +22,11 @@
     // It reads images from an already generated, authenticated PDF preview.
     class ServerPreviewDocument {
         constructor(context) {
-            if (!context || !/^[a-f0-9]{64}$/.test(context.key) || !Number.isSafeInteger(context.pages) || context.pages < 1) {
+            if (!context || !/^[a-f0-9]{64}$/.test(context.key)) {
                 throw new Error('Prévia de imagem indisponível.');
             }
             this.context = context;
-            this.numPages = context.pages;
+            this.numPages = context.pages ?? 0;
             this.pending = null;
             this.frames = new Map();
             this.closed = false;
@@ -62,6 +62,13 @@
                 const response = await fetch('/print/preview-image', { method: 'POST', body,
                     headers: { 'X-Requested-With': 'XMLHttpRequest' }, signal: controller.signal });
                 if (!response.ok) throw new Error('Não foi possível carregar a imagem da prévia.');
+                if (this.numPages === 0) {
+                    const pages = Number(response.headers.get('X-Preview-Sheets'));
+                    if (!Number.isSafeInteger(pages) || pages < number) {
+                        throw new Error('Contagem de páginas indisponível.');
+                    }
+                    this.numPages = pages;
+                }
                 const blob = await response.blob();
                 if (this.closed || controller.signal.aborted) throw new Error('Prévia cancelada.');
 

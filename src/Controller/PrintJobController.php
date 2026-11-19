@@ -7,6 +7,7 @@ require_once __DIR__ . '/../Service/PrintQueueService.php';
 require_once __DIR__ . '/../Service/PrintService.php';
 require_once __DIR__ . '/../Service/PageCounter.php';
 require_once __DIR__ . '/../Service/QuotaService.php';
+require_once __DIR__ . '/../Service/TemporaryPrintFileService.php';
 
 class PrintJobController
 {
@@ -96,9 +97,14 @@ class PrintJobController
 
         session_write_close();
         $name = $job['original_name'] ?: basename($path);
-        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-        if (!in_array($extension, ['doc', 'docx'], true)) {
+        if ($type !== 'application/pdf') {
             $this->streamPreview($path, $type, $name);
+            return;
+        }
+
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        if ($extension === 'pdf') {
+            $this->streamPdfPreview($path, $name);
             return;
         }
 
@@ -106,11 +112,31 @@ class PrintJobController
         ignore_user_abort(true);
         try {
             $pdfName = pathinfo($name, PATHINFO_FILENAME) . '.pdf';
-            $printer->withOfficePdf($path, fn ($pdf) => $this->streamPreview($pdf, $type, $pdfName));
+            $printer->withOfficePdf($path, fn ($pdf) => $this->streamPdfPreview($pdf, $pdfName));
         } catch (Throwable $e) {
             $printer->log('Falha ao visualizar documento do histórico: ' . $e->getMessage());
             http_response_code(500);
         }
+    }
+
+    private function streamPdfPreview(string $path, string $name): void
+    {
+        $size = @filesize($path);
+        $cacheLimit = (int) ($_ENV['PRINT_PREVIEW_MAX_BYTES'] ?? 50 * 1024 * 1024);
+        if ($size > 0 && $size <= $cacheLimit) {
+            try {
+                $temporary = new TemporaryPrintFileService();
+                $temporary->cleanupExpired();
+                $preview = $temporary->createPdfPreview($path);
+                header('X-Preview-Token: ' . $preview['token']);
+                header('X-Preview-Cache-Key: ' . $preview['key']);
+                $path = $preview['path'];
+            } catch (Throwable $e) {
+                (new PrintService())->log('Falha no cache da prévia do histórico: ' . $e->getMessage());
+            }
+        }
+
+        $this->streamPreview($path, 'application/pdf', $name);
     }
 
     private function previewType($path): ?string

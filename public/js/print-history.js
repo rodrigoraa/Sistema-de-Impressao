@@ -79,7 +79,10 @@
             const type = file.type.split(';')[0];
             if (type === 'application/pdf') {
                 objectUrl = URL.createObjectURL(file);
-                await viewer.load(file, objectUrl, current);
+                const key = response.headers.get('X-Preview-Cache-Key');
+                const token = response.headers.get('X-Preview-Token');
+                const imageContext = key && token ? { key, token, csrf: modal.dataset.csrfToken } : null;
+                await viewer.load(file, objectUrl, current, imageContext);
             } else if (type.startsWith('image/')) {
                 objectUrl = URL.createObjectURL(file);
                 const image = new Image();
