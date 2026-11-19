@@ -330,6 +330,11 @@ if ($uri === '/prints/download') {
     exit;
 }
 
+if ($uri === '/prints/preview') {
+    (new PrintJobController())->preview();
+    exit;
+}
+
 if ($uri === '/prints/reuse') {
     (new PrintJobController())->reuse();
     exit;

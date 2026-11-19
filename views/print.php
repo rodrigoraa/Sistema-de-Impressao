@@ -27,7 +27,8 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
 
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/print.css?v=20261118-3">
+    <link rel="stylesheet" href="/css/print.css?v=20261119">
+    <link rel="stylesheet" href="/css/print-preview.css">
 
 </head>
 
@@ -293,7 +294,7 @@ $printFormAction = $sharedMode ? '/share-target.php' : '/';
     </div>
 
     <script src="/js/print-estimate.js?v=20261117"></script>
-    <script src="/js/print-preview.js?v=20261118-1"></script>
+    <script src="/js/print-preview.js?v=20261119"></script>
     <script>
         const dropArea = document.getElementById('drop-area');
         const input = document.getElementById('fileInput');

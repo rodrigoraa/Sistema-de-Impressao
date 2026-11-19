@@ -10,6 +10,17 @@ require_once __DIR__ . '/../Service/QuotaService.php';
 
 class PrintJobController
 {
+    private const PREVIEW_TYPES = [
+        'pdf' => 'application/pdf',
+        'doc' => 'application/pdf',
+        'docx' => 'application/pdf',
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'txt' => 'text/plain',
+    ];
+
     public function index()
     {
         if (!isset($_SESSION['user'])) {
@@ -36,6 +47,7 @@ class PrintJobController
             $stats['active'] = max((int) ($stats['active'] ?? 0), count($cupsQueue['jobs'] ?? []));
         }
 
+        $canPreview = fn ($job) => $this->previewType($job['stored_file'] ?? null) !== null;
         require __DIR__ . '/../../views/print_jobs.php';
     }
 
@@ -59,6 +71,76 @@ class PrintJobController
         header('Content-Disposition: attachment; filename="' . $name . '"');
         readfile($job['stored_file']);
         exit;
+    }
+
+    public function preview()
+    {
+        header('Cache-Control: no-store, private');
+        header('X-Content-Type-Options: nosniff');
+        header('Content-Type: text/plain; charset=UTF-8');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+            header('Allow: GET');
+            http_response_code(405);
+            return;
+        }
+
+        $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $job = $id ? (new PrintJobService())->findVisible($id, $_SESSION['user'], AuthService::isAdmin()) : null;
+        $path = $job['stored_file'] ?? null;
+        $type = $this->previewType($path);
+        if ($type === null) {
+            http_response_code(404);
+            return;
+        }
+
+        session_write_close();
+        $name = $job['original_name'] ?: basename($path);
+        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['doc', 'docx'], true)) {
+            $this->streamPreview($path, $type, $name);
+            return;
+        }
+
+        $printer = new PrintService();
+        ignore_user_abort(true);
+        try {
+            $pdfName = pathinfo($name, PATHINFO_FILENAME) . '.pdf';
+            $printer->withOfficePdf($path, fn ($pdf) => $this->streamPreview($pdf, $type, $pdfName));
+        } catch (Throwable $e) {
+            $printer->log('Falha ao visualizar documento do histórico: ' . $e->getMessage());
+            http_response_code(500);
+        }
+    }
+
+    private function previewType($path): ?string
+    {
+        if (!$this->isDownloadableFile($path) || !is_readable($path)) {
+            return null;
+        }
+
+        return self::PREVIEW_TYPES[strtolower(pathinfo($path, PATHINFO_EXTENSION))] ?? null;
+    }
+
+    private function streamPreview(string $path, string $type, string $name): void
+    {
+        $file = @fopen($path, 'rb');
+        if ($file === false) {
+            http_response_code(404);
+            return;
+        }
+
+        try {
+            $info = fstat($file);
+            header('Content-Type: ' . $type);
+            if ($info !== false) {
+                header('Content-Length: ' . $info['size']);
+            }
+            header('Content-Disposition: inline; filename="' . $this->downloadFilename($name) . '"');
+            fpassthru($file);
+        } finally {
+            fclose($file);
+        }
     }
 
     // Preparing a review never dispatches a print or changes the original job.

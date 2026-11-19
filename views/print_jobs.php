@@ -136,7 +136,8 @@ if ($currentStatus === 'active') {
     <link href="/css/vendor/bootstrap.min.css" rel="stylesheet">
     <link href="/css/vendor/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/base.css?v=20261117">
-    <link rel="stylesheet" href="/css/admin.css?v=20260602">
+    <link rel="stylesheet" href="/css/admin.css?v=20261119">
+    <link rel="stylesheet" href="/css/print-preview.css">
 </head>
 
 <body>
@@ -409,6 +410,9 @@ if ($currentStatus === 'active') {
                                             <div class="job-actions">
                                                 <?php if (!$isLegacyUsage): ?>
                                                     <div class="job-action-buttons">
+                                                        <?php if ($canPreview($job)): ?>
+                                                            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#historyPreview" data-preview-url="/prints/preview?id=<?= (int) $job['id'] ?>"><i aria-hidden="true" class="bi bi-eye"></i> Visualizar</button>
+                                                        <?php endif; ?>
                                                         <a class="btn btn-outline-secondary btn-sm" title="Baixar arquivo" href="/prints/download?id=<?= (int) $job['id'] ?>"><i aria-hidden="true" class="bi bi-download"></i> Baixar</a>
                                                         <?php if ($waiting || ($canCancel && $hasCupsJob)): ?>
                                                             <form novalidate method="post" action="/prints/cancel" class="d-inline">
@@ -470,8 +474,26 @@ if ($currentStatus === 'active') {
             <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="historyKeep">Voltar</button><button type="button" class="btn btn-primary" id="historyProceed">Confirmar</button></div>
         </div></div>
     </div>
+    <div class="modal fade" id="historyPreview" tabindex="-1" aria-labelledby="historyPreviewTitle" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+            <div class="modal-content">
+                <div class="modal-header align-items-start gap-3">
+                    <div class="text-break">
+                        <h2 id="historyPreviewTitle" class="modal-title h5">Visualizar arquivo</h2>
+                        <p id="historyPreviewName" class="small text-muted mb-0"></p>
+                    </div>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" aria-label="Fechar visualização"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                </div>
+                <div class="modal-body">
+                    <p id="historyPreviewStatus" class="text-muted mb-0" role="status"></p>
+                    <div id="historyPreviewContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
     <script src="/js/vendor/bootstrap.bundle.min.js"></script>
-    <script src="/js/print-history.js?v=20261117"></script>
+    <script src="/js/print-preview.js?v=20261119"></script>
+    <script src="/js/print-history.js?v=20261119"></script>
 </body>
 
 </html>

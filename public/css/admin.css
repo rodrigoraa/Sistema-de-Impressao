@@ -110,6 +110,18 @@
     display: inline-flex;
     gap: 6px;
     align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+[data-preview-url],
+#historyPreview [data-bs-dismiss="modal"] {
+    min-height: 44px;
+}
+
+#historyPreview [data-bs-dismiss="modal"] {
+    min-width: 44px;
+    flex-shrink: 0;
 }
 
 .accounting-adjust {
@@ -254,6 +266,10 @@
     .job-actions {
         justify-items: start;
         min-width: 0;
+    }
+
+    .job-action-buttons {
+        justify-content: flex-start;
     }
 
     .accounting-adjust {

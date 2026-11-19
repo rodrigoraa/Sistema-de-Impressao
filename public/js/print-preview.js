@@ -313,14 +313,23 @@
             button.setAttribute('aria-label', label);
             button.title = label;
             button.textContent = text;
-            button.addEventListener('click', action);
+            button.addEventListener('click', () => {
+                if (button.getAttribute('aria-disabled') !== 'true') action();
+            });
             return button;
         }
 
         controls(busy) {
             this.root.setAttribute('aria-busy', busy ? 'true' : 'false');
-            this.previous.disabled = busy || this.currentPage <= 1;
-            this.next.disabled = busy || this.currentPage >= this.document.numPages;
+            // Keep focus on the page controls while rendering and at the document boundaries.
+            const disabled = [
+                [this.previous, busy || this.currentPage <= 1],
+                [this.next, busy || this.currentPage >= this.document.numPages],
+            ];
+            for (const [button, unavailable] of disabled) {
+                button.setAttribute('aria-disabled', String(unavailable));
+                button.classList.toggle('disabled', unavailable);
+            }
             this.counter.textContent = `${this.currentPage} / ${this.document.numPages}`;
         }
 

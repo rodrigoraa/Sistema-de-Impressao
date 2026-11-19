@@ -914,11 +914,25 @@ class PrintService
         return "'" . str_replace("'", "''", $value) . "'";
     }
 
-    private function convertOfficeToPdf($filePath, $extraOptions = [])
+    public function withOfficePdf(string $filePath, callable $usePdf): void
+    {
+        $workspace = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'office-preview-' . bin2hex(random_bytes(16));
+        if (!mkdir($workspace, 0700)) {
+            throw new RuntimeException('Não foi possível criar a pasta da visualização.');
+        }
+
+        try {
+            $usePdf($this->convertOfficeToPdf($filePath, [], $workspace));
+        } finally {
+            $this->removeDirectoryRecursive($workspace);
+        }
+    }
+
+    private function convertOfficeToPdf($filePath, $extraOptions = [], $workspace = null)
     {
         $sourceExt = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         if ($this->isWindows && in_array($sourceExt, ['doc', 'docx'], true)) {
-            $wordPdf = $this->convertOfficeToPdfWithWord($filePath);
+            $wordPdf = $this->convertOfficeToPdfWithWord($filePath, $workspace);
             if ($wordPdf !== null) {
                 $this->logConvertedPdfDiagnostics($wordPdf, $sourceExt);
                 return $wordPdf;
@@ -930,7 +944,7 @@ class PrintService
             throw new RuntimeException('Nao foi possivel converter DOC/DOCX. Instale o Microsoft Word no Windows ou configure LIBREOFFICE_PATH no .env.');
         }
 
-        $outDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'print_' . uniqid('', true);
+        $outDir = $workspace ?? rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'print_' . uniqid('', true);
         if (!is_dir($outDir) && !mkdir($outDir, 0775, true)) {
             throw new RuntimeException('Nao foi possivel criar pasta temporaria para conversao');
         }
@@ -1049,7 +1063,7 @@ class PrintService
             if ($declaredPages > 0 && $bestPages > $declaredPages) {
                 $this->log('LibreOffice: metadado DOCX declara menos paginas que o PDF convertido; preservando PDF convertido salvo paginas finais em branco. declarado=' . $declaredPages . ' convertido=' . $bestPages . ' pdf=' . $bestPdf);
 
-                $blankTrimmed = $this->trimTrailingBlankPdfPages($bestPdf, $declaredPages, $bestPages, $sourceExt);
+                $blankTrimmed = $this->trimTrailingBlankPdfPages($bestPdf, $declaredPages, $bestPages, $sourceExt, $workspace);
                 if ($blankTrimmed !== null) {
                     $this->log('DOCX paginas finais vazias removidas apos conversao. declarado=' . $declaredPages . ' convertido=' . $bestPages);
                     $this->logConvertedPdfDiagnostics($blankTrimmed, $sourceExt);
@@ -1066,7 +1080,7 @@ class PrintService
         throw new RuntimeException('Falha ao converter DOC/DOCX para PDF' . ($detail !== '' ? ': ' . substr($detail, 0, 180) : ''));
     }
 
-    private function convertOfficeToPdfWithWord($filePath)
+    private function convertOfficeToPdfWithWord($filePath, $workspace = null)
     {
         $powershell = $this->findExecutable(['powershell', 'powershell.exe', 'pwsh', 'pwsh.exe']);
         if ($powershell === null) {
@@ -1074,7 +1088,7 @@ class PrintService
             return null;
         }
 
-        $pdfFile = tempnam(sys_get_temp_dir(), 'wordpdf_') . '.pdf';
+        $pdfFile = $workspace === null ? tempnam(sys_get_temp_dir(), 'wordpdf_') . '.pdf' : $workspace . DIRECTORY_SEPARATOR . 'document.pdf';
         @unlink($pdfFile);
 
         $script = '$ErrorActionPreference = "Stop"; '
@@ -2354,14 +2368,14 @@ class PrintService
         return $isGraphic;
     }
 
-    private function trimPdfToPageCount($pdfFile, $pageCount, $sourceExt)
+    private function trimPdfToPageCount($pdfFile, $pageCount, $sourceExt, $workspace = null)
     {
         $pageCount = (int) $pageCount;
         if ($pageCount < 1 || !is_file($pdfFile)) {
             return null;
         }
 
-        $target = tempnam(sys_get_temp_dir(), 'docpdf_trim_') . '.pdf';
+        $target = tempnam($workspace ?? sys_get_temp_dir(), 'docpdf_trim_') . '.pdf';
 
         $qpdf = $this->findExecutable([$_ENV['QPDF_PATH'] ?? null, '/usr/bin/qpdf', 'qpdf']);
         if ($qpdf !== null) {
@@ -2376,7 +2390,7 @@ class PrintService
             }
             $this->log('qpdf falhou ao ajustar PDF: status=' . $status . ' | ' . implode(' | ', $output));
             @unlink($target);
-            $target = tempnam(sys_get_temp_dir(), 'docpdf_trim_') . '.pdf';
+            $target = tempnam($workspace ?? sys_get_temp_dir(), 'docpdf_trim_') . '.pdf';
         }
 
         $gs = $this->findExecutable([$_ENV['GHOSTSCRIPT_PATH'] ?? null, '/usr/bin/gs', 'gs']);
@@ -2393,7 +2407,7 @@ class PrintService
             }
             $this->log('Ghostscript falhou ao ajustar PDF: status=' . $status . ' | ' . implode(' | ', $output));
             @unlink($target);
-            $target = tempnam(sys_get_temp_dir(), 'docpdf_trim_') . '.pdf';
+            $target = tempnam($workspace ?? sys_get_temp_dir(), 'docpdf_trim_') . '.pdf';
         }
 
         $pdfseparate = $this->findExecutable([$_ENV['PDFSEPARATE_PATH'] ?? null, '/usr/bin/pdfseparate', 'pdfseparate']);
@@ -2504,7 +2518,7 @@ class PrintService
         return implode(',', $ranges);
     }
 
-    private function trimTrailingBlankPdfPages($pdfFile, $declaredPages, $actualPages, $sourceExt)
+    private function trimTrailingBlankPdfPages($pdfFile, $declaredPages, $actualPages, $sourceExt, $workspace = null)
     {
         $declaredPages = (int) $declaredPages;
         $actualPages = (int) $actualPages;
@@ -2519,7 +2533,7 @@ class PrintService
             }
         }
 
-        return $this->trimPdfToPageCount($pdfFile, $declaredPages, $sourceExt);
+        return $this->trimPdfToPageCount($pdfFile, $declaredPages, $sourceExt, $workspace);
     }
 
     private function isPdfPageBlankByBoundingBox($pdfFile, $page)
